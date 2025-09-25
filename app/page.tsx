@@ -8,10 +8,10 @@ export default function Home() {
         <div className="mx-auto h-[30rem] w-[40rem] rounded-full bg-sky-200/40 dark:bg-sky-500/10" />
       </div>
       <Navbar className="pt-4" />
-      <div id="top" className="mx-auto flex min-h-[calc(100vh-9rem)] w-full max-w-6xl flex-col px-6 pb-16 pt-10 sm:px-10 lg:px-12">
+      <div id="top" className="mx-auto flex min-h-[calc(100vh-9rem)] w-full max-w-6xl flex-col px-6 pb-24 pt-10 sm:px-10 lg:px-12">
         <main className="flex flex-1 items-center">
           <div className="grid w-full items-center gap-16 lg:grid-cols-[1.1fr_minmax(0,480px)] xl:gap-20">
-            <section className="space-y-10">
+            <section className="space-y-12">
               <div className="space-y-6">
                 <span className="text-sm font-medium uppercase tracking-[0.4em] text-sky-500 dark:text-sky-400">
                   Blue Wallet
@@ -47,56 +47,33 @@ export default function Home() {
                 </div>
               </div>
 
-              <section
-                id="contact"
-                className="grid gap-4 rounded-3xl border border-slate-200/80 bg-white/80 p-6 text-slate-600 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-300"
-              >
-                <header className="flex items-center justify-between">
-                  <div>
-                    <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">
-                      Contact
-                    </h2>
-                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                      We reply within two business days.
+              <div className="grid gap-6 rounded-3xl border border-slate-200/80 bg-white/80 p-6 text-slate-600 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-300">
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">
+                  Built for
+                </h2>
+                <div className="grid gap-6 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
+                      Institutions
+                    </h3>
+                    <p className="text-sm leading-6">
+                      Give compliance teams the audit trail they need—verified identities, policy
+                      logs, and wallet lineage without sacrificing speed.
                     </p>
                   </div>
-                  <a className="text-sm font-medium text-sky-600 hover:underline" href="mailto:hello@bluewallet.xyz">
-                    hello@bluewallet.xyz
-                  </a>
-                </header>
-                <form
-                  action="mailto:hello@bluewallet.xyz"
-                  method="post"
-                  encType="text/plain"
-                  className="grid gap-4 text-sm"
-                >
-                  <input
-                    name="name"
-                    required
-                    placeholder="Name"
-                    className="h-10 rounded-lg border border-slate-200 bg-white px-4 text-slate-900 outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-sky-500 dark:focus:ring-sky-500/40"
-                  />
-                  <input
-                    name="email"
-                    type="email"
-                    required
-                    placeholder="Email"
-                    className="h-10 rounded-lg border border-slate-200 bg-white px-4 text-slate-900 outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-sky-500 dark:focus:ring-sky-500/40"
-                  />
-                  <textarea
-                    name="message"
-                    placeholder="What should we explore together?"
-                    rows={3}
-                    className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-slate-900 outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-sky-500 dark:focus:ring-sky-500/40"
-                  />
-                  <button
-                    type="submit"
-                    className="inline-flex h-10 items-center justify-center rounded-lg bg-slate-900 px-4 text-sm font-medium text-white transition hover:bg-slate-700 dark:bg-slate-200 dark:text-slate-900 dark:hover:bg-slate-100"
-                  >
-                    Open email draft
-                  </button>
-                </form>
-              </section>
+                  <div className="space-y-2">
+                    <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Teams & DAOs</h3>
+                    <p className="text-sm leading-6">
+                      Spin up policy-controlled wallets for contributors in seconds, or link
+                      existing addresses while keeping revocation one click away.
+                    </p>
+                  </div>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Need to talk details? The contact button jumps to a dedicated page with an email
+                  form.
+                </p>
+              </div>
             </section>
 
             <AuthFlow />

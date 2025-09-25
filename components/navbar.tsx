@@ -18,7 +18,7 @@ export function Navbar({ className }: { className?: string }) {
         </Link>
         <div className="flex shrink-0 justify-center">
           <Button variant="secondary" size="sm" asChild>
-            <Link href="#contact">Contact</Link>
+            <Link href="/contact">Contact</Link>
           </Button>
         </div>
         <ThemeToggle />
