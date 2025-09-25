@@ -15,6 +15,7 @@ Key frontend tech:
 - Next.js App Router + TypeScript
 - Tailwind CSS with ShadCN/ui primitives
 - `next-themes` powered light/dark mode toggle
+- Typography stack mirrors Claude's interface using `Söhne` (falls back to Inter/Helvetica if the licensed font isn't installed)
 
 Further product planning lives in [`docs/tasklist.md`](docs/tasklist.md).
 
