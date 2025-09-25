@@ -40,7 +40,6 @@ The app will be available at [http://localhost:3000](http://localhost:3000).
 
 ```
 app/            # Next.js routes (App Router)
-  contact/     # Contact page with mailto form (no backend yet)
 components/     # Shared UI pieces (navbar, auth flow, providers, shadcn buttons)
 docs/           # Product requirements and task lists
 lib/            # Utility helpers (Tailwind class name merge)
@@ -53,8 +52,7 @@ public/         # Static assets
 2. **Choose wallet path** – after login, the UI presents two cards:
    - *Bring your own keys* triggers Privy’s `linkWallet()` to connect an existing wallet.
    - *Generate a blue wallet* currently mocks the Turnkey flow by returning a placeholder address so we can iterate on UX before wiring the real API.
-3. **Contact** – a soft footer section reminds folks they can reach out at `hello@bluewallet.xyz`.
-4. **Contact page** – the navbar button links to `/contact`, a standalone mailto form for teams that need more context or want a written trail.
+3. **Contact** – the landing page houses an inline mailto form (anchored via the navbar button) and quick email links for deeper conversations.
 
 ## Scripts
 
