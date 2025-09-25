@@ -8,13 +8,13 @@ import { cn } from "@/lib/utils";
 
 export function Navbar({ className }: { className?: string }) {
   return (
-    <div className={cn("flex justify-center px-6", className)}>
-      <nav className="mt-6 flex w-full max-w-5xl items-center gap-4 rounded-full border border-slate-200/70 bg-white/85 px-6 py-3 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/85">
+    <div className={cn("flex justify-center px-6 pt-6", className)}>
+      <nav className="flex w-full max-w-5xl items-center gap-4 rounded-full border border-slate-200/70 bg-white/85 px-6 py-3 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/85">
         <Link
-          href="#top"
+          href="/"
           className="text-sm font-semibold tracking-[0.3em] text-slate-800 transition hover:text-slate-600 dark:text-slate-100 dark:hover:text-slate-300"
         >
-          Blue Wallet
+          BLUE WALLET
         </Link>
         <div className="flex flex-1 justify-center">
           <Button variant="secondary" size="sm" asChild>

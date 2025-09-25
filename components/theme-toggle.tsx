@@ -13,8 +13,20 @@ export function ThemeToggle() {
     setMounted(true);
   }, []);
 
+  if (!mounted) {
+    return (
+      <Button
+        type="button"
+        variant="outline"
+        size="icon"
+        aria-label="Toggle theme"
+      >
+        <Moon className="h-5 w-5 opacity-0" />
+      </Button>
+    );
+  }
+
   const isDark = resolvedTheme === "dark";
-  const icon = isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />;
 
   return (
     <Button
@@ -24,7 +36,8 @@ export function ThemeToggle() {
       aria-label={`Switch to ${isDark ? "light" : "dark"} mode`}
       onClick={() => setTheme(isDark ? "light" : "dark")}
     >
-      {mounted ? icon : <Moon className="h-5 w-5 opacity-0" />}
+      <Sun className="h-5 w-5 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
+      <Moon className="absolute h-5 w-5 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
     </Button>
   );
 }

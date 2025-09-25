@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
-import { usePrivy } from "@privy-io/react-auth";
+import { Auth, type AuthConfig } from "@turnkey/sdk-react";
 import { CheckCircle2, LogOut, Wand2, Wallet } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -19,9 +19,128 @@ function pickMockAddress(prev?: string | null) {
 }
 
 export function AuthFlow() {
-  const { ready, authenticated, login, logout, user, linkWallet } = usePrivy();
   const [isGenerating, setIsGenerating] = useState(false);
   const [mockWalletAddress, setMockWalletAddress] = useState<string | null>(null);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [session, setSession] = useState<unknown>(null);
+
+  const authConfig = useMemo<AuthConfig>(() => {
+    const enableEmail = process.env.NEXT_PUBLIC_TURNKEY_ENABLE_EMAIL?.toLowerCase() !== "false";
+    const enablePasskey = process.env.NEXT_PUBLIC_TURNKEY_ENABLE_PASSKEY?.toLowerCase() !== "false";
+    const enablePhone = process.env.NEXT_PUBLIC_TURNKEY_ENABLE_PHONE?.toLowerCase() === "true";
+    const enableGoogle = process.env.NEXT_PUBLIC_TURNKEY_ENABLE_GOOGLE?.toLowerCase() !== "false";
+    const enableApple = process.env.NEXT_PUBLIC_TURNKEY_ENABLE_APPLE?.toLowerCase() === "true";
+    const enableFacebook = process.env.NEXT_PUBLIC_TURNKEY_ENABLE_FACEBOOK?.toLowerCase() === "true";
+    const sessionSeconds = Number(process.env.NEXT_PUBLIC_TURNKEY_SESSION_SECONDS ?? "3600");
+
+    return {
+      emailEnabled: enableEmail,
+      passkeyEnabled: enablePasskey,
+      phoneEnabled: enablePhone,
+      googleEnabled: enableGoogle,
+      appleEnabled: enableApple,
+      facebookEnabled: enableFacebook,
+      socialLinking: true,
+      sessionLengthSeconds: Number.isFinite(sessionSeconds) ? sessionSeconds : 3600,
+    } satisfies AuthConfig;
+  }, []);
+
+  const configOrder = useMemo(() => {
+    const defaultOrder: Array<"socials" | "email" | "phone" | "passkey"> = [
+      "socials",
+      "email",
+      "phone",
+      "passkey",
+    ];
+
+    const override = process.env.NEXT_PUBLIC_TURNKEY_AUTH_ORDER?.split(",").map((item) => item.trim()) ?? [];
+    const validOverride = override.filter((item): item is typeof defaultOrder[number] =>
+      ["socials", "email", "phone", "passkey"].includes(item)
+    );
+
+    return validOverride.length > 0 ? validOverride : defaultOrder;
+  }, []);
+
+  const handleAuthSuccess = (result: unknown) => {
+    setSession(result);
+    setAuthError(null);
+  };
+
+  const handleAuthError = (error: unknown) => {
+    const message =
+      error instanceof Error
+        ? error.message
+        : typeof error === "string"
+          ? error
+          : "Something went wrong while signing in.";
+    setAuthError(message);
+  };
+
+  const handleLogout = () => {
+    setSession(null);
+    setMockWalletAddress(null);
+  };
+
+  const connectedWallets: Array<{ address: string }> = useMemo(() => {
+    if (!session || typeof session !== "object") {
+      return [];
+    }
+
+    const maybeUser = (session as { user?: unknown }).user;
+    const maybeWalletList =
+      (maybeUser as { wallets?: Array<{ address?: string }> } | undefined)?.wallets ??
+      (session as { wallets?: Array<{ address?: string }> }).wallets;
+
+    if (!Array.isArray(maybeWalletList)) {
+      return [];
+    }
+
+    return maybeWalletList.filter((wallet): wallet is { address: string } =>
+      Boolean(wallet && typeof wallet.address === "string" && wallet.address.length > 0)
+    );
+  }, [session]);
+
+  const userIdentifier = useMemo(() => {
+    if (!session || typeof session !== "object") {
+      return "friend";
+    }
+
+    const maybeUser = (session as { user?: Record<string, unknown> }).user;
+    if (!maybeUser || typeof maybeUser !== "object") {
+      return "friend";
+    }
+
+    const emailFromRoot = (maybeUser as { email?: string }).email;
+    if (emailFromRoot) return emailFromRoot;
+
+    const emailAddress = (maybeUser as { emailAddress?: string }).emailAddress;
+    if (emailAddress) return emailAddress;
+
+    const emails = (maybeUser as { emails?: unknown }).emails;
+    if (Array.isArray(emails)) {
+      const flattened = emails
+        .map((entry) => {
+          if (typeof entry === "string") return entry;
+          if (entry && typeof entry === "object") {
+            return (entry as { email?: string; address?: string }).email ?? (entry as { email?: string; address?: string }).address;
+          }
+          return null;
+        })
+        .filter((value): value is string => Boolean(value));
+      if (flattened.length > 0) {
+        return flattened[0];
+      }
+    }
+
+    const username = (maybeUser as { username?: string }).username;
+    if (username) return username;
+
+    const userId = (maybeUser as { userId?: string }).userId;
+    if (userId) return userId;
+
+    const id = (session as { userId?: string; id?: string }).userId ?? (session as { id?: string }).id;
+    return id ?? "friend";
+  }, [session]);
 
   const handleGenerateWallet = async () => {
     setIsGenerating(true);
@@ -30,42 +149,34 @@ export function AuthFlow() {
     setIsGenerating(false);
   };
 
-  const handleConnectWallet = async () => {
-    try {
-      await linkWallet();
-    } catch (error) {
-      console.error("Wallet connection failed", error);
-    }
+  const handleConnectWallet = () => {
+    console.warn("Turnkey wallet linking is not yet wired up in this prototype.");
   };
 
-  if (!ready) {
-    return (
-      <div className="flex flex-col gap-4 rounded-3xl border border-slate-200/70 bg-white/70 p-8 text-slate-600 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-300">
-        <div className="h-4 w-24 animate-pulse rounded-full bg-slate-200 dark:bg-slate-700" />
-        <div className="h-10 w-3/4 animate-pulse rounded-lg bg-slate-200 dark:bg-slate-700" />
-        <div className="h-20 w-full animate-pulse rounded-2xl bg-slate-200 dark:bg-slate-800" />
-      </div>
-    );
-  }
-
-  if (!authenticated) {
+  if (!session) {
     return (
       <section className="rounded-3xl border border-slate-200/80 bg-white/70 p-8 text-slate-600 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-300">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
           Step one
         </h2>
         <p className="mt-4 max-w-xl text-lg leading-7">
-          Sign in with Privy to start linking your identity to a wallet. No contracts, no
-          jargon—just a gentle handshake before we talk keys.
+          Sign in with Turnkey to start linking your identity to a wallet. Pick the login option
+          that feels right—socials, email, passkey—all supported out of the box.
         </p>
-        <Button className="mt-8" onClick={login} size="lg">
-          Continue with Privy
-        </Button>
+        <div className="mt-8 rounded-2xl border border-slate-200/70 bg-white/80 p-6 shadow-sm dark:border-slate-800/60 dark:bg-slate-900/70">
+          <Auth
+            authConfig={authConfig}
+            configOrder={configOrder}
+            onAuthSuccess={handleAuthSuccess}
+            onError={handleAuthError}
+          />
+        </div>
+        {authError && (
+          <p className="mt-4 text-sm text-red-600 dark:text-red-400">{authError}</p>
+        )}
       </section>
     );
   }
-
-  const connectedWallets = (user?.wallets ?? []).filter((wallet) => wallet.address);
 
   return (
     <section className="space-y-8 rounded-3xl border border-slate-200/80 bg-white/70 p-8 text-slate-600 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-300">
@@ -75,31 +186,30 @@ export function AuthFlow() {
             Step two
           </h2>
           <p className="mt-2 text-lg leading-7 text-slate-600 dark:text-slate-200">
-            Welcome back, {user?.email?.address ?? user?.id}. Choose how you want to carry your
-            identity on-chain.
+            Welcome back, {userIdentifier}. Choose how you want to carry your identity on-chain.
           </p>
         </div>
-        <Button variant="ghost" size="sm" onClick={logout} className="justify-start px-3">
+        <Button variant="ghost" size="sm" onClick={handleLogout} className="justify-start px-3">
           <LogOut className="mr-2 h-4 w-4" /> Sign out
         </Button>
       </header>
 
       <div className="grid gap-6 sm:grid-cols-2">
-        <article className="flex h-full flex-col justify-between rounded-2xl border border-slate-200 bg-white/80 p-6 shadow-sm transition hover:border-sky-200 dark:border-slate-800 dark:bg-slate-900/80 dark:hover:border-sky-500/30">
-          <div className="space-y-3">
-            <div className="inline-flex items-center rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-600 dark:bg-sky-500/10 dark:text-sky-300">
-              Existing wallet
+        <article className="rounded-2xl border border-slate-200 bg-white/80 p-6 shadow-sm transition hover:border-sky-200 dark:border-slate-800 dark:bg-slate-900/80 dark:hover:border-sky-500/30">
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <div className="inline-flex items-center rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-600 dark:bg-sky-500/10 dark:text-sky-300">
+                Existing wallet
+              </div>
+              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
+                Bring your own keys
+              </h3>
+              <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
+                Connect a wallet you already control. We&apos;ll ask for a quick signature to prove it&apos;s
+                really you.
+              </p>
             </div>
-            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
-              Bring your own keys
-            </h3>
-            <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
-              Connect a wallet you already control. We’ll ask for a quick signature to prove it’s
-              really you.
-            </p>
-          </div>
-          <div className="mt-6 flex flex-col gap-3">
-            <Button variant="secondary" onClick={handleConnectWallet} className="justify-start">
+            <Button variant="secondary" onClick={handleConnectWallet} className="w-full justify-center">
               <Wallet className="mr-2 h-4 w-4" /> Connect wallet
             </Button>
             {connectedWallets.length > 0 && (
@@ -115,21 +225,21 @@ export function AuthFlow() {
           </div>
         </article>
 
-        <article className="flex h-full flex-col justify-between rounded-2xl border border-slate-200 bg-white/80 p-6 shadow-sm transition hover:border-sky-200 dark:border-slate-800 dark:bg-slate-900/80 dark:hover:border-sky-500/30">
-          <div className="space-y-3">
-            <div className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-200">
-              Blue wallet (mocked)
+        <article className="rounded-2xl border border-slate-200 bg-white/80 p-6 shadow-sm transition hover:border-sky-200 dark:border-slate-800 dark:bg-slate-900/80 dark:hover:border-sky-500/30">
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <div className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-200">
+                Blue wallet (mocked)
+              </div>
+              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
+                Generate a turnkey wallet
+              </h3>
+              <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
+                Try the managed experience. This button fakes the Turnkey flow so we can shape the
+                UI while the integration is in progress.
+              </p>
             </div>
-            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
-              Generate a turnkey wallet
-            </h3>
-            <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
-              Try the managed experience. This button fakes the Turnkey flow so we can shape the
-              UI while the integration is in progress.
-            </p>
-          </div>
-          <div className="mt-6 flex flex-col gap-3">
-            <Button onClick={handleGenerateWallet} disabled={isGenerating} className="justify-start">
+            <Button onClick={handleGenerateWallet} disabled={isGenerating} className="w-full justify-center">
               <Wand2 className="mr-2 h-4 w-4" />
               {isGenerating ? "Creating..." : "Generate mock wallet"}
             </Button>

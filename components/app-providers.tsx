@@ -1,7 +1,5 @@
 "use client";
 
-import { PrivyProvider } from "@privy-io/react-auth";
-
 import { ThemeProvider } from "@/components/theme-provider";
 
 type AppProvidersProps = {
@@ -9,27 +7,14 @@ type AppProvidersProps = {
 };
 
 export function AppProviders({ children }: AppProvidersProps) {
-  const appId = process.env.NEXT_PUBLIC_PRIVY_APP_ID ?? "";
+  const orgId = process.env.NEXT_PUBLIC_TURNKEY_ORGANIZATION_ID;
+  const appId = process.env.NEXT_PUBLIC_TURNKEY_APP_ID;
 
-  if (!appId) {
-    console.warn("Missing NEXT_PUBLIC_PRIVY_APP_ID; Privy login will be disabled.");
+  if (!orgId || !appId) {
+    console.warn(
+      "Missing Turnkey configuration. Set NEXT_PUBLIC_TURNKEY_ORGANIZATION_ID and NEXT_PUBLIC_TURNKEY_APP_ID to enable login."
+    );
   }
 
-  return (
-    <PrivyProvider
-      appId={appId}
-      config={{
-        appearance: {
-          accentColor: "#0284c7",
-          theme: "light",
-        },
-        loginMethods: ["email", "google", "apple", "twitter", "wallet"],
-        embeddedWallets: {
-          createOnLogin: "users-without-wallets",
-        },
-      }}
-    >
-      <ThemeProvider enableSystem={false}>{children}</ThemeProvider>
-    </PrivyProvider>
-  );
+  return <ThemeProvider enableSystem={false}>{children}</ThemeProvider>;
 }

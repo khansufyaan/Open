@@ -15,7 +15,7 @@ Key frontend tech:
 - Next.js App Router + TypeScript
 - Tailwind CSS with ShadCN/ui primitives
 - `next-themes` powered light/dark mode toggle
-- Privy social login wiring for the identity + wallet choice flow
+- Turnkey Auth component powering social/email/passkey login in the identity flow
 - Typography stack mirrors Claude's interface using `Söhne` (falls back to Inter/Helvetica if the licensed font isn't installed)
 
 Further product planning lives in [`docs/tasklist.md`](docs/tasklist.md).
@@ -49,10 +49,10 @@ public/         # Static assets
 
 ## Authentication Flow (Current Mock)
 
-1. **Sign in with Privy** – users authenticate via email/social/wallet using your Privy app ID. If no ID is configured, the CTA is disabled with a console warning.
+1. **Sign in with Turnkey** – users authenticate through the hosted `<Auth>` widget with configurable email, passkey, phone, and social providers.
 2. **Choose wallet path** – after login, the UI presents two cards:
-   - *Bring your own keys* triggers Privy’s `linkWallet()` to connect an existing wallet.
-   - *Generate a blue wallet* currently mocks the Turnkey flow by returning a placeholder address so we can iterate on UX before wiring the real API.
+   - *Bring your own keys* will soon call Turnkey wallet-linking APIs (currently a stubbed action).
+   - *Generate a blue wallet* still mocks the Turnkey create flow while backend wiring is in progress.
 3. **Contact** – the navbar button links to `/contact`, a dedicated mailto form for teams that want to share extra context.
 
 ## Scripts
@@ -68,7 +68,11 @@ Integrations will eventually require the following environment variables (copy `
 
 - `PLAID_CLIENT_ID` / `PLAID_SECRET`
 - `TURNKEY_API_KEY` / `TURNKEY_API_SECRET`
-- `NEXT_PUBLIC_PRIVY_APP_ID`
+- `NEXT_PUBLIC_TURNKEY_APP_ID`
+- `NEXT_PUBLIC_TURNKEY_ORGANIZATION_ID`
+- `NEXT_PUBLIC_TURNKEY_ENABLE_*` feature toggles for auth providers
+- `NEXT_PUBLIC_TURNKEY_SESSION_SECONDS`
+- `NEXT_PUBLIC_TURNKEY_AUTH_ORDER`
 
 ## Contributing
 
