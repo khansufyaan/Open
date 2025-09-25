@@ -63,7 +63,7 @@ public/         # Static assets
 
 ## Environment
 
-Integrations will eventually require the following environment variables (store them in `.env.local`):
+Integrations will eventually require the following environment variables (copy `.env.example` to `.env.local` and fill in the blanks):
 
 - `PLAID_CLIENT_ID` / `PLAID_SECRET`
 - `TURNKEY_API_KEY` / `TURNKEY_API_SECRET`
