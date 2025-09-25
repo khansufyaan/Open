@@ -3,14 +3,7 @@
 import Link from "next/link";
 
 import { ThemeToggle } from "@/components/theme-toggle";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-
-const navItems = [
-  { href: "#vision", label: "Vision" },
-  { href: "#trust", label: "Trust" },
-  { href: "#docs", label: "Docs" },
-];
 
 export function Navbar({ className }: { className?: string }) {
   return (
@@ -22,16 +15,6 @@ export function Navbar({ className }: { className?: string }) {
         >
           Blue Wallet
         </Link>
-        <div className="flex items-center gap-2">
-          {navItems.map((item) => (
-            <Button key={item.href} variant="ghost" size="sm" asChild>
-              <Link href={item.href}>{item.label}</Link>
-            </Button>
-          ))}
-          <Button size="sm" asChild>
-            <Link href="mailto:hello@bluewallet.xyz">Reach out</Link>
-          </Button>
-        </div>
         <ThemeToggle />
       </nav>
     </div>

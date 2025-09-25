@@ -23,7 +23,6 @@ export function ThemeToggle() {
       size="icon"
       aria-label={`Switch to ${isDark ? "light" : "dark"} mode`}
       onClick={() => setTheme(isDark ? "light" : "dark")}
-      className="rounded-full"
     >
       {mounted ? icon : <Moon className="h-5 w-5 opacity-0" />}
     </Button>
