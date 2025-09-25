@@ -1,36 +1,70 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+<div align="center">
+
+# Blue Wallet
+
+Identity-attested crypto wallets for compliant on-chain transactions.
+
+</div>
+
+## Overview
+
+Blue Wallet links self-custodied wallets to bank-verified identities. Individuals authenticate with Plaid, connect or create wallets via Turnkey, and receive a "blue" verification badge that institutions can trust. The production app will surface minimal, brand-forward messaging while enforcing Turnkey wallet policies for inflow/outflow controls.
+
+Key frontend tech:
+
+- Next.js App Router + TypeScript
+- Tailwind CSS with ShadCN/ui primitives
+- `next-themes` powered light/dark mode toggle
+
+Further product planning lives in [`docs/tasklist.md`](docs/tasklist.md).
 
 ## Getting Started
 
-First, run the development server:
+Install dependencies (only needed once):
+
+```bash
+npm install
+```
+
+Run the dev server (managed manually—avoid running `npm run dev` in automated environments as per project conventions):
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The app will be available at [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Project Structure
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```
+app/            # Next.js routes (App Router)
+components/     # Shared UI pieces (navbar, theme toggle, providers)
+docs/           # Product requirements and task lists
+lib/            # Utility helpers (Tailwind class name merge)
+public/         # Static assets
+```
 
-## Learn More
+## Scripts
 
-To learn more about Next.js, take a look at the following resources:
+- `npm run dev` – start the development server with Turbopack
+- `npm run build` – create a production build
+- `npm run start` – run the production server
+- `npm run lint` – lint the codebase with ESLint
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Environment
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Integrations will eventually require the following environment variables (store them in `.env.local`):
 
-## Deploy on Vercel
+- `PLAID_CLIENT_ID` / `PLAID_SECRET`
+- `TURNKEY_API_KEY` / `TURNKEY_API_SECRET`
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Contributing
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+1. Create a new branch for your change.
+2. Implement and test locally.
+3. Ensure `npm run lint` passes.
+4. Open a pull request referencing relevant tasks in `docs/tasklist.md`.
+
+## License
+
+Proprietary. All rights reserved.

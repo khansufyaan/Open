@@ -1,0 +1,23 @@
+"use client";
+
+import { ThemeToggle } from "@/components/theme-toggle";
+import { cn } from "@/lib/utils";
+
+export function Navbar({ className }: { className?: string }) {
+  return (
+    <div className={cn("flex justify-center px-6", className)}>
+      <nav className="mt-6 flex w-full max-w-5xl items-center justify-between rounded-full border border-slate-200/70 bg-white/80 px-6 py-3 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/80">
+        <a href="#top" className="text-sm font-semibold tracking-[0.3em] text-slate-800 dark:text-slate-100">
+          Blue Wallet
+        </a>
+        <a
+          href="mailto:hello@bluewallet.xyz"
+          className="text-sm font-medium text-slate-500 transition hover:text-slate-900 dark:text-slate-300 dark:hover:text-white"
+        >
+          Reach out
+        </a>
+        <ThemeToggle />
+      </nav>
+    </div>
+  );
+}
