@@ -1,3 +1,4 @@
+import { AuthFlow } from "@/components/auth-flow";
 import { Navbar } from "@/components/navbar";
 
 export default function Home() {
@@ -23,6 +24,8 @@ export default function Home() {
               out.
             </p>
           </section>
+
+          <AuthFlow />
 
           <section className="mx-auto w-full max-w-3xl rounded-3xl border border-slate-200/80 bg-white/70 p-8 text-slate-600 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-300">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">
