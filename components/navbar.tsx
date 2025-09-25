@@ -28,13 +28,11 @@ export function Navbar({ className }: { className?: string }) {
               <Link href={item.href}>{item.label}</Link>
             </Button>
           ))}
-        </div>
-        <div className="flex items-center gap-2">
           <Button size="sm" asChild>
             <Link href="mailto:hello@bluewallet.xyz">Reach out</Link>
           </Button>
-          <ThemeToggle />
         </div>
+        <ThemeToggle />
       </nav>
     </div>
   );
