@@ -3,6 +3,7 @@
 import Link from "next/link";
 
 import { ThemeToggle } from "@/components/theme-toggle";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 export function Navbar({ className }: { className?: string }) {
@@ -15,6 +16,9 @@ export function Navbar({ className }: { className?: string }) {
         >
           Blue Wallet
         </Link>
+        <Button variant="secondary" size="sm" asChild>
+          <Link href="/contact">Contact</Link>
+        </Button>
         <ThemeToggle />
       </nav>
     </div>
