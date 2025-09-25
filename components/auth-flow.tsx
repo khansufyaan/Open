@@ -2,15 +2,13 @@
 
 import { type ComponentProps, useEffect, useMemo, useState } from "react";
 
-import { Auth, useTurnkey } from "@turnkey/sdk-react";
+import { useTurnkey } from "@turnkey/sdk-react";
 import type { Session } from "@turnkey/sdk-types";
 import { CheckCircle2, LogOut, Wand2, Wallet } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { TurnkeyLoginForm } from "@/components/turnkey-login-form";
 
-type TurnkeyAuthConfig = ComponentProps<typeof Auth>["authConfig"];
-type TurnkeyAuthOrderItem = "socials" | "email" | "phone" | "passkey" | "wallet";
-type TurnkeyAuthOrder = TurnkeyAuthOrderItem[];
 
 const MOCK_ADDRESSES = [
   "0x8f3a4b2c1d0e9f87654321abcdeffedcba987654",
@@ -27,21 +25,6 @@ function pickMockAddress(prev?: string | null) {
   return options[Math.floor(Math.random() * options.length)];
 }
 
-function parseBooleanFlag(value: string | undefined, defaultValue: boolean) {
-  if (value === undefined) return defaultValue;
-  const normalized = value.trim().toLowerCase();
-
-  if (normalized === "true") return true;
-  if (normalized === "false") return false;
-
-  return defaultValue;
-}
-
-function parseSessionLength(value: string | undefined, fallback: number) {
-  if (!value) return fallback;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-}
 
 export function AuthFlow() {
   if (!TURNKEY_READY) {
@@ -68,6 +51,7 @@ function TurnkeyAuthContent() {
   const [mockWalletAddress, setMockWalletAddress] = useState<string | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
   const [session, setSession] = useState<Session | null>(null);
+  const [showAuthModal, setShowAuthModal] = useState(false);
 
   useEffect(() => {
     if (!turnkey) {
@@ -95,61 +79,6 @@ function TurnkeyAuthContent() {
     };
   }, [turnkey]);
 
-  const authConfig = useMemo<TurnkeyAuthConfig>(() => {
-    const sessionSeconds = parseSessionLength(
-      process.env.NEXT_PUBLIC_TURNKEY_SESSION_SECONDS,
-      3600
-    );
-
-    return {
-      showTitle: false,
-      emailEnabled: parseBooleanFlag(process.env.NEXT_PUBLIC_TURNKEY_ENABLE_EMAIL, true),
-      passkeyEnabled: parseBooleanFlag(process.env.NEXT_PUBLIC_TURNKEY_ENABLE_PASSKEY, true),
-      phoneEnabled: parseBooleanFlag(process.env.NEXT_PUBLIC_TURNKEY_ENABLE_PHONE, false),
-      appleEnabled: parseBooleanFlag(process.env.NEXT_PUBLIC_TURNKEY_ENABLE_APPLE, false),
-      facebookEnabled: parseBooleanFlag(process.env.NEXT_PUBLIC_TURNKEY_ENABLE_FACEBOOK, false),
-      googleEnabled: parseBooleanFlag(process.env.NEXT_PUBLIC_TURNKEY_ENABLE_GOOGLE, true),
-      walletEnabled: parseBooleanFlag(process.env.NEXT_PUBLIC_TURNKEY_ENABLE_WALLET, false),
-      socialLinking: parseBooleanFlag(process.env.NEXT_PUBLIC_TURNKEY_ENABLE_SOCIAL_LINKING, true),
-      sessionLengthSeconds: sessionSeconds,
-      googleClientId: process.env.NEXT_PUBLIC_TURNKEY_GOOGLE_CLIENT_ID || undefined,
-      appleClientId: process.env.NEXT_PUBLIC_TURNKEY_APPLE_CLIENT_ID || undefined,
-      facebookClientId: process.env.NEXT_PUBLIC_TURNKEY_FACEBOOK_CLIENT_ID || undefined,
-      openOAuthInPage: parseBooleanFlag(process.env.NEXT_PUBLIC_TURNKEY_OAUTH_IN_PAGE, false),
-    } satisfies TurnkeyAuthConfig;
-  }, []);
-
-  const configOrder = useMemo<TurnkeyAuthOrder>(() => {
-    const defaultOrder: TurnkeyAuthOrder = ["socials", "email", "phone", "passkey"];
-
-    if (authConfig.walletEnabled && !defaultOrder.includes("wallet")) {
-      defaultOrder.push("wallet");
-    }
-
-    const rawOverride = process.env.NEXT_PUBLIC_TURNKEY_AUTH_ORDER;
-    if (!rawOverride) {
-      return defaultOrder;
-    }
-
-    const allowedItems = new Set<TurnkeyAuthOrderItem>([
-      "socials",
-      "email",
-      "phone",
-      "passkey",
-      "wallet",
-    ]);
-
-    const override: TurnkeyAuthOrder = [];
-
-    for (const entry of rawOverride.split(",")) {
-      const normalized = entry.trim().toLowerCase() as TurnkeyAuthOrderItem;
-      if (allowedItems.has(normalized)) {
-        override.push(normalized);
-      }
-    }
-
-    return override.length > 0 ? override : defaultOrder;
-  }, [authConfig.walletEnabled]);
 
   const handleAuthSuccess = async () => {
     if (!turnkey) {
@@ -208,26 +137,35 @@ function TurnkeyAuthContent() {
 
   if (!session) {
     return (
-      <section className="rounded-3xl border border-slate-200/80 bg-white/70 p-8 text-slate-600 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-300">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-          Step one
-        </h2>
-        <p className="mt-4 max-w-xl text-lg leading-7">
-          Sign in with Turnkey to start linking your identity to a wallet. Pick the login option
-          that feels right—socials, email, passkey—all supported out of the box.
-        </p>
-        <div className="mt-8 rounded-2xl border border-slate-200/70 bg-white/80 p-6 shadow-sm dark:border-slate-800/60 dark:bg-slate-900/70">
-          <Auth
-            authConfig={authConfig}
-            configOrder={configOrder}
-            onAuthSuccess={handleAuthSuccess}
-            onError={handleAuthError}
-          />
-        </div>
-        {authError && (
-          <p className="mt-4 text-sm text-red-600 dark:text-red-400">{authError}</p>
-        )}
-      </section>
+      <>
+        <section className="rounded-3xl border border-slate-200/80 bg-white/70 p-8 text-slate-600 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-300">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+            Step one
+          </h2>
+          <p className="mt-4 max-w-xl text-lg leading-7">
+            Sign in with Turnkey to start linking your identity to a wallet. Pick the login option
+            that feels right—socials, email, passkey—all supported out of the box.
+          </p>
+          <div className="mt-8">
+            <Button
+              onClick={() => setShowAuthModal(true)}
+              className="w-full max-w-sm mx-auto flex h-12 text-base"
+            >
+              Sign In to Continue
+            </Button>
+          </div>
+          {authError && (
+            <p className="mt-4 text-sm text-red-600 dark:text-red-400">{authError}</p>
+          )}
+        </section>
+
+        <TurnkeyLoginForm
+          open={showAuthModal}
+          onOpenChange={setShowAuthModal}
+          onAuthSuccess={handleAuthSuccess}
+          onAuthError={handleAuthError}
+        />
+      </>
     );
   }
 
