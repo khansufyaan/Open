@@ -1,11 +1,16 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { type ComponentProps, useEffect, useMemo, useState } from "react";
 
-import { Auth, type AuthConfig } from "@turnkey/sdk-react";
+import { Auth, useTurnkey } from "@turnkey/sdk-react";
+import type { Session } from "@turnkey/sdk-types";
 import { CheckCircle2, LogOut, Wand2, Wallet } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+
+type TurnkeyAuthConfig = ComponentProps<typeof Auth>["authConfig"];
+type TurnkeyAuthOrderItem = "socials" | "email" | "phone" | "passkey" | "wallet";
+type TurnkeyAuthOrder = TurnkeyAuthOrderItem[];
 
 const MOCK_ADDRESSES = [
   "0x8f3a4b2c1d0e9f87654321abcdeffedcba987654",
@@ -13,134 +18,182 @@ const MOCK_ADDRESSES = [
   "0x7a1bc23d4e5f67890abcdef1234567890fedcba",
 ];
 
+const TURNKEY_READY = Boolean(
+  process.env.NEXT_PUBLIC_TURNKEY_API_BASE_URL && process.env.NEXT_PUBLIC_TURNKEY_ORGANIZATION_ID
+);
+
 function pickMockAddress(prev?: string | null) {
   const options = prev ? MOCK_ADDRESSES.filter((addr) => addr !== prev) : MOCK_ADDRESSES;
   return options[Math.floor(Math.random() * options.length)];
 }
 
+function parseBooleanFlag(value: string | undefined, defaultValue: boolean) {
+  if (value === undefined) return defaultValue;
+  const normalized = value.trim().toLowerCase();
+
+  if (normalized === "true") return true;
+  if (normalized === "false") return false;
+
+  return defaultValue;
+}
+
+function parseSessionLength(value: string | undefined, fallback: number) {
+  if (!value) return fallback;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 export function AuthFlow() {
+  if (!TURNKEY_READY) {
+    return (
+      <section className="rounded-3xl border border-slate-200/80 bg-white/70 p-8 text-slate-600 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-300">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+          Turnkey setup required
+        </h2>
+        <p className="mt-4 max-w-xl text-lg leading-7">
+          Set `NEXT_PUBLIC_TURNKEY_API_BASE_URL` and `NEXT_PUBLIC_TURNKEY_ORGANIZATION_ID` in your
+          `.env.local` file to enable the Turnkey login experience.
+        </p>
+      </section>
+    );
+  }
+
+  return <TurnkeyAuthContent />;
+}
+
+function TurnkeyAuthContent() {
+  const turnkeyContext = useTurnkey();
+  const turnkey = turnkeyContext.turnkey;
   const [isGenerating, setIsGenerating] = useState(false);
   const [mockWalletAddress, setMockWalletAddress] = useState<string | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
-  const [session, setSession] = useState<unknown>(null);
+  const [session, setSession] = useState<Session | null>(null);
 
-  const authConfig = useMemo<AuthConfig>(() => {
-    const enableEmail = process.env.NEXT_PUBLIC_TURNKEY_ENABLE_EMAIL?.toLowerCase() !== "false";
-    const enablePasskey = process.env.NEXT_PUBLIC_TURNKEY_ENABLE_PASSKEY?.toLowerCase() !== "false";
-    const enablePhone = process.env.NEXT_PUBLIC_TURNKEY_ENABLE_PHONE?.toLowerCase() === "true";
-    const enableGoogle = process.env.NEXT_PUBLIC_TURNKEY_ENABLE_GOOGLE?.toLowerCase() !== "false";
-    const enableApple = process.env.NEXT_PUBLIC_TURNKEY_ENABLE_APPLE?.toLowerCase() === "true";
-    const enableFacebook = process.env.NEXT_PUBLIC_TURNKEY_ENABLE_FACEBOOK?.toLowerCase() === "true";
-    const sessionSeconds = Number(process.env.NEXT_PUBLIC_TURNKEY_SESSION_SECONDS ?? "3600");
+  useEffect(() => {
+    if (!turnkey) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadExistingSession = async () => {
+      try {
+        const activeSession = await turnkey.getSession();
+
+        if (!cancelled && activeSession) {
+          setSession(activeSession);
+        }
+      } catch (error) {
+        console.debug("Turnkey session lookup failed", error);
+      }
+    };
+
+    void loadExistingSession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [turnkey]);
+
+  const authConfig = useMemo<TurnkeyAuthConfig>(() => {
+    const sessionSeconds = parseSessionLength(
+      process.env.NEXT_PUBLIC_TURNKEY_SESSION_SECONDS,
+      3600
+    );
 
     return {
-      emailEnabled: enableEmail,
-      passkeyEnabled: enablePasskey,
-      phoneEnabled: enablePhone,
-      googleEnabled: enableGoogle,
-      appleEnabled: enableApple,
-      facebookEnabled: enableFacebook,
-      socialLinking: true,
-      sessionLengthSeconds: Number.isFinite(sessionSeconds) ? sessionSeconds : 3600,
-    } satisfies AuthConfig;
+      showTitle: false,
+      emailEnabled: parseBooleanFlag(process.env.NEXT_PUBLIC_TURNKEY_ENABLE_EMAIL, true),
+      passkeyEnabled: parseBooleanFlag(process.env.NEXT_PUBLIC_TURNKEY_ENABLE_PASSKEY, true),
+      phoneEnabled: parseBooleanFlag(process.env.NEXT_PUBLIC_TURNKEY_ENABLE_PHONE, false),
+      appleEnabled: parseBooleanFlag(process.env.NEXT_PUBLIC_TURNKEY_ENABLE_APPLE, false),
+      facebookEnabled: parseBooleanFlag(process.env.NEXT_PUBLIC_TURNKEY_ENABLE_FACEBOOK, false),
+      googleEnabled: parseBooleanFlag(process.env.NEXT_PUBLIC_TURNKEY_ENABLE_GOOGLE, true),
+      walletEnabled: parseBooleanFlag(process.env.NEXT_PUBLIC_TURNKEY_ENABLE_WALLET, false),
+      socialLinking: parseBooleanFlag(process.env.NEXT_PUBLIC_TURNKEY_ENABLE_SOCIAL_LINKING, true),
+      sessionLengthSeconds: sessionSeconds,
+      googleClientId: process.env.NEXT_PUBLIC_TURNKEY_GOOGLE_CLIENT_ID || undefined,
+      appleClientId: process.env.NEXT_PUBLIC_TURNKEY_APPLE_CLIENT_ID || undefined,
+      facebookClientId: process.env.NEXT_PUBLIC_TURNKEY_FACEBOOK_CLIENT_ID || undefined,
+      openOAuthInPage: parseBooleanFlag(process.env.NEXT_PUBLIC_TURNKEY_OAUTH_IN_PAGE, false),
+    } satisfies TurnkeyAuthConfig;
   }, []);
 
-  const configOrder = useMemo(() => {
-    const defaultOrder: Array<"socials" | "email" | "phone" | "passkey"> = [
+  const configOrder = useMemo<TurnkeyAuthOrder>(() => {
+    const defaultOrder: TurnkeyAuthOrder = ["socials", "email", "phone", "passkey"];
+
+    if (authConfig.walletEnabled && !defaultOrder.includes("wallet")) {
+      defaultOrder.push("wallet");
+    }
+
+    const rawOverride = process.env.NEXT_PUBLIC_TURNKEY_AUTH_ORDER;
+    if (!rawOverride) {
+      return defaultOrder;
+    }
+
+    const allowedItems = new Set<TurnkeyAuthOrderItem>([
       "socials",
       "email",
       "phone",
       "passkey",
-    ];
+      "wallet",
+    ]);
 
-    const override = process.env.NEXT_PUBLIC_TURNKEY_AUTH_ORDER?.split(",").map((item) => item.trim()) ?? [];
-    const validOverride = override.filter((item): item is typeof defaultOrder[number] =>
-      ["socials", "email", "phone", "passkey"].includes(item)
-    );
+    const override: TurnkeyAuthOrder = [];
 
-    return validOverride.length > 0 ? validOverride : defaultOrder;
-  }, []);
-
-  const handleAuthSuccess = (result: unknown) => {
-    setSession(result);
-    setAuthError(null);
-  };
-
-  const handleAuthError = (error: unknown) => {
-    const message =
-      error instanceof Error
-        ? error.message
-        : typeof error === "string"
-          ? error
-          : "Something went wrong while signing in.";
-    setAuthError(message);
-  };
-
-  const handleLogout = () => {
-    setSession(null);
-    setMockWalletAddress(null);
-  };
-
-  const connectedWallets: Array<{ address: string }> = useMemo(() => {
-    if (!session || typeof session !== "object") {
-      return [];
-    }
-
-    const maybeUser = (session as { user?: unknown }).user;
-    const maybeWalletList =
-      (maybeUser as { wallets?: Array<{ address?: string }> } | undefined)?.wallets ??
-      (session as { wallets?: Array<{ address?: string }> }).wallets;
-
-    if (!Array.isArray(maybeWalletList)) {
-      return [];
-    }
-
-    return maybeWalletList.filter((wallet): wallet is { address: string } =>
-      Boolean(wallet && typeof wallet.address === "string" && wallet.address.length > 0)
-    );
-  }, [session]);
-
-  const userIdentifier = useMemo(() => {
-    if (!session || typeof session !== "object") {
-      return "friend";
-    }
-
-    const maybeUser = (session as { user?: Record<string, unknown> }).user;
-    if (!maybeUser || typeof maybeUser !== "object") {
-      return "friend";
-    }
-
-    const emailFromRoot = (maybeUser as { email?: string }).email;
-    if (emailFromRoot) return emailFromRoot;
-
-    const emailAddress = (maybeUser as { emailAddress?: string }).emailAddress;
-    if (emailAddress) return emailAddress;
-
-    const emails = (maybeUser as { emails?: unknown }).emails;
-    if (Array.isArray(emails)) {
-      const flattened = emails
-        .map((entry) => {
-          if (typeof entry === "string") return entry;
-          if (entry && typeof entry === "object") {
-            return (entry as { email?: string; address?: string }).email ?? (entry as { email?: string; address?: string }).address;
-          }
-          return null;
-        })
-        .filter((value): value is string => Boolean(value));
-      if (flattened.length > 0) {
-        return flattened[0];
+    for (const entry of rawOverride.split(",")) {
+      const normalized = entry.trim().toLowerCase() as TurnkeyAuthOrderItem;
+      if (allowedItems.has(normalized)) {
+        override.push(normalized);
       }
     }
 
-    const username = (maybeUser as { username?: string }).username;
-    if (username) return username;
+    return override.length > 0 ? override : defaultOrder;
+  }, [authConfig.walletEnabled]);
 
-    const userId = (maybeUser as { userId?: string }).userId;
-    if (userId) return userId;
+  const handleAuthSuccess = async () => {
+    if (!turnkey) {
+      setAuthError("Turnkey client is not ready. Check your configuration and try again.");
+      return;
+    }
 
-    const id = (session as { userId?: string; id?: string }).userId ?? (session as { id?: string }).id;
-    return id ?? "friend";
-  }, [session]);
+    try {
+      const activeSession = await turnkey.getSession();
+
+      if (!activeSession) {
+        setAuthError("Authentication succeeded, but no active session was returned.");
+        setSession(null);
+        return;
+      }
+
+      setSession(activeSession);
+      setAuthError(null);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Unable to fetch the active Turnkey session.";
+      setAuthError(message);
+    }
+  };
+
+  const handleAuthError = (message: string) => {
+    setAuthError(message || "Something went wrong while signing in.");
+  };
+
+  const handleLogout = async () => {
+    try {
+      await turnkey?.logout();
+    } catch (error) {
+      console.error("Turnkey logout failed", error);
+    } finally {
+      setSession(null);
+      setMockWalletAddress(null);
+      setAuthError(null);
+    }
+  };
+
+  const connectedWallets: Array<{ address: string }> = [];
+
+  const userIdentifier = useMemo(() => session?.userId ?? "friend", [session]);
 
   const handleGenerateWallet = async () => {
     setIsGenerating(true);

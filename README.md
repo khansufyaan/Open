@@ -68,11 +68,11 @@ Integrations will eventually require the following environment variables (copy `
 
 - `PLAID_CLIENT_ID` / `PLAID_SECRET`
 - `TURNKEY_API_KEY` / `TURNKEY_API_SECRET`
-- `NEXT_PUBLIC_TURNKEY_APP_ID`
+- `NEXT_PUBLIC_TURNKEY_API_BASE_URL`
 - `NEXT_PUBLIC_TURNKEY_ORGANIZATION_ID`
-- `NEXT_PUBLIC_TURNKEY_ENABLE_*` feature toggles for auth providers
-- `NEXT_PUBLIC_TURNKEY_SESSION_SECONDS`
-- `NEXT_PUBLIC_TURNKEY_AUTH_ORDER`
+- Optional Turnkey tuning: `NEXT_PUBLIC_TURNKEY_SERVER_SIGN_URL`, `NEXT_PUBLIC_TURNKEY_IFRAME_URL`, `NEXT_PUBLIC_TURNKEY_RP_ID`
+- Auth provider toggles (`NEXT_PUBLIC_TURNKEY_ENABLE_*`) plus OAuth client IDs if you plan to enable Google/Apple/Facebook flows
+- Session behaviour: `NEXT_PUBLIC_TURNKEY_SESSION_SECONDS`, `NEXT_PUBLIC_TURNKEY_AUTH_ORDER`, `NEXT_PUBLIC_TURNKEY_OAUTH_IN_PAGE`
 
 ## Contributing
 
