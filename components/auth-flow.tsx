@@ -1,30 +1,34 @@
 "use client";
 
-import { type ComponentProps, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useTurnkey } from "@turnkey/sdk-react";
 import type { Session } from "@turnkey/sdk-types";
-import { CheckCircle2, LogOut, Wand2, Wallet } from "lucide-react";
+import { CheckCircle2, LogOut, Wand2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { TurnkeyLoginForm } from "@/components/turnkey-login-form";
-
-
-const MOCK_ADDRESSES = [
-  "0x8f3a4b2c1d0e9f87654321abcdeffedcba987654",
-  "0x4c9b1d2e3f4567890abcdeffedcba9876543210f",
-  "0x7a1bc23d4e5f67890abcdef1234567890fedcba",
-];
-
 const TURNKEY_READY = Boolean(
   process.env.NEXT_PUBLIC_TURNKEY_API_BASE_URL && process.env.NEXT_PUBLIC_TURNKEY_ORGANIZATION_ID
 );
 
-function pickMockAddress(prev?: string | null) {
-  const options = prev ? MOCK_ADDRESSES.filter((addr) => addr !== prev) : MOCK_ADDRESSES;
-  return options[Math.floor(Math.random() * options.length)];
-}
+type WalletAccount = {
+  walletAccountId: string;
+  address: string;
+  addressFormat: string;
+  curve: string;
+  path: string;
+};
 
+type WalletSummary = {
+  walletId: string;
+  walletName: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+  exported: boolean;
+  imported: boolean;
+  accounts: WalletAccount[];
+};
 
 export function AuthFlow() {
   if (!TURNKEY_READY) {
@@ -47,11 +51,44 @@ export function AuthFlow() {
 function TurnkeyAuthContent() {
   const turnkeyContext = useTurnkey();
   const turnkey = turnkeyContext.turnkey;
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [mockWalletAddress, setMockWalletAddress] = useState<string | null>(null);
+  const [wallets, setWallets] = useState<WalletSummary[]>([]);
+  const [isWalletsLoading, setIsWalletsLoading] = useState(false);
+  const [isCreatingWallet, setIsCreatingWallet] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const stepsRef = useRef<HTMLDivElement | null>(null);
+
+  const handleScrollToSteps = useCallback(() => {
+    stepsRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, []);
+
+  const loadWallets = useCallback(async () => {
+    setIsWalletsLoading(true);
+    try {
+      const response = await fetch("/api/turnkey/wallets", { method: "GET" });
+      let payload: { wallets?: WalletSummary[]; message?: string } | null = null;
+
+      try {
+        payload = (await response.json()) as typeof payload;
+      } catch (_error) {
+        payload = null;
+      }
+
+      if (!response.ok) {
+        throw new Error(payload?.message ?? "Unable to load Turnkey wallets.");
+      }
+
+      setWallets(payload?.wallets ?? []);
+      setAuthError(null);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Unable to load Turnkey wallets.";
+      setAuthError(message);
+    } finally {
+      setIsWalletsLoading(false);
+    }
+  }, [setAuthError]);
 
   useEffect(() => {
     if (!turnkey) {
@@ -115,48 +152,117 @@ function TurnkeyAuthContent() {
       console.error("Turnkey logout failed", error);
     } finally {
       setSession(null);
-      setMockWalletAddress(null);
+      setWallets([]);
       setAuthError(null);
     }
   };
 
-  const connectedWallets: Array<{ address: string }> = [];
-
   const userIdentifier = useMemo(() => session?.userId ?? "friend", [session]);
 
-  const handleGenerateWallet = async () => {
-    setIsGenerating(true);
-    await new Promise((resolve) => setTimeout(resolve, 900));
-    setMockWalletAddress((current) => pickMockAddress(current));
-    setIsGenerating(false);
+  const handleCreateWallet = async () => {
+    setIsCreatingWallet(true);
+    try {
+      const response = await fetch("/api/turnkey/wallets", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ walletName: `Wallet ${wallets.length + 1}` }),
+      });
+
+      let payload: { wallets?: WalletSummary[]; message?: string } | null = null;
+
+      try {
+        payload = (await response.json()) as typeof payload;
+      } catch (_error) {
+        payload = null;
+      }
+
+      if (!response.ok) {
+        throw new Error(payload?.message ?? "Unable to create Turnkey wallet.");
+      }
+
+      setWallets(payload?.wallets ?? []);
+      setAuthError(null);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Unable to create Turnkey wallet.";
+      setAuthError(message);
+    } finally {
+      setIsCreatingWallet(false);
+    }
   };
 
-  const handleConnectWallet = () => {
-    console.warn("Turnkey wallet linking is not yet wired up in this prototype.");
-  };
+  useEffect(() => {
+    if (!session) {
+      setWallets([]);
+      return;
+    }
+
+    void loadWallets();
+  }, [session, loadWallets]);
 
   if (!session) {
     return (
       <>
-        <section className="rounded-3xl border border-slate-200/80 bg-white/70 p-8 text-slate-600 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-300">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-            Step one
-          </h2>
-          <p className="mt-4 max-w-xl text-lg leading-7">
-            Sign in with Turnkey to start linking your identity to a wallet. Pick the login option
-            that feels right—socials, email, passkey—all supported out of the box.
-          </p>
-          <div className="mt-8">
+        <section className="flex min-h-[calc(100vh-8rem)] items-center justify-center">
+          <div className="mx-auto max-w-2xl space-y-8 text-center">
+            <div className="space-y-4">
+              <h1 className="text-4xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-5xl">
+                Blue Wallet
+              </h1>
+              <p className="text-lg leading-relaxed text-slate-600 dark:text-slate-400">
+                Identity-attested wallets for a compliant crypto world. Verify your identity, create a managed wallet, and stay compliant—all in one streamlined flow.
+              </p>
+            </div>
             <Button
-              onClick={() => setShowAuthModal(true)}
-              className="w-full max-w-sm mx-auto flex h-12 text-base"
+              size="lg"
+              onClick={handleScrollToSteps}
+              className="text-base"
             >
-              Sign In to Continue
+              Set up or Login
             </Button>
+            {authError && (
+              <p className="text-sm text-red-600 dark:text-red-400">{authError}</p>
+            )}
           </div>
-          {authError && (
-            <p className="mt-4 text-sm text-red-600 dark:text-red-400">{authError}</p>
-          )}
+        </section>
+
+        <section
+          ref={stepsRef}
+          className="space-y-6 rounded-3xl border border-slate-200/80 bg-white/70 p-10 text-slate-700 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-200"
+        >
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+            How it works
+          </h2>
+          <div className="space-y-6">
+            <article className="rounded-2xl border border-slate-200 bg-white/80 p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
+              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Step 1 · Verify identity</h3>
+              <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
+                Sign in with email OTP and let Turnkey establish a short-lived session for secure actions.
+              </p>
+              <Button className="mt-4 w-full sm:w-auto" onClick={() => setShowAuthModal(true)}>
+                Sign in with Turnkey
+              </Button>
+            </article>
+
+            <article className="rounded-2xl border border-slate-200 bg-white/80 p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
+              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Step 2 · Create the wallet</h3>
+              <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
+                Use the one-click action to provision a managed wallet. Keys stay inside Turnkey&apos;s MPC.
+              </p>
+              <Button className="mt-4 w-full sm:w-auto" disabled>
+                Sign in to create wallet
+              </Button>
+            </article>
+
+            <article className="rounded-2xl border border-slate-200 bg-white/80 p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
+              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Step 3 · Stay compliant</h3>
+              <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
+                Operate with policy controls, audit trails, and identity-linked addresses—all surfaced below.
+              </p>
+            </article>
+          </div>
         </section>
 
         <TurnkeyLoginForm
@@ -170,79 +276,111 @@ function TurnkeyAuthContent() {
   }
 
   return (
-    <section className="space-y-8 rounded-3xl border border-slate-200/80 bg-white/70 p-8 text-slate-600 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-300">
-      <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-            Step two
-          </h2>
-          <p className="mt-2 text-lg leading-7 text-slate-600 dark:text-slate-200">
-            Welcome back, {userIdentifier}. Choose how you want to carry your identity on-chain.
+    <>
+      <section className="space-y-5 rounded-3xl border border-slate-200/80 bg-white/70 p-10 text-slate-700 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-200">
+        <div className="space-y-3">
+          <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
+            Welcome back, {userIdentifier}
+          </h1>
+          <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
+            You&apos;re signed in with Turnkey. Everything you need next lives below—create wallets, copy
+            addresses, and revisit the blueprint when you need a refresher.
           </p>
         </div>
-        <Button variant="ghost" size="sm" onClick={handleLogout} className="justify-start px-3">
-          <LogOut className="mr-2 h-4 w-4" /> Sign out
-        </Button>
-      </header>
+        <div className="flex flex-col gap-3">
+          <Button size="lg" onClick={handleScrollToSteps}>
+            Jump to steps
+          </Button>
+          <Button
+            variant="outline"
+            size="lg"
+            onClick={handleCreateWallet}
+            disabled={isCreatingWallet || isWalletsLoading}
+          >
+            {isCreatingWallet ? "Creating wallet..." : "Create wallet"}
+          </Button>
+          <Button variant="ghost" size="lg" onClick={handleLogout}>
+            <LogOut className="mr-2 h-4 w-4" /> Sign out
+          </Button>
+        </div>
+        {authError && (
+          <p className="text-sm text-red-600 dark:text-red-400">{authError}</p>
+        )}
+      </section>
 
-      <div className="grid gap-6 sm:grid-cols-2">
-        <article className="rounded-2xl border border-slate-200 bg-white/80 p-6 shadow-sm transition hover:border-sky-200 dark:border-slate-800 dark:bg-slate-900/80 dark:hover:border-sky-500/30">
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <div className="inline-flex items-center rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-600 dark:bg-sky-500/10 dark:text-sky-300">
-                Existing wallet
-              </div>
-              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
-                Bring your own keys
-              </h3>
-              <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
-                Connect a wallet you already control. We&apos;ll ask for a quick signature to prove it&apos;s
-                really you.
-              </p>
-            </div>
-            <Button variant="secondary" onClick={handleConnectWallet} className="w-full justify-center">
-              <Wallet className="mr-2 h-4 w-4" /> Connect wallet
-            </Button>
-            {connectedWallets.length > 0 && (
-              <ul className="space-y-2 text-xs text-slate-500 dark:text-slate-400">
-                {connectedWallets.map((wallet) => (
-                  <li key={wallet.address} className="flex items-center gap-2">
-                    <CheckCircle2 className="h-4 w-4 text-sky-500" />
-                    <span className="truncate">{wallet.address}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </article>
+      <section
+        ref={stepsRef}
+        className="space-y-6 rounded-3xl border border-slate-200/80 bg-white/70 p-10 text-slate-700 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-200"
+      >
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+          Blueprint
+        </h2>
+        <div className="space-y-6">
+          <article className="rounded-2xl border border-slate-200 bg-white/80 p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Step 1 · Verify identity</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
+              Sign in with Turnkey via email OTP. We store the session locally so subsequent actions happen
+              without friction.
+            </p>
+          </article>
 
-        <article className="rounded-2xl border border-slate-200 bg-white/80 p-6 shadow-sm transition hover:border-sky-200 dark:border-slate-800 dark:bg-slate-900/80 dark:hover:border-sky-500/30">
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <div className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-200">
-                Blue wallet (mocked)
-              </div>
-              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
-                Generate a turnkey wallet
-              </h3>
-              <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
-                Try the managed experience. This button fakes the Turnkey flow so we can shape the
-                UI while the integration is in progress.
-              </p>
-            </div>
-            <Button onClick={handleGenerateWallet} disabled={isGenerating} className="w-full justify-center">
-              <Wand2 className="mr-2 h-4 w-4" />
-              {isGenerating ? "Creating..." : "Generate mock wallet"}
+          <article className="rounded-2xl border border-slate-200 bg-white/80 p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Step 2 · Create the wallet</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
+              Click once to spin up a managed wallet. Turnkey generates key material, applies policies, and
+              never exposes the private key to the browser.
+            </p>
+            <Button
+              className="mt-4 w-full sm:w-auto"
+              onClick={handleCreateWallet}
+              disabled={isCreatingWallet || isWalletsLoading}
+            >
+              {isCreatingWallet ? "Creating wallet..." : "Create wallet"}
             </Button>
-            {mockWalletAddress && (
-              <div className="flex items-center gap-2 rounded-lg border border-sky-100 bg-sky-50 px-3 py-2 text-xs text-sky-700 dark:border-sky-500/40 dark:bg-sky-500/10 dark:text-sky-200">
-                <CheckCircle2 className="h-4 w-4" />
-                <span className="truncate">{mockWalletAddress}</span>
-              </div>
-            )}
-          </div>
-        </article>
-      </div>
-    </section>
+          </article>
+
+          <article className="rounded-2xl border border-slate-200 bg-white/80 p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Step 3 · Review addresses</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
+              See every wallet you&apos;ve provisioned and copy addresses for deposits or integrations—all in the
+              same vertical flow.
+            </p>
+            <div className="mt-4 space-y-2">
+              {isWalletsLoading ? (
+                <p className="text-xs text-slate-500 dark:text-slate-400">Loading wallets…</p>
+              ) : wallets.length === 0 ? (
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  No Turnkey wallets yet. Create one above to get started.
+                </p>
+              ) : (
+                <ul className="space-y-3 text-xs text-slate-600 dark:text-slate-300">
+                  {wallets.map((wallet) => (
+                    <li
+                      key={wallet.walletId}
+                      className="rounded-lg border border-slate-200/70 p-3 dark:border-slate-700/50"
+                    >
+                      <p className="font-medium text-slate-700 dark:text-slate-100">
+                        {wallet.walletName || wallet.walletId}
+                      </p>
+                      <p className="mt-1 text-[11px] uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                        {wallet.walletId}
+                      </p>
+                      <ul className="mt-2 space-y-1">
+                        {wallet.accounts.map((account) => (
+                          <li key={account.walletAccountId} className="flex items-center gap-2">
+                            <CheckCircle2 className="h-3.5 w-3.5 text-sky-500" />
+                            <span className="truncate">{account.address}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </article>
+        </div>
+      </section>
+    </>
   );
 }

@@ -58,6 +58,7 @@ Blue Wallet is a KYC (Know Your Customer) wallet verification service that links
    - Create new wallet option (Turnkey integration)
    - Display connected wallets with addresses
    - Verification status badges
+   - Note: UI placeholder for "Connect wallet" removed; revisit once external wallet signature flow is planned.
 
 5. **API Key Management (For Businesses)**
    - Generate API keys
