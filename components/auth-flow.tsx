@@ -99,6 +99,22 @@ function TurnkeyAuthContent() {
     stepsRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, []);
 
+  // Initialize DynamoDB table on component mount
+  useEffect(() => {
+    const initTable = async () => {
+      try {
+        await fetch("/api/db/init-table", {
+          method: "POST",
+        });
+      } catch (error) {
+        console.error("Failed to initialize table:", error);
+        // Don't block the app if table initialization fails
+      }
+    };
+
+    initTable();
+  }, []);
+
   const loadWallets = useCallback(async () => {
     setIsWalletsLoading(true);
     try {
@@ -153,7 +169,7 @@ function TurnkeyAuthContent() {
   }, [turnkey]);
 
 
-  const handleAuthSuccess = async () => {
+  const handleAuthSuccess = async (email: string) => {
     if (!turnkey) {
       setAuthError("Turnkey client is not ready. Check your configuration and try again.");
       return;
@@ -170,6 +186,24 @@ function TurnkeyAuthContent() {
 
       setSession(activeSession);
       setAuthError(null);
+
+      // Store user data in DynamoDB
+      try {
+        await fetch("/api/db/user", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            userId: activeSession.userId,
+            email: email,
+            turnkeySignInCompleted: true,
+          }),
+        });
+      } catch (dbError) {
+        console.error("Failed to store user data:", dbError);
+        // Don't block the user flow if DB save fails
+      }
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Unable to fetch the active Turnkey session.";
@@ -239,8 +273,33 @@ function TurnkeyAuthContent() {
         throw new Error(getPayloadMessage(payload) ?? "Unable to create Turnkey wallet.");
       }
 
-      setWallets(getPayloadWallets(payload));
+      const walletList = getPayloadWallets(payload);
+      setWallets(walletList);
       setAuthError(null);
+
+      // Store wallet data in DynamoDB
+      if (session && walletList.length > 0) {
+        const wallet = walletList[0];
+        const walletAddress = wallet.accounts[0]?.address;
+
+        try {
+          await fetch("/api/db/user", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              userId: session.userId,
+              walletId: wallet.walletId,
+              walletAddress: walletAddress,
+              walletCreated: true,
+            }),
+          });
+        } catch (dbError) {
+          console.error("Failed to store wallet data:", dbError);
+          // Don't block the user flow if DB save fails
+        }
+      }
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Unable to create Turnkey wallet.";

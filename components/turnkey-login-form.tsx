@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 interface TurnkeyLoginFormProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onAuthSuccess: () => void;
+  onAuthSuccess: (email: string) => void;
   onAuthError: (error: string) => void;
 }
 
@@ -118,7 +118,7 @@ export function TurnkeyLoginForm({
 
       await indexedDbClient.loginWithSession(sessionToken);
 
-      onAuthSuccess();
+      onAuthSuccess(email.trim());
       onOpenChange(false);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Verification failed";
