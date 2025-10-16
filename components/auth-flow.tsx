@@ -8,6 +8,7 @@ import { CheckCircle2, LogOut } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { TurnkeyLoginForm } from "@/components/turnkey-login-form";
+import { PlaidConnectButton } from "@/components/plaid-connect-button";
 const TURNKEY_READY = Boolean(
   process.env.NEXT_PUBLIC_TURNKEY_API_BASE_URL && process.env.NEXT_PUBLIC_TURNKEY_ORGANIZATION_ID
 );
@@ -79,6 +80,18 @@ function TurnkeyAuthContent() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [plaidIdentity, setPlaidIdentity] = useState<{
+    names: string[];
+    emails: string[];
+    phones: string[];
+    addresses: Array<{
+      street: string;
+      city: string;
+      region: string;
+      postal_code: string;
+      country: string;
+    }>;
+  } | null>(null);
   const stepsRef = useRef<HTMLDivElement | null>(null);
   const hasWallets = wallets.length > 0;
 
@@ -176,8 +189,29 @@ function TurnkeyAuthContent() {
     } finally {
       setSession(null);
       setWallets([]);
+      setPlaidIdentity(null);
       setAuthError(null);
     }
+  };
+
+  const handlePlaidSuccess = (identityData: {
+    names: string[];
+    emails: string[];
+    phones: string[];
+    addresses: Array<{
+      street: string;
+      city: string;
+      region: string;
+      postal_code: string;
+      country: string;
+    }>;
+  }) => {
+    setPlaidIdentity(identityData);
+    setAuthError(null);
+  };
+
+  const handlePlaidError = (error: string) => {
+    setAuthError(error);
   };
 
   const userIdentifier = useMemo(() => session?.userId ?? "friend", [session]);
@@ -280,7 +314,17 @@ function TurnkeyAuthContent() {
             </article>
 
             <article className="rounded-2xl border border-slate-200 bg-white/80 p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
-              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Step 3 · Stay compliant</h3>
+              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Step 3 · Verify bank identity</h3>
+              <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
+                Connect your bank account to verify your identity with Plaid for compliance purposes.
+              </p>
+              <Button className="mt-4 w-full sm:w-auto" disabled>
+                Sign in to verify identity
+              </Button>
+            </article>
+
+            <article className="rounded-2xl border border-slate-200 bg-white/80 p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
+              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Step 4 · Stay compliant</h3>
               <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
                 Operate with policy controls, audit trails, and identity-linked addresses—all surfaced below.
               </p>
@@ -377,7 +421,47 @@ function TurnkeyAuthContent() {
           </article>
 
           <article className="rounded-2xl border border-slate-200 bg-white/80 p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
-            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Step 3 · Review addresses</h3>
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Step 3 · Verify bank identity</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
+              Connect your bank account to verify your identity. Plaid securely retrieves your personal information
+              from your bank for compliance verification.
+            </p>
+            {plaidIdentity ? (
+              <div className="mt-4 space-y-3">
+                <div className="flex items-center gap-2 text-sm font-medium text-emerald-600 dark:text-emerald-400">
+                  <CheckCircle2 className="h-4 w-4" /> Bank verified
+                </div>
+                <div className="rounded-lg border border-slate-200/70 bg-white/50 p-4 text-sm dark:border-slate-700/50 dark:bg-slate-800/50">
+                  <p className="font-medium text-slate-900 dark:text-white">
+                    {plaidIdentity.names[0]}
+                  </p>
+                  {plaidIdentity.emails[0] && (
+                    <p className="mt-1 text-slate-600 dark:text-slate-400">
+                      {plaidIdentity.emails[0]}
+                    </p>
+                  )}
+                  {plaidIdentity.phones[0] && (
+                    <p className="mt-1 text-slate-600 dark:text-slate-400">
+                      {plaidIdentity.phones[0]}
+                    </p>
+                  )}
+                  {plaidIdentity.addresses[0] && (
+                    <p className="mt-1 text-slate-600 dark:text-slate-400">
+                      {plaidIdentity.addresses[0].street}, {plaidIdentity.addresses[0].city},{" "}
+                      {plaidIdentity.addresses[0].region} {plaidIdentity.addresses[0].postal_code}
+                    </p>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="mt-4">
+                <PlaidConnectButton onSuccess={handlePlaidSuccess} onError={handlePlaidError} />
+              </div>
+            )}
+          </article>
+
+          <article className="rounded-2xl border border-slate-200 bg-white/80 p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Step 4 · Review addresses</h3>
             <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
               See every wallet you&apos;ve provisioned and copy addresses for deposits or integrations—all in the
               same vertical flow.

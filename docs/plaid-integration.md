@@ -248,6 +248,23 @@ PLAID_ENV=sandbox  # or development, production
 
 Get these from: https://dashboard.plaid.com/developers/keys
 
+### Testing in Sandbox Mode
+
+When testing with `PLAID_ENV=sandbox`, use these credentials:
+
+**Phone Verification (if prompted):**
+- Test Phone Number: `415-555-0100`
+- Verification Code: `123456`
+
+**Bank Login Credentials:**
+After selecting any bank in the Plaid Link UI, use:
+- Username: `user_good`
+- Password: `pass_good`
+
+**Alternative:** Select "Plaid Sandbox" as the institution for pre-configured test accounts.
+
+More sandbox credentials: https://plaid.com/docs/sandbox/test-credentials/
+
 ## Simple Implementation Plan
 
 ### 1. Setup
