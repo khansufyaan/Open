@@ -8,6 +8,9 @@ frontend:
         - env | grep -e TURNKEY_API_PRIVATE_KEY >> .env.production || true
         - env | grep -e TURNKEY_API_PUBLIC_KEY >> .env.production || true
         - env | grep -e ADMIN_SECRET >> .env.production || true
+        - env | grep -e PLAID_CLIENT_ID >> .env.production || true
+        - env | grep -e PLAID_SECRET >> .env.production || true
+        - env | grep -e PLAID_ENV >> .env.production || true
     build:
       commands:
         - npm run build
