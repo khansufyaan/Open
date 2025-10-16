@@ -33,7 +33,7 @@ export async function POST(request: Request) {
 
   try {
     payload = await request.json();
-  } catch (error) {
+  } catch {
     return NextResponse.json(
       {
         error: "INVALID_JSON",

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useTurnkey } from "@turnkey/sdk-react";
 import type { Session } from "@turnkey/sdk-types";
-import { CheckCircle2, LogOut, Wand2 } from "lucide-react";
+import { CheckCircle2, LogOut } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { TurnkeyLoginForm } from "@/components/turnkey-login-form";
@@ -29,6 +29,28 @@ type WalletSummary = {
   imported: boolean;
   accounts: WalletAccount[];
 };
+
+type WalletsResponsePayload = {
+  wallets?: WalletSummary[];
+  message?: string;
+};
+
+function getPayloadMessage(payload: WalletsResponsePayload | null): string | undefined {
+  if (!payload) {
+    return undefined;
+  }
+
+  const { message } = payload;
+  return typeof message === "string" ? message : undefined;
+}
+
+function getPayloadWallets(payload: WalletsResponsePayload | null): WalletSummary[] {
+  if (!payload?.wallets) {
+    return [];
+  }
+
+  return Array.isArray(payload.wallets) ? payload.wallets : [];
+}
 
 export function AuthFlow() {
   if (!TURNKEY_READY) {
@@ -58,6 +80,7 @@ function TurnkeyAuthContent() {
   const [session, setSession] = useState<Session | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const stepsRef = useRef<HTMLDivElement | null>(null);
+  const hasWallets = wallets.length > 0;
 
   const handleScrollToSteps = useCallback(() => {
     stepsRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -67,19 +90,19 @@ function TurnkeyAuthContent() {
     setIsWalletsLoading(true);
     try {
       const response = await fetch("/api/turnkey/wallets", { method: "GET" });
-      let payload: { wallets?: WalletSummary[]; message?: string } | null = null;
+      let payload: WalletsResponsePayload | null = null;
 
       try {
-        payload = (await response.json()) as typeof payload;
-      } catch (_error) {
+        payload = (await response.json()) as WalletsResponsePayload;
+      } catch {
         payload = null;
       }
 
       if (!response.ok) {
-        throw new Error(payload?.message ?? "Unable to load Turnkey wallets.");
+        throw new Error(getPayloadMessage(payload) ?? "Unable to load Turnkey wallets.");
       }
 
-      setWallets(payload?.wallets ?? []);
+      setWallets(getPayloadWallets(payload));
       setAuthError(null);
     } catch (error) {
       const message =
@@ -170,19 +193,19 @@ function TurnkeyAuthContent() {
         body: JSON.stringify({ walletName: `Wallet ${wallets.length + 1}` }),
       });
 
-      let payload: { wallets?: WalletSummary[]; message?: string } | null = null;
+      let payload: WalletsResponsePayload | null = null;
 
       try {
-        payload = (await response.json()) as typeof payload;
-      } catch (_error) {
+        payload = (await response.json()) as WalletsResponsePayload;
+      } catch {
         payload = null;
       }
 
       if (!response.ok) {
-        throw new Error(payload?.message ?? "Unable to create Turnkey wallet.");
+        throw new Error(getPayloadMessage(payload) ?? "Unable to create Turnkey wallet.");
       }
 
-      setWallets(payload?.wallets ?? []);
+      setWallets(getPayloadWallets(payload));
       setAuthError(null);
     } catch (error) {
       const message =
@@ -295,9 +318,13 @@ function TurnkeyAuthContent() {
             variant="outline"
             size="lg"
             onClick={handleCreateWallet}
-            disabled={isCreatingWallet || isWalletsLoading}
+            disabled={isCreatingWallet || isWalletsLoading || hasWallets}
           >
-            {isCreatingWallet ? "Creating wallet..." : "Create wallet"}
+            {isCreatingWallet
+              ? "Creating wallet..."
+              : hasWallets
+                ? "Wallet ready"
+                : "Create wallet"}
           </Button>
           <Button variant="ghost" size="lg" onClick={handleLogout}>
             <LogOut className="mr-2 h-4 w-4" /> Sign out
@@ -330,13 +357,23 @@ function TurnkeyAuthContent() {
               Click once to spin up a managed wallet. Turnkey generates key material, applies policies, and
               never exposes the private key to the browser.
             </p>
-            <Button
-              className="mt-4 w-full sm:w-auto"
-              onClick={handleCreateWallet}
-              disabled={isCreatingWallet || isWalletsLoading}
-            >
-              {isCreatingWallet ? "Creating wallet..." : "Create wallet"}
-            </Button>
+            {isWalletsLoading ? (
+              <Button className="mt-4 w-full sm:w-auto" disabled>
+                Checking wallets…
+              </Button>
+            ) : hasWallets ? (
+              <div className="mt-4 flex items-center gap-2 text-sm font-medium text-emerald-600 dark:text-emerald-400">
+                <CheckCircle2 className="h-4 w-4" /> Wallet already created
+              </div>
+            ) : (
+              <Button
+                className="mt-4 w-full sm:w-auto"
+                onClick={handleCreateWallet}
+                disabled={isCreatingWallet}
+              >
+                {isCreatingWallet ? "Creating wallet..." : "Create wallet"}
+              </Button>
+            )}
           </article>
 
           <article className="rounded-2xl border border-slate-200 bg-white/80 p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">

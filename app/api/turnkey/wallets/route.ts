@@ -150,7 +150,7 @@ export async function POST(request: Request) {
 
   try {
     body = await request.json();
-  } catch (_error) {
+  } catch {
     body = null;
   }
 

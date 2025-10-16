@@ -4,13 +4,10 @@ frontend:
     preBuild:
       commands:
         - npm ci
-        - env | grep -e NEXT_PUBLIC_ >> .env.production || true
-        - env | grep -e PRIVY_ >> .env.production || true
-        - env | grep -e FLYTE_API_KEY >> .env.production || true
+        - env | grep -e PRIVY_APP_SECRET >> .env.production || true
         - env | grep -e TURNKEY_API_PRIVATE_KEY >> .env.production || true
         - env | grep -e TURNKEY_API_PUBLIC_KEY >> .env.production || true
-        - env | grep -e TURNKEY_ORGANIZATION_ID >> .env.production || true
-        - env | grep -e TURNKEY_BASE_URL >> .env.production || true
+        - env | grep -e ADMIN_SECRET >> .env.production || true
     build:
       commands:
         - npm run build
