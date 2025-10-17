@@ -41,6 +41,8 @@ export async function POST() {
   }
 
   try {
+    console.log("Creating Plaid link token with environment:", process.env.PLAID_ENV);
+
     const response = await plaidClient.linkTokenCreate({
       user: {
         client_user_id: "user-" + Date.now(), // In production, use actual user ID from session
@@ -51,13 +53,19 @@ export async function POST() {
       language: "en",
     });
 
+    console.log("Plaid link token created successfully");
     return NextResponse.json({ link_token: response.data.link_token });
   } catch (error) {
     console.error("Plaid link token creation failed:", error);
+    console.error("Error details:", JSON.stringify(error, null, 2));
+
+    const errorMessage = error instanceof Error ? error.message : "Failed to create Plaid link token.";
+
     return NextResponse.json(
       {
         error: "LINK_TOKEN_CREATE_FAILED",
-        message: "Failed to create Plaid link token.",
+        message: errorMessage,
+        details: error,
       },
       { status: 500 }
     );

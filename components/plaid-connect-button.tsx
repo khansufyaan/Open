@@ -35,12 +35,15 @@ export function PlaidConnectButton({ onSuccess, onError }: PlaidConnectButtonPro
         });
 
         if (!response.ok) {
-          throw new Error("Failed to create link token");
+          const errorData = await response.json();
+          console.error("Plaid link token error:", errorData);
+          throw new Error(errorData.message || "Failed to create link token");
         }
 
         const data = await response.json();
         setLinkToken(data.link_token);
       } catch (error) {
+        console.error("Failed to initialize Plaid:", error);
         const message = error instanceof Error ? error.message : "Failed to initialize Plaid";
         onError(message);
       }
