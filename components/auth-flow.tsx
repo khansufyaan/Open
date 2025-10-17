@@ -228,7 +228,7 @@ function TurnkeyAuthContent() {
     }
   };
 
-  const handlePlaidSuccess = (identityData: {
+  const handlePlaidSuccess = async (identityData: {
     names: string[];
     emails: string[];
     phones: string[];
@@ -242,6 +242,29 @@ function TurnkeyAuthContent() {
   }) => {
     setPlaidIdentity(identityData);
     setAuthError(null);
+
+    // Store Plaid identity data in DynamoDB
+    if (session) {
+      try {
+        await fetch("/api/db/user", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            userId: session.userId,
+            plaidVerifiedName: identityData.names[0],
+            plaidVerifiedEmail: identityData.emails[0],
+            plaidVerifiedPhone: identityData.phones[0],
+            plaidVerifiedAddress: identityData.addresses[0],
+            plaidVerificationCompleted: true,
+          }),
+        });
+      } catch (dbError) {
+        console.error("Failed to store Plaid data:", dbError);
+        // Don't block the user flow if DB save fails
+      }
+    }
   };
 
   const handlePlaidError = (error: string) => {

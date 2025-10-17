@@ -86,6 +86,17 @@ export async function POST(request: Request) {
     walletAddress?: string;
     turnkeySignInCompleted?: boolean;
     walletCreated?: boolean;
+    plaidVerifiedName?: string;
+    plaidVerifiedEmail?: string;
+    plaidVerifiedPhone?: string;
+    plaidVerifiedAddress?: {
+      street: string;
+      city: string;
+      region: string;
+      postal_code: string;
+      country: string;
+    };
+    plaidVerificationCompleted?: boolean;
   };
 
   if (!data.userId) {
@@ -120,6 +131,12 @@ export async function POST(request: Request) {
       turnkeySignInCompleted:
         data.turnkeySignInCompleted ?? existingData.Item?.turnkeySignInCompleted ?? false,
       walletCreated: data.walletCreated ?? existingData.Item?.walletCreated ?? false,
+      plaidVerifiedName: data.plaidVerifiedName ?? existingData.Item?.plaidVerifiedName,
+      plaidVerifiedEmail: data.plaidVerifiedEmail ?? existingData.Item?.plaidVerifiedEmail,
+      plaidVerifiedPhone: data.plaidVerifiedPhone ?? existingData.Item?.plaidVerifiedPhone,
+      plaidVerifiedAddress: data.plaidVerifiedAddress ?? existingData.Item?.plaidVerifiedAddress,
+      plaidVerificationCompleted:
+        data.plaidVerificationCompleted ?? existingData.Item?.plaidVerificationCompleted ?? false,
       createdAt: existingData.Item?.createdAt ?? timestamp,
       updatedAt: timestamp,
     };
