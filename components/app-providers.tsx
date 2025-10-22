@@ -39,9 +39,7 @@ export function AppProviders({ children }: AppProvidersProps) {
         appId={privyAppId}
         config={{
           appearance: {},
-          embeddedWallets: {
-            createOnLogin: "off",
-          },
+          embeddedWallets: {},
         }}
       >
         {renderWithTheme(children)}
@@ -70,9 +68,7 @@ export function AppProviders({ children }: AppProvidersProps) {
       appId={privyAppId}
       config={{
         appearance: {},
-        embeddedWallets: {
-          createOnLogin: "off",
-        },
+        embeddedWallets: {},
       }}
     >
       {wrapped}
