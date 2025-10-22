@@ -30,7 +30,7 @@ export function SenderExperience() {
   const [transfer, setTransfer] = useState<TransferResponse | null>(null);
 
   const senderAddress = useMemo(() => {
-    const evmWallet = wallets.find((wallet) => wallet.chainType === "ethereum");
+    const evmWallet = wallets.find((wallet) => wallet.type === "ethereum");
     return evmWallet?.address ?? null;
   }, [wallets]);
 
