@@ -38,9 +38,7 @@ export function AppProviders({ children }: AppProvidersProps) {
       <PrivyProvider
         appId={privyAppId}
         config={{
-          appearance: {
-            theme: "automatic",
-          },
+          appearance: {},
           embeddedWallets: {
             createOnLogin: "off",
           },
@@ -71,9 +69,7 @@ export function AppProviders({ children }: AppProvidersProps) {
     <PrivyProvider
       appId={privyAppId}
       config={{
-        appearance: {
-          theme: "automatic",
-        },
+        appearance: {},
         embeddedWallets: {
           createOnLogin: "off",
         },
