@@ -4,6 +4,15 @@ import { useCallback, useEffect, useState } from "react";
 import { usePlaidLink } from "react-plaid-link";
 import { Button } from "@/components/ui/button";
 
+interface PlaidAchAccount {
+  accountId: string;
+  accountNumber: string;
+  routingNumber: string;
+  wireRoutingNumber?: string | null;
+  mask?: string | null;
+  name?: string | null;
+}
+
 interface PlaidIdentityData {
   names: string[];
   emails: string[];
@@ -15,6 +24,7 @@ interface PlaidIdentityData {
     postal_code: string;
     country: string;
   }>;
+  achAccounts: PlaidAchAccount[];
 }
 
 interface PlaidConnectButtonProps {
@@ -71,7 +81,11 @@ export function PlaidConnectButton({ onSuccess, onError }: PlaidConnectButtonPro
         const data = await response.json();
 
         if (data.success && data.identity) {
-          onSuccess(data.identity);
+          const identityData: PlaidIdentityData = {
+            ...data.identity,
+            achAccounts: Array.isArray(data.achAccounts) ? data.achAccounts : [],
+          };
+          onSuccess(identityData);
         } else {
           throw new Error("No identity data received");
         }

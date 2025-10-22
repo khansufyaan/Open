@@ -9,49 +9,43 @@ import { CheckCircle2, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TurnkeyLoginForm } from "@/components/turnkey-login-form";
 import { PlaidConnectButton } from "@/components/plaid-connect-button";
+
 const TURNKEY_READY = Boolean(
   process.env.NEXT_PUBLIC_TURNKEY_API_BASE_URL && process.env.NEXT_PUBLIC_TURNKEY_ORGANIZATION_ID
 );
 
-type WalletAccount = {
-  walletAccountId: string;
-  address: string;
-  addressFormat: string;
-  curve: string;
-  path: string;
+type PlaidAchAccount = {
+  accountId: string;
+  accountNumber: string;
+  routingNumber: string;
+  wireRoutingNumber?: string | null;
+  mask?: string | null;
+  name?: string | null;
 };
 
-type WalletSummary = {
+type PlaidIdentitySnapshot = {
+  names: string[];
+  emails: string[];
+  phones: string[];
+  addresses: Array<{
+    street: string;
+    city: string;
+    region: string;
+    postal_code: string;
+    country: string;
+  }>;
+  achAccounts: PlaidAchAccount[];
+};
+
+type TransferSummary = {
+  transferId: string;
   walletId: string;
-  walletName: string;
-  createdAt: string | null;
-  updatedAt: string | null;
-  exported: boolean;
-  imported: boolean;
-  accounts: WalletAccount[];
+  walletAddress: string;
+  amount: string;
+  status: string;
+  depositMethod: string;
+  createdAt: string;
 };
-
-type WalletsResponsePayload = {
-  wallets?: WalletSummary[];
-  message?: string;
-};
-
-function getPayloadMessage(payload: WalletsResponsePayload | null): string | undefined {
-  if (!payload) {
-    return undefined;
-  }
-
-  const { message } = payload;
-  return typeof message === "string" ? message : undefined;
-}
-
-function getPayloadWallets(payload: WalletsResponsePayload | null): WalletSummary[] {
-  if (!payload?.wallets) {
-    return [];
-  }
-
-  return Array.isArray(payload.wallets) ? payload.wallets : [];
-}
 
 export function AuthFlow() {
   if (!TURNKEY_READY) {
@@ -74,32 +68,19 @@ export function AuthFlow() {
 function TurnkeyAuthContent() {
   const turnkeyContext = useTurnkey();
   const turnkey = turnkeyContext.turnkey;
-  const [wallets, setWallets] = useState<WalletSummary[]>([]);
-  const [isWalletsLoading, setIsWalletsLoading] = useState(false);
-  const [isCreatingWallet, setIsCreatingWallet] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
-  const [plaidIdentity, setPlaidIdentity] = useState<{
-    names: string[];
-    emails: string[];
-    phones: string[];
-    addresses: Array<{
-      street: string;
-      city: string;
-      region: string;
-      postal_code: string;
-      country: string;
-    }>;
-  } | null>(null);
+  const [plaidIdentity, setPlaidIdentity] = useState<PlaidIdentitySnapshot | null>(null);
+  const [transferSummaries, setTransferSummaries] = useState<TransferSummary[]>([]);
+  const [isTransfersLoading, setIsTransfersLoading] = useState(false);
+  const [transferError, setTransferError] = useState<string | null>(null);
   const stepsRef = useRef<HTMLDivElement | null>(null);
-  const hasWallets = wallets.length > 0;
 
   const handleScrollToSteps = useCallback(() => {
     stepsRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, []);
 
-  // Initialize DynamoDB table on component mount
   useEffect(() => {
     const initTable = async () => {
       try {
@@ -108,39 +89,78 @@ function TurnkeyAuthContent() {
         });
       } catch (error) {
         console.error("Failed to initialize table:", error);
-        // Don't block the app if table initialization fails
       }
     };
 
     initTable();
   }, []);
 
-  const loadWallets = useCallback(async () => {
-    setIsWalletsLoading(true);
+  const fetchTransfersForAccounts = useCallback(async (accounts: PlaidAchAccount[]) => {
+    if (!accounts || accounts.length === 0) {
+      setTransferSummaries([]);
+      setTransferError("No bank accounts detected from Plaid verification.");
+      return;
+    }
+
+    setIsTransfersLoading(true);
+    setTransferError(null);
+
+    const uniqueCoordinates = new Map<string, { accountNumber: string; routingNumber: string }>();
+
+    for (const account of accounts) {
+      if (!account.accountNumber || !account.routingNumber) {
+        continue;
+      }
+
+      const key = `${account.routingNumber}:${account.accountNumber}`;
+      if (!uniqueCoordinates.has(key)) {
+        uniqueCoordinates.set(key, {
+          accountNumber: account.accountNumber,
+          routingNumber: account.routingNumber,
+        });
+      }
+    }
+
+    if (uniqueCoordinates.size === 0) {
+      setIsTransfersLoading(false);
+      setTransferSummaries([]);
+      setTransferError("No qualified ACH coordinates returned from Plaid.");
+      return;
+    }
+
     try {
-      const response = await fetch("/api/turnkey/wallets", { method: "GET" });
-      let payload: WalletsResponsePayload | null = null;
+      const lookups = await Promise.all(
+        Array.from(uniqueCoordinates.values()).map(async ({ accountNumber, routingNumber }) => {
+          const response = await fetch(
+            `/api/transfers?accountNumber=${encodeURIComponent(accountNumber)}&routingNumber=${encodeURIComponent(routingNumber)}`
+          );
 
-      try {
-        payload = (await response.json()) as WalletsResponsePayload;
-      } catch {
-        payload = null;
+          const data = await response.json();
+
+          if (!response.ok) {
+            throw new Error(data.message ?? "Failed to load transfers for linked account.");
+          }
+
+          return Array.isArray(data.transfers) ? (data.transfers as TransferSummary[]) : [];
+        })
+      );
+
+      const flattened = lookups.flat();
+
+      setTransferSummaries(flattened);
+
+      if (flattened.length === 0) {
+        setTransferError("No transfers have been allocated to this bank account yet.");
       }
-
-      if (!response.ok) {
-        throw new Error(getPayloadMessage(payload) ?? "Unable to load Turnkey wallets.");
-      }
-
-      setWallets(getPayloadWallets(payload));
-      setAuthError(null);
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : "Unable to load Turnkey wallets.";
-      setAuthError(message);
+        error instanceof Error ? error.message : "Unexpected error loading transfer information.";
+      setTransferSummaries([]);
+      setTransferError(message);
     } finally {
-      setIsWalletsLoading(false);
+      setIsTransfersLoading(false);
     }
-  }, [setAuthError]);
+  }, []);
 
   useEffect(() => {
     if (!turnkey) {
@@ -168,7 +188,6 @@ function TurnkeyAuthContent() {
     };
   }, [turnkey]);
 
-
   const handleAuthSuccess = async (email: string) => {
     if (!turnkey) {
       setAuthError("Turnkey client is not ready. Check your configuration and try again.");
@@ -187,7 +206,6 @@ function TurnkeyAuthContent() {
       setSession(activeSession);
       setAuthError(null);
 
-      // Store user data in DynamoDB
       try {
         await fetch("/api/db/user", {
           method: "POST",
@@ -196,13 +214,12 @@ function TurnkeyAuthContent() {
           },
           body: JSON.stringify({
             userId: activeSession.userId,
-            email: email,
+            email,
             turnkeySignInCompleted: true,
           }),
         });
       } catch (dbError) {
         console.error("Failed to store user data:", dbError);
-        // Don't block the user flow if DB save fails
       }
     } catch (error) {
       const message =
@@ -222,28 +239,19 @@ function TurnkeyAuthContent() {
       console.error("Turnkey logout failed", error);
     } finally {
       setSession(null);
-      setWallets([]);
       setPlaidIdentity(null);
       setAuthError(null);
+      setTransferSummaries([]);
+      setTransferError(null);
     }
   };
 
-  const handlePlaidSuccess = async (identityData: {
-    names: string[];
-    emails: string[];
-    phones: string[];
-    addresses: Array<{
-      street: string;
-      city: string;
-      region: string;
-      postal_code: string;
-      country: string;
-    }>;
-  }) => {
+  const handlePlaidSuccess = async (identityData: PlaidIdentitySnapshot) => {
     setPlaidIdentity(identityData);
     setAuthError(null);
 
-    // Store Plaid identity data in DynamoDB
+    void fetchTransfersForAccounts(identityData.achAccounts);
+
     if (session) {
       try {
         await fetch("/api/db/user", {
@@ -258,88 +266,23 @@ function TurnkeyAuthContent() {
             plaidVerifiedPhone: identityData.phones[0],
             plaidVerifiedAddress: identityData.addresses[0],
             plaidVerificationCompleted: true,
+            plaidVerifiedAccountMask: identityData.achAccounts[0]?.mask,
+            plaidVerifiedRoutingNumber: identityData.achAccounts[0]?.routingNumber,
           }),
         });
       } catch (dbError) {
         console.error("Failed to store Plaid data:", dbError);
-        // Don't block the user flow if DB save fails
       }
     }
   };
 
   const handlePlaidError = (error: string) => {
     setAuthError(error);
+    setTransferSummaries([]);
+    setTransferError(error);
   };
 
   const userIdentifier = useMemo(() => session?.userId ?? "friend", [session]);
-
-  const handleCreateWallet = async () => {
-    setIsCreatingWallet(true);
-    try {
-      const response = await fetch("/api/turnkey/wallets", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ walletName: `Wallet ${wallets.length + 1}` }),
-      });
-
-      let payload: WalletsResponsePayload | null = null;
-
-      try {
-        payload = (await response.json()) as WalletsResponsePayload;
-      } catch {
-        payload = null;
-      }
-
-      if (!response.ok) {
-        throw new Error(getPayloadMessage(payload) ?? "Unable to create Turnkey wallet.");
-      }
-
-      const walletList = getPayloadWallets(payload);
-      setWallets(walletList);
-      setAuthError(null);
-
-      // Store wallet data in DynamoDB
-      if (session && walletList.length > 0) {
-        const wallet = walletList[0];
-        const walletAddress = wallet.accounts[0]?.address;
-
-        try {
-          await fetch("/api/db/user", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              userId: session.userId,
-              walletId: wallet.walletId,
-              walletAddress: walletAddress,
-              walletCreated: true,
-            }),
-          });
-        } catch (dbError) {
-          console.error("Failed to store wallet data:", dbError);
-          // Don't block the user flow if DB save fails
-        }
-      }
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Unable to create Turnkey wallet.";
-      setAuthError(message);
-    } finally {
-      setIsCreatingWallet(false);
-    }
-  };
-
-  useEffect(() => {
-    if (!session) {
-      setWallets([]);
-      return;
-    }
-
-    void loadWallets();
-  }, [session, loadWallets]);
 
   if (!session) {
     return (
@@ -386,12 +329,12 @@ function TurnkeyAuthContent() {
             </article>
 
             <article className="rounded-2xl border border-slate-200 bg-white/80 p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
-              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Step 2 · Create the wallet</h3>
+              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Step 2 · Wallet provisioning</h3>
               <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                Use the one-click action to provision a managed wallet. Keys stay inside Turnkey&apos;s MPC.
+                When a sender submits a transfer, we generate a fresh Turnkey wallet behind the scenes and bind it to the recipient&apos;s bank coordinates.
               </p>
               <Button className="mt-4 w-full sm:w-auto" disabled>
-                Sign in to create wallet
+                Wallets appear automatically
               </Button>
             </article>
 
@@ -440,17 +383,8 @@ function TurnkeyAuthContent() {
           <Button size="lg" onClick={handleScrollToSteps}>
             Jump to steps
           </Button>
-          <Button
-            variant="outline"
-            size="lg"
-            onClick={handleCreateWallet}
-            disabled={isCreatingWallet || isWalletsLoading || hasWallets}
-          >
-            {isCreatingWallet
-              ? "Creating wallet..."
-              : hasWallets
-                ? "Wallet ready"
-                : "Create wallet"}
+          <Button variant="outline" size="lg" disabled>
+            Wallets auto-provision per transfer
           </Button>
           <Button variant="ghost" size="lg" onClick={handleLogout}>
             <LogOut className="mr-2 h-4 w-4" /> Sign out
@@ -478,28 +412,13 @@ function TurnkeyAuthContent() {
           </article>
 
           <article className="rounded-2xl border border-slate-200 bg-white/80 p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
-            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Step 2 · Create the wallet</h3>
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Step 2 · Wallet provisioning</h3>
             <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-              Click once to spin up a managed wallet. Turnkey generates key material, applies policies, and
-              never exposes the private key to the browser.
+              Transfers create new managed wallets automatically. Each ACH destination receives a unique address so senders never see aggregate balances.
             </p>
-            {isWalletsLoading ? (
-              <Button className="mt-4 w-full sm:w-auto" disabled>
-                Checking wallets…
-              </Button>
-            ) : hasWallets ? (
-              <div className="mt-4 flex items-center gap-2 text-sm font-medium text-emerald-600 dark:text-emerald-400">
-                <CheckCircle2 className="h-4 w-4" /> Wallet already created
-              </div>
-            ) : (
-              <Button
-                className="mt-4 w-full sm:w-auto"
-                onClick={handleCreateWallet}
-                disabled={isCreatingWallet}
-              >
-                {isCreatingWallet ? "Creating wallet..." : "Create wallet"}
-              </Button>
-            )}
+            <div className="mt-4 flex items-center gap-2 text-sm font-medium text-emerald-600 dark:text-emerald-400">
+              <CheckCircle2 className="h-4 w-4" /> Wallets generate as transfers arrive
+            </div>
           </article>
 
           <article className="rounded-2xl border border-slate-200 bg-white/80 p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
@@ -543,42 +462,61 @@ function TurnkeyAuthContent() {
           </article>
 
           <article className="rounded-2xl border border-slate-200 bg-white/80 p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
-            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Step 4 · Review addresses</h3>
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Step 4 · Review deposits</h3>
             <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-              See every wallet you&apos;ve provisioned and copy addresses for deposits or integrations—all in the
-              same vertical flow.
+              Each bank transfer lands in its own managed wallet. Confirm the allocations below and use the
+              wallet addresses for on-chain visibility.
             </p>
-            <div className="mt-4 space-y-2">
-              {isWalletsLoading ? (
-                <p className="text-xs text-slate-500 dark:text-slate-400">Loading wallets…</p>
-              ) : wallets.length === 0 ? (
+            <div className="mt-4 space-y-3">
+              {isTransfersLoading ? (
+                <p className="text-xs text-slate-500 dark:text-slate-400">Loading deposits…</p>
+              ) : transferSummaries.length === 0 ? (
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  No Turnkey wallets yet. Create one above to get started.
+                  {transferError ?? "No deposits found for the connected bank account yet."}
                 </p>
               ) : (
                 <ul className="space-y-3 text-xs text-slate-600 dark:text-slate-300">
-                  {wallets.map((wallet) => (
+                  {transferSummaries.map((summary) => (
                     <li
-                      key={wallet.walletId}
+                      key={summary.transferId}
                       className="rounded-lg border border-slate-200/70 p-3 dark:border-slate-700/50"
                     >
                       <p className="font-medium text-slate-700 dark:text-slate-100">
-                        {wallet.walletName || wallet.walletId}
+                        {summary.amount} USDC · {summary.status.toLowerCase()}
                       </p>
                       <p className="mt-1 text-[11px] uppercase tracking-wide text-slate-400 dark:text-slate-500">
-                        {wallet.walletId}
+                        Transfer {summary.transferId}
                       </p>
-                      <ul className="mt-2 space-y-1">
-                        {wallet.accounts.map((account) => (
-                          <li key={account.walletAccountId} className="flex items-center gap-2">
-                            <CheckCircle2 className="h-3.5 w-3.5 text-sky-500" />
-                            <span className="truncate">{account.address}</span>
-                          </li>
-                        ))}
-                      </ul>
+                      <dl className="mt-2 space-y-1">
+                        <div className="flex items-center gap-2">
+                          <CheckCircle2 className="h-3.5 w-3.5 text-sky-500" />
+                          <span className="truncate">{summary.walletAddress}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-slate-400 dark:text-slate-500">Wallet ID</span>
+                          <span className="truncate">{summary.walletId}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-slate-400 dark:text-slate-500">Recorded</span>
+                          <span>
+                            {new Date(summary.createdAt).toLocaleString(undefined, {
+                              dateStyle: "medium",
+                              timeStyle: "short",
+                            })}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-slate-400 dark:text-slate-500">Deposit</span>
+                          <span className="capitalize">{summary.depositMethod}</span>
+                        </div>
+                      </dl>
                     </li>
                   ))}
                 </ul>
+              )}
+
+              {transferError && transferSummaries.length > 0 && (
+                <p className="text-xs text-red-500 dark:text-red-400">{transferError}</p>
               )}
             </div>
           </article>

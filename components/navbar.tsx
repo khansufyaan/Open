@@ -16,12 +16,18 @@ export function Navbar({ className }: { className?: string }) {
         >
           BLUE WALLET
         </Link>
-        <div className="flex justify-center">
+        <div className="flex items-center justify-center gap-3">
           <Button variant="secondary" size="sm" asChild>
-            <Link href="/contact">Contact</Link>
+            <Link href="/">Send</Link>
+          </Button>
+          <Button variant="secondary" size="sm" asChild>
+            <Link href="/recipient">Recipient portal</Link>
           </Button>
         </div>
-        <div className="flex justify-end">
+        <div className="flex items-center justify-end gap-3">
+          <Button variant="ghost" size="sm" asChild>
+            <Link href="/contact">Contact</Link>
+          </Button>
           <ThemeToggle />
         </div>
       </nav>
