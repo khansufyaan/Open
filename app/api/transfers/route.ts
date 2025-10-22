@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createHash, randomUUID } from "crypto";
 
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, PutCommand, QueryCommand } from "@aws-sdk/lib-dynamodb";
+import { DynamoDBDocumentClient, PutCommand, QueryCommand, ScanCommand } from "@aws-sdk/lib-dynamodb";
 import { defaultEthereumAccountAtIndex } from "@turnkey/sdk-server";
 
 import { getTurnkeyApiClient, isTurnkeyConfigured } from "@/lib/turnkey/server";
@@ -21,7 +21,9 @@ type TransferRecord = {
   senderAddress: string;
   recipientAccountMask: string;
   recipientRoutingMask: string;
+  recipientLast4: string;
   amount: string;
+  amountCents: number;
   walletId: string;
   walletAddress: string;
   status: "DEPOSITED" | "PENDING" | "FAILED";
@@ -157,9 +159,11 @@ export async function POST(request: Request) {
   }
 
   const normalizedAmount = Number(amount).toFixed(2);
+  const amountCents = Math.round(Number(normalizedAmount) * 100);
   const normalizedAccount = sanitizeDigits(recipientAccountNumber);
   const normalizedRouting = sanitizeDigits(recipientRoutingNumber);
   const recipientKey = buildRecipientKey(normalizedRouting, normalizedAccount);
+  const recipientLast4 = normalizedAccount.slice(-4);
 
   const walletName = `recipient-${Date.now()}-${randomUUID().slice(0, 8)}`;
 
@@ -174,7 +178,9 @@ export async function POST(request: Request) {
       senderAddress: normalizeAddress(senderAddress),
       recipientAccountMask: normalizedAccount.slice(-4).padStart(normalizedAccount.length, "*"),
       recipientRoutingMask: normalizedRouting.slice(-4).padStart(normalizedRouting.length, "*"),
+      recipientLast4,
       amount: normalizedAmount,
+      amountCents,
       walletId,
       walletAddress,
       status: "DEPOSITED",
@@ -219,44 +225,71 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const accountNumber = searchParams.get("accountNumber");
   const routingNumber = searchParams.get("routingNumber");
+  const last4Param = searchParams.get("last4");
+  const amountParam = searchParams.get("amount");
 
-  if (!accountNumber || !routingNumber) {
+  const normalizedAccount = accountNumber ? sanitizeDigits(accountNumber) : "";
+  const normalizedRouting = routingNumber ? sanitizeDigits(routingNumber) : "";
+  const normalizedLast4 = last4Param ? sanitizeDigits(last4Param).slice(-4) : "";
+  const amountCentsHint = amountParam && !Number.isNaN(Number(amountParam))
+    ? Math.round(Number(amountParam) * 100)
+    : undefined;
+
+  if (!normalizedAccount && !normalizedRouting && !normalizedLast4) {
     return NextResponse.json(
       {
         error: "MISSING_PARAMETERS",
-        message: "accountNumber and routingNumber are required.",
+        message: "Provide either account/routing numbers or last4 for lookup.",
       },
       { status: 400 }
     );
   }
-
-  const normalizedAccount = sanitizeDigits(accountNumber);
-  const normalizedRouting = sanitizeDigits(routingNumber);
-
-  if (!normalizedAccount || !normalizedRouting) {
-    return NextResponse.json(
-      {
-        error: "INVALID_PARAMETERS",
-        message: "accountNumber and routingNumber must contain digits.",
-      },
-      { status: 400 }
-    );
-  }
-
-  const recipientKey = buildRecipientKey(normalizedRouting, normalizedAccount);
 
   try {
-    const response = await docClient.send(
-      new QueryCommand({
-        TableName: TRANSFERS_TABLE,
-        KeyConditionExpression: "recipientKey = :key",
-        ExpressionAttributeValues: {
-          ":key": recipientKey,
-        },
-      })
-    );
+    let items: TransferRecord[] = [];
 
-    const items = (response.Items ?? []) as TransferRecord[];
+    if (normalizedAccount && normalizedRouting) {
+      const recipientKey = buildRecipientKey(normalizedRouting, normalizedAccount);
+
+      const response = await docClient.send(
+        new QueryCommand({
+          TableName: TRANSFERS_TABLE,
+          KeyConditionExpression: "recipientKey = :key",
+          ExpressionAttributeValues: {
+            ":key": recipientKey,
+          },
+        })
+      );
+
+      items = (response.Items ?? []) as TransferRecord[];
+    }
+
+    if (items.length === 0 && normalizedLast4) {
+      const filterExpressions = ["recipientLast4 = :last4"];
+      const expressionValues: Record<string, unknown> = {
+        ":last4": normalizedLast4,
+      };
+
+      if (typeof amountCentsHint === "number" && !Number.isNaN(amountCentsHint)) {
+        filterExpressions.push("amountCents = :amountCents");
+        expressionValues[":amountCents"] = amountCentsHint;
+      }
+
+      const scanResponse = await docClient.send(
+        new ScanCommand({
+          TableName: TRANSFERS_TABLE,
+          FilterExpression: filterExpressions.join(" AND "),
+          ExpressionAttributeValues: expressionValues,
+        })
+      );
+
+      const fallbackItems = (scanResponse.Items ?? []) as TransferRecord[];
+
+      if (fallbackItems.length > 0) {
+        fallbackItems.sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+        items = [fallbackItems[0]];
+      }
+    }
 
     return NextResponse.json({
       success: true,

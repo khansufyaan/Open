@@ -47,6 +47,12 @@ type TransferSummary = {
   createdAt: string;
 };
 
+const DIGIT_REGEX = /\D+/g;
+
+function sanitizeDigits(value: string | null | undefined): string {
+  return typeof value === "string" ? value.replace(DIGIT_REGEX, "") : "";
+}
+
 export function AuthFlow() {
   if (!TURNKEY_READY) {
     return (
@@ -105,19 +111,43 @@ function TurnkeyAuthContent() {
     setIsTransfersLoading(true);
     setTransferError(null);
 
-    const uniqueCoordinates = new Map<string, { accountNumber: string; routingNumber: string }>();
+    const uniqueCoordinates = new Map<string, { accountNumber: string; routingNumber: string; last4: string }>();
 
     for (const account of accounts) {
-      if (!account.accountNumber || !account.routingNumber) {
-        continue;
+      const rawAccount = sanitizeDigits(account.accountNumber);
+      const rawRouting = sanitizeDigits(account.routingNumber);
+
+      const variations: Array<{ accountNumber: string; routingNumber: string; last4?: string }> = [];
+
+      if (rawAccount && rawRouting) {
+        variations.push({ accountNumber: rawAccount, routingNumber: rawRouting, last4: rawAccount.slice(-4) });
       }
 
-      const key = `${account.routingNumber}:${account.accountNumber}`;
-      if (!uniqueCoordinates.has(key)) {
-        uniqueCoordinates.set(key, {
-          accountNumber: account.accountNumber,
-          routingNumber: account.routingNumber,
-        });
+      // If Plaid provided a masked value, attempt to derive a shorter variant using the input length
+      if (account.mask) {
+        const maskDigits = sanitizeDigits(account.mask);
+        if (maskDigits && rawAccount.endsWith(maskDigits)) {
+          variations.push({
+            accountNumber: maskDigits,
+            routingNumber: rawRouting,
+            last4: maskDigits.slice(-4),
+          });
+        }
+      }
+
+      for (const candidate of variations) {
+        if (!candidate.accountNumber || !candidate.routingNumber) {
+          continue;
+        }
+
+        const key = `${candidate.routingNumber}:${candidate.accountNumber}`;
+        if (!uniqueCoordinates.has(key)) {
+          uniqueCoordinates.set(key, {
+            accountNumber: candidate.accountNumber,
+            routingNumber: candidate.routingNumber,
+            last4: (candidate.last4 ?? candidate.accountNumber.slice(-4)) || "",
+          });
+        }
       }
     }
 
@@ -130,9 +160,9 @@ function TurnkeyAuthContent() {
 
     try {
       const lookups = await Promise.all(
-        Array.from(uniqueCoordinates.values()).map(async ({ accountNumber, routingNumber }) => {
+        Array.from(uniqueCoordinates.values()).map(async ({ accountNumber, routingNumber, last4 }) => {
           const response = await fetch(
-            `/api/transfers?accountNumber=${encodeURIComponent(accountNumber)}&routingNumber=${encodeURIComponent(routingNumber)}`
+            `/api/transfers?accountNumber=${encodeURIComponent(accountNumber)}&routingNumber=${encodeURIComponent(routingNumber)}${last4 ? `&last4=${encodeURIComponent(last4)}` : ""}`
           );
 
           const data = await response.json();
@@ -397,13 +427,13 @@ function TurnkeyAuthContent() {
 
       <section
         ref={stepsRef}
-        className="space-y-6 rounded-3xl border border-slate-200/80 bg-white/70 p-10 text-slate-700 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-200"
+        className="space-y-4 rounded-3xl border border-slate-200/80 bg-white/70 p-6 text-slate-700 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-200"
       >
         <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
           Blueprint
         </h2>
-        <div className="space-y-6">
-          <article className="rounded-2xl border border-slate-200 bg-white/80 p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
+        <div className="grid gap-4 md:grid-cols-2">
+          <article className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
             <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Step 1 · Verify identity</h3>
             <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
               Sign in with Turnkey via email OTP. We store the session locally so subsequent actions happen
@@ -411,28 +441,28 @@ function TurnkeyAuthContent() {
             </p>
           </article>
 
-          <article className="rounded-2xl border border-slate-200 bg-white/80 p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
+          <article className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
             <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Step 2 · Wallet provisioning</h3>
             <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
               Transfers create new managed wallets automatically. Each ACH destination receives a unique address so senders never see aggregate balances.
             </p>
-            <div className="mt-4 flex items-center gap-2 text-sm font-medium text-emerald-600 dark:text-emerald-400">
-              <CheckCircle2 className="h-4 w-4" /> Wallets generate as transfers arrive
+            <div className="mt-3 flex items-center gap-2 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+              <CheckCircle2 className="h-3.5 w-3.5" /> Wallets generate as transfers arrive
             </div>
           </article>
 
-          <article className="rounded-2xl border border-slate-200 bg-white/80 p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
+          <article className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
             <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Step 3 · Verify bank identity</h3>
             <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
               Connect your bank account to verify your identity. Plaid securely retrieves your personal information
               from your bank for compliance verification.
             </p>
             {plaidIdentity ? (
-              <div className="mt-4 space-y-3">
-                <div className="flex items-center gap-2 text-sm font-medium text-emerald-600 dark:text-emerald-400">
-                  <CheckCircle2 className="h-4 w-4" /> Bank verified
+              <div className="mt-3 space-y-2 text-xs">
+                <div className="flex items-center gap-2 font-medium text-emerald-600 dark:text-emerald-400">
+                  <CheckCircle2 className="h-3.5 w-3.5" /> Bank verified
                 </div>
-                <div className="rounded-lg border border-slate-200/70 bg-white/50 p-4 text-sm dark:border-slate-700/50 dark:bg-slate-800/50">
+                <div className="rounded-lg border border-slate-200/70 bg-white/50 p-3 dark:border-slate-700/50 dark:bg-slate-800/50">
                   <p className="font-medium text-slate-900 dark:text-white">
                     {plaidIdentity.names[0]}
                   </p>
@@ -452,22 +482,34 @@ function TurnkeyAuthContent() {
                       {plaidIdentity.addresses[0].region} {plaidIdentity.addresses[0].postal_code}
                     </p>
                   )}
+                  {plaidIdentity.achAccounts[0] && (
+                    <div className="mt-2 grid grid-cols-1 gap-1 text-xs text-slate-500 dark:text-slate-400">
+                      <div className="flex items-center justify-between">
+                        <span className="uppercase tracking-wide">Routing</span>
+                        <span>{plaidIdentity.achAccounts[0].routingNumber}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="uppercase tracking-wide">Account</span>
+                        <span>{plaidIdentity.achAccounts[0].accountNumber}</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             ) : (
-              <div className="mt-4">
+              <div className="mt-3">
                 <PlaidConnectButton onSuccess={handlePlaidSuccess} onError={handlePlaidError} />
               </div>
             )}
           </article>
 
-          <article className="rounded-2xl border border-slate-200 bg-white/80 p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
+          <article className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/80 md:col-span-2">
             <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Step 4 · Review deposits</h3>
             <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
               Each bank transfer lands in its own managed wallet. Confirm the allocations below and use the
               wallet addresses for on-chain visibility.
             </p>
-            <div className="mt-4 space-y-3">
+            <div className="mt-3 space-y-3">
               {isTransfersLoading ? (
                 <p className="text-xs text-slate-500 dark:text-slate-400">Loading deposits…</p>
               ) : transferSummaries.length === 0 ? (

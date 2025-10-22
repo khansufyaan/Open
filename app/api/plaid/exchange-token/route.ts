@@ -94,6 +94,44 @@ export async function POST(request: Request) {
 
     const owner = accounts[0].owners[0];
 
+    let achAccounts: Array<{
+      accountId: string;
+      accountNumber: string;
+      routingNumber: string;
+      wireRoutingNumber: string | null;
+      mask: string | null;
+      name: string | null;
+    }> = [];
+
+    try {
+      const authResponse = await plaidClient.authGet({
+        access_token: accessToken,
+      });
+
+      const achNumbers = authResponse.data.numbers?.ach ?? [];
+      const identityAccountsById = new Map(
+        accounts.map((account) => [account.account_id, account])
+      );
+
+      achAccounts = achNumbers
+        .map((achEntry) => {
+          const identityAccount = identityAccountsById.get(achEntry.account_id);
+
+          return {
+            accountId: achEntry.account_id,
+            accountNumber: achEntry.account,
+            routingNumber: achEntry.routing,
+            wireRoutingNumber: achEntry.wire_routing ?? null,
+            mask:
+              identityAccount?.mask ?? (achEntry.account ? achEntry.account.slice(-4) : null),
+            name: identityAccount?.name ?? identityAccount?.official_name ?? null,
+          };
+        })
+        .filter((value): value is NonNullable<typeof value> => Boolean(value.accountNumber && value.routingNumber));
+    } catch (authError) {
+      console.warn("Plaid authGet failed to return ACH data", authError);
+    }
+
     const identityData = {
       names: owner.names || [],
       emails: owner.emails?.map(e => e.data) || [],
@@ -110,6 +148,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       identity: identityData,
+      achAccounts,
     });
   } catch (error) {
     console.error("Plaid token exchange or identity fetch failed:", error);

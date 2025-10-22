@@ -8,6 +8,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
+const DIGIT_REGEX = /\D+/g;
+
+function sanitizeDigits(value: string): string {
+  return value.replace(DIGIT_REGEX, "");
+}
+
 type TransferResponse = {
   transferId: string;
   walletId: string;
@@ -49,6 +55,32 @@ export function SenderExperience() {
       console.warn("Failed to load transfer history", storageError);
     }
   }, []);
+
+  const handleAccountNumberChange = useCallback(
+    (value: string) => {
+      const sanitized = sanitizeDigits(value);
+      setRecipientAccountNumber(sanitized);
+
+      const matched = history.find((entry) => entry.accountNumber === sanitized);
+      if (matched) {
+        setRecipientRoutingNumber(matched.routingNumber);
+      }
+    },
+    [history]
+  );
+
+  const handleRoutingNumberChange = useCallback(
+    (value: string) => {
+      const sanitized = sanitizeDigits(value);
+      setRecipientRoutingNumber(sanitized);
+
+      const matches = history.filter((entry) => entry.routingNumber === sanitized);
+      if (matches.length === 1) {
+        setRecipientAccountNumber(matches[0].accountNumber);
+      }
+    },
+    [history]
+  );
 
   const senderAddress = useMemo(() => {
     const evmWallet = wallets.find((wallet) => wallet.type === "ethereum");
@@ -123,8 +155,8 @@ export function SenderExperience() {
 
         try {
           const normalizedEntry = {
-            accountNumber: recipientAccountNumber.trim(),
-            routingNumber: recipientRoutingNumber.trim(),
+            accountNumber: sanitizeDigits(recipientAccountNumber),
+            routingNumber: sanitizeDigits(recipientRoutingNumber),
           };
 
           if (normalizedEntry.accountNumber && normalizedEntry.routingNumber) {
@@ -189,10 +221,22 @@ export function SenderExperience() {
               pattern="[0-9]*"
               required
               value={recipientAccountNumber}
-              onChange={(event) => setRecipientAccountNumber(event.target.value)}
+            onChange={(event) => handleAccountNumberChange(event.target.value)}
               placeholder="000123456789"
               disabled={isFormDisabled}
+            list="sender-account-history"
             />
+          {history.length > 0 && (
+            <datalist id="sender-account-history">
+              {history.map((entry) => (
+                <option
+                  key={`${entry.routingNumber}-${entry.accountNumber}`}
+                  value={entry.accountNumber}
+                  label={`Account ••••${entry.accountNumber.slice(-4)} · Routing ${entry.routingNumber}`}
+                />
+              ))}
+            </datalist>
+          )}
           </div>
 
           <div className="space-y-2">
@@ -204,11 +248,19 @@ export function SenderExperience() {
               pattern="[0-9]*"
               required
               value={recipientRoutingNumber}
-              onChange={(event) => setRecipientRoutingNumber(event.target.value)}
+            onChange={(event) => handleRoutingNumberChange(event.target.value)}
               placeholder="021000021"
               disabled={isFormDisabled}
               maxLength={9}
+            list="sender-routing-history"
             />
+          {history.length > 0 && (
+            <datalist id="sender-routing-history">
+              {[...new Map(history.map((entry) => [entry.routingNumber, entry.routingNumber])).values()].map((routing) => (
+                <option key={routing} value={routing} />
+              ))}
+            </datalist>
+          )}
           </div>
 
           <div className="space-y-2">

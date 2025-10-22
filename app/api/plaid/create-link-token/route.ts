@@ -48,7 +48,7 @@ export async function POST() {
         client_user_id: "user-" + Date.now(), // In production, use actual user ID from session
       },
       client_name: "Blue Wallet",
-      products: [Products.Identity],
+      products: [Products.Identity, Products.Auth],
       country_codes: [CountryCode.Us],
       language: "en",
     });
