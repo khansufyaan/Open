@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 import { usePrivy, useWallets } from "@privy-io/react-auth";
 
@@ -24,10 +24,31 @@ export function SenderExperience() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [recipientAccountNumber, setRecipientAccountNumber] = useState("");
   const [recipientRoutingNumber, setRecipientRoutingNumber] = useState("");
-  const [amount, setAmount] = useState("1000");
+  const STORAGE_KEY = "blue_wallet_transfer_history";
+
+  const [amount, setAmount] = useState("1");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [transfer, setTransfer] = useState<TransferResponse | null>(null);
+  const [history, setHistory] = useState<Array<{ accountNumber: string; routingNumber: string }>>([]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    try {
+      const stored = window.localStorage.getItem(STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored) as Array<{ accountNumber: string; routingNumber: string }>;
+        if (Array.isArray(parsed)) {
+          setHistory(parsed);
+        }
+      }
+    } catch (storageError) {
+      console.warn("Failed to load transfer history", storageError);
+    }
+  }, []);
 
   const senderAddress = useMemo(() => {
     const evmWallet = wallets.find((wallet) => wallet.type === "ethereum");
@@ -99,6 +120,32 @@ export function SenderExperience() {
         }
 
         setTransfer(data.transfer as TransferResponse);
+
+        try {
+          const normalizedEntry = {
+            accountNumber: recipientAccountNumber.trim(),
+            routingNumber: recipientRoutingNumber.trim(),
+          };
+
+          if (normalizedEntry.accountNumber && normalizedEntry.routingNumber) {
+            const nextHistory = [
+              normalizedEntry,
+              ...history.filter(
+                (entry) =>
+                  entry.accountNumber !== normalizedEntry.accountNumber ||
+                  entry.routingNumber !== normalizedEntry.routingNumber
+              ),
+            ].slice(0, 5);
+
+            setHistory(nextHistory);
+
+            if (typeof window !== "undefined") {
+              window.localStorage.setItem(STORAGE_KEY, JSON.stringify(nextHistory));
+            }
+          }
+        } catch (storageError) {
+          console.warn("Failed to persist transfer history", storageError);
+        }
       } catch (submitError) {
         const message =
           submitError instanceof Error ? submitError.message : "Unable to submit transfer.";
@@ -108,7 +155,7 @@ export function SenderExperience() {
         setIsSubmitting(false);
       }
     },
-    [senderAddress, recipientAccountNumber, recipientRoutingNumber, amount]
+    [senderAddress, recipientAccountNumber, recipientRoutingNumber, amount, history]
   );
 
   return (
