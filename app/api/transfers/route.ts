@@ -30,6 +30,8 @@ type TransferRecord = {
   depositMethod: string;
   createdAt: string;
   updatedAt: string;
+  fundingTxHash?: string;
+  fundingStatus?: "PENDING" | "CONFIRMED" | "FAILED";
   withdrawalTxHash?: string;
   withdrawalTargetAddress?: string;
   withdrawnAt?: string;
@@ -190,6 +192,7 @@ export async function POST(request: Request) {
       depositMethod: "ach",
       createdAt: timestamp,
       updatedAt: timestamp,
+      fundingStatus: "PENDING",
     };
 
     await docClient.send(

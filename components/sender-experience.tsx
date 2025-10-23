@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { usePrivy, useWallets } from "@privy-io/react-auth";
 
@@ -24,6 +24,16 @@ type TransferResponse = {
   routingMask: string;
 };
 
+type RecipientPreview = {
+  userId: string;
+  name: string | null;
+  email: string | null;
+  phone: string | null;
+  confidence: "exact" | "mask" | "mask-routing";
+  accountMask: string | null;
+  routingMask: string | null;
+};
+
 export function SenderExperience() {
   const { ready: privyReady, authenticated, login, connectWallet } = usePrivy();
   const { wallets } = useWallets();
@@ -37,6 +47,10 @@ export function SenderExperience() {
   const [error, setError] = useState<string | null>(null);
   const [transfer, setTransfer] = useState<TransferResponse | null>(null);
   const [history, setHistory] = useState<Array<{ accountNumber: string; routingNumber: string }>>([]);
+  const [preview, setPreview] = useState<RecipientPreview[] | null>(null);
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const previewControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -190,6 +204,68 @@ export function SenderExperience() {
     [senderAddress, recipientAccountNumber, recipientRoutingNumber, amount, history]
   );
 
+  useEffect(() => {
+    const accountDigits = sanitizeDigits(recipientAccountNumber);
+    const routingDigits = sanitizeDigits(recipientRoutingNumber);
+
+    if (accountDigits.length < 4 || routingDigits.length !== 9) {
+      previewControllerRef.current?.abort();
+      previewControllerRef.current = null;
+      setPreview(null);
+      setPreviewError(null);
+      setIsPreviewLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    previewControllerRef.current?.abort();
+    previewControllerRef.current = controller;
+
+    setIsPreviewLoading(true);
+    setPreviewError(null);
+
+    fetch(
+      `/api/db/lookup-recipient?accountNumber=${encodeURIComponent(accountDigits)}&routingNumber=${encodeURIComponent(routingDigits)}`,
+      { signal: controller.signal }
+    )
+      .then(async (response) => {
+        if (controller.signal.aborted) {
+          return;
+        }
+
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+          const message = typeof data.message === "string" ? data.message : null;
+          if (response.status === 404) {
+            setPreview(null);
+            setPreviewError(message ?? "No verified recipient found for this account yet.");
+          } else {
+            throw new Error(message ?? "Recipient lookup failed.");
+          }
+          return;
+        }
+
+        const data = (await response.json()) as { matches: RecipientPreview[] };
+        setPreview(Array.isArray(data.matches) ? data.matches : []);
+      })
+      .catch((error) => {
+        if (controller.signal.aborted) {
+          return;
+        }
+        setPreview(null);
+        setPreviewError(error instanceof Error ? error.message : "Recipient lookup failed.");
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setIsPreviewLoading(false);
+        }
+      });
+
+    return () => {
+      controller.abort();
+    };
+  }, [recipientAccountNumber, recipientRoutingNumber]);
+
   return (
     <section className="space-y-10">
       <div className="space-y-4 rounded-3xl border border-slate-200/80 bg-white/70 p-10 text-slate-700 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-200">
@@ -277,6 +353,68 @@ export function SenderExperience() {
               placeholder="1000"
               disabled={isFormDisabled}
             />
+          </div>
+
+          <div className="rounded-xl border border-slate-200/70 bg-white/70 p-4 text-sm dark:border-slate-800/60 dark:bg-slate-900/60">
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              Recipient verification
+            </h2>
+            {isPreviewLoading ? (
+              <p className="mt-2 text-slate-600 dark:text-slate-300">Checking for existing recipient…</p>
+            ) : preview && preview.length > 0 ? (
+              <ul className="mt-3 space-y-3">
+                {preview.map((entry) => (
+                  <li key={entry.userId} className="rounded-lg border border-slate-200/60 bg-white/80 p-3 dark:border-slate-700/60 dark:bg-slate-900/70">
+                    <p className="text-sm font-medium text-slate-700 dark:text-slate-100">
+                      {entry.name ?? "Verified recipient"}
+                    </p>
+                    <dl className="mt-1 space-y-1 text-xs text-slate-600 dark:text-slate-300">
+                      {entry.email && (
+                        <div className="flex gap-2">
+                          <dt className="font-semibold uppercase tracking-wide text-[10px] text-slate-500 dark:text-slate-400">
+                            Email
+                          </dt>
+                          <dd>{entry.email}</dd>
+                        </div>
+                      )}
+                      {entry.phone && (
+                        <div className="flex gap-2">
+                          <dt className="font-semibold uppercase tracking-wide text-[10px] text-slate-500 dark:text-slate-400">
+                            Phone
+                          </dt>
+                          <dd>{entry.phone}</dd>
+                        </div>
+                      )}
+                      {entry.accountMask && (
+                        <div className="flex gap-2">
+                          <dt className="font-semibold uppercase tracking-wide text-[10px] text-slate-500 dark:text-slate-400">
+                            Account
+                          </dt>
+                          <dd>{entry.accountMask}</dd>
+                        </div>
+                      )}
+                      {entry.routingMask && (
+                        <div className="flex gap-2">
+                          <dt className="font-semibold uppercase tracking-wide text-[10px] text-slate-500 dark:text-slate-400">
+                            Routing
+                          </dt>
+                          <dd>{entry.routingMask}</dd>
+                        </div>
+                      )}
+                    </dl>
+                    <p className="mt-2 text-[11px] uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                      Match confidence: {entry.confidence === "exact" ? "Exact" : entry.confidence === "mask-routing" ? "Mask + routing" : "Mask"}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            ) : previewError ? (
+              <p className="mt-2 text-slate-500 dark:text-slate-400">{previewError}</p>
+            ) : (
+              <p className="mt-2 text-slate-500 dark:text-slate-400">
+                Enter full bank details to check if a verified recipient already exists.
+              </p>
+            )}
           </div>
 
           <div className="flex flex-col gap-3 sm:flex-row">
