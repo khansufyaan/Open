@@ -144,7 +144,7 @@ export function SenderExperience() {
         );
       }
 
-      if (amountUnits <= 0n) {
+      if (amountUnits <= BigInt(0)) {
         throw new Error("Transfer amount must be greater than zero.");
       }
 
