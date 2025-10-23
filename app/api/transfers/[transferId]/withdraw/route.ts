@@ -162,11 +162,13 @@ async function buildWithdrawalQuote({
     amountUnits,
   });
 
+  const bufferedTotalFeeWei = (prepared.totalFeeWei * 125n + 99n) / 100n;
   const walletBalanceWei = await publicClient.getBalance({ address: walletAddress });
-  const topUpWei = prepared.totalFeeWei > walletBalanceWei ? prepared.totalFeeWei - walletBalanceWei : 0n;
+  const topUpWei = bufferedTotalFeeWei > walletBalanceWei ? bufferedTotalFeeWei - walletBalanceWei : 0n;
 
   return {
     ...prepared,
+    totalFeeWei: bufferedTotalFeeWei,
     walletBalanceWei,
     topUpWei,
   };
