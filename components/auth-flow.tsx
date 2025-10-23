@@ -2,13 +2,16 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { usePrivy, useWallets } from "@privy-io/react-auth";
 import { useTurnkey } from "@turnkey/sdk-react";
 import type { Session } from "@turnkey/sdk-types";
 import { CheckCircle2, LogOut } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { TurnkeyLoginForm } from "@/components/turnkey-login-form";
 import { PlaidConnectButton } from "@/components/plaid-connect-button";
+import { base } from "viem/chains";
 
 const TURNKEY_READY = Boolean(
   process.env.NEXT_PUBLIC_TURNKEY_API_BASE_URL && process.env.NEXT_PUBLIC_TURNKEY_ORGANIZATION_ID
@@ -45,12 +48,99 @@ type TransferSummary = {
   status: string;
   depositMethod: string;
   createdAt: string;
+  withdrawalTxHash?: string | null;
+  withdrawalTargetAddress?: string | null;
+  withdrawnAt?: string | null;
+};
+
+type WithdrawalQuote = {
+  gasLimit: string;
+  maxFeePerGasWei: string;
+  maxPriorityFeePerGasWei: string;
+  totalFeeWei: string;
+  totalFeeEth: string;
+  walletBalanceWei: string;
+  walletBalanceEth: string;
+  topUpWei: string;
+  topUpEth: string;
+  hasSufficientBalance: boolean;
+  destination: string;
+  chainId: number;
 };
 
 const DIGIT_REGEX = /\D+/g;
+const HEX_ADDRESS_REGEX = /^0x[a-fA-F0-9]{40}$/;
+
+const BASE_CHAIN_ID = base.id;
+const BASE_CHAIN_HEX = `0x${BASE_CHAIN_ID.toString(16)}` as const;
 
 function sanitizeDigits(value: string | null | undefined): string {
   return typeof value === "string" ? value.replace(DIGIT_REGEX, "") : "";
+}
+
+function bigintToHex(value: bigint): string {
+  return `0x${value.toString(16)}`;
+}
+
+function formatEth(value: string): string {
+  const numericValue = Number(value);
+
+  if (Number.isNaN(numericValue)) {
+    return value;
+  }
+
+  return numericValue.toLocaleString(undefined, {
+    maximumFractionDigits: 6,
+  });
+}
+
+function getAccountKey(account: PlaidAchAccount): string {
+  if (account.accountId) {
+    return account.accountId;
+  }
+
+  return `${account.routingNumber}:${account.accountNumber}`;
+}
+
+function normalizeAchAccounts(accounts: PlaidAchAccount[]): PlaidAchAccount[] {
+  return accounts
+    .map((account) => {
+      const accountNumber = sanitizeDigits(account.accountNumber);
+      const routingNumber = sanitizeDigits(account.routingNumber);
+
+      if (!accountNumber || !routingNumber) {
+        return null;
+      }
+
+      const mask = account.mask ?? accountNumber.slice(-4);
+
+      return {
+        accountId: account.accountId,
+        accountNumber,
+        routingNumber,
+        wireRoutingNumber: account.wireRoutingNumber ?? null,
+        mask,
+        name: account.name ?? null,
+      };
+    })
+    .filter((value): value is PlaidAchAccount => value !== null);
+}
+
+function mergeAchAccounts(
+  current: PlaidAchAccount[],
+  incoming: PlaidAchAccount[]
+): PlaidAchAccount[] {
+  const merged = new Map<string, PlaidAchAccount>();
+
+  for (const account of current) {
+    merged.set(getAccountKey(account), account);
+  }
+
+  for (const account of incoming) {
+    merged.set(getAccountKey(account), account);
+  }
+
+  return Array.from(merged.values());
 }
 
 export function AuthFlow() {
@@ -72,16 +162,44 @@ export function AuthFlow() {
 }
 
 function TurnkeyAuthContent() {
+  const { ready: privyReady, authenticated: privyAuthenticated, login: privyLogin, connectWallet: privyConnectWallet } = usePrivy();
+  const { wallets: connectedWallets } = useWallets();
   const turnkeyContext = useTurnkey();
   const turnkey = turnkeyContext.turnkey;
+  const ALL_ACCOUNTS_KEY = "__ALL__";
   const [authError, setAuthError] = useState<string | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [plaidIdentity, setPlaidIdentity] = useState<PlaidIdentitySnapshot | null>(null);
+  const [linkedAccounts, setLinkedAccounts] = useState<PlaidAchAccount[]>([]);
+  const [selectedAccountKey, setSelectedAccountKey] = useState<string>(ALL_ACCOUNTS_KEY);
   const [transferSummaries, setTransferSummaries] = useState<TransferSummary[]>([]);
   const [isTransfersLoading, setIsTransfersLoading] = useState(false);
   const [transferError, setTransferError] = useState<string | null>(null);
+  const [plaidHydrated, setPlaidHydrated] = useState(false);
   const stepsRef = useRef<HTMLDivElement | null>(null);
+  const [withdrawInputs, setWithdrawInputs] = useState<Record<string, string>>({});
+  const [withdrawLoading, setWithdrawLoading] = useState<Record<string, boolean>>({});
+  const [withdrawErrors, setWithdrawErrors] = useState<Record<string, string | null>>({});
+  const [withdrawSuccess, setWithdrawSuccess] = useState<Record<string, string | null>>({});
+  const [withdrawQuotes, setWithdrawQuotes] = useState<Record<string, WithdrawalQuote | null>>({});
+  const [quoteLoading, setQuoteLoading] = useState<Record<string, boolean>>({});
+  const [quoteErrors, setQuoteErrors] = useState<Record<string, string | null>>({});
+  const [topUpLoading, setTopUpLoading] = useState<Record<string, boolean>>({});
+  const [topUpErrors, setTopUpErrors] = useState<Record<string, string | null>>({});
+  const [topUpSuccess, setTopUpSuccess] = useState<Record<string, string | null>>({});
+  const [walletConnectError, setWalletConnectError] = useState<string | null>(null);
+  const [isWalletConnecting, setIsWalletConnecting] = useState(false);
+
+  const selectedAccount =
+    selectedAccountKey === ALL_ACCOUNTS_KEY
+      ? linkedAccounts[0] ?? null
+      : linkedAccounts.find((account) => getAccountKey(account) === selectedAccountKey) ?? null;
+
+  const connectedEvmWallet = useMemo(
+    () => connectedWallets.find((wallet) => wallet.type === "ethereum"),
+    [connectedWallets]
+  );
 
   const handleScrollToSteps = useCallback(() => {
     stepsRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -116,38 +234,20 @@ function TurnkeyAuthContent() {
     for (const account of accounts) {
       const rawAccount = sanitizeDigits(account.accountNumber);
       const rawRouting = sanitizeDigits(account.routingNumber);
-
-      const variations: Array<{ accountNumber: string; routingNumber: string; last4?: string }> = [];
-
-      if (rawAccount && rawRouting) {
-        variations.push({ accountNumber: rawAccount, routingNumber: rawRouting, last4: rawAccount.slice(-4) });
+      if (!rawAccount || !rawRouting) {
+        continue;
       }
 
-      // If Plaid provided a masked value, attempt to derive a shorter variant using the input length
-      if (account.mask) {
-        const maskDigits = sanitizeDigits(account.mask);
-        if (maskDigits && rawAccount.endsWith(maskDigits)) {
-          variations.push({
-            accountNumber: maskDigits,
-            routingNumber: rawRouting,
-            last4: maskDigits.slice(-4),
-          });
-        }
-      }
+      const maskDigits = sanitizeDigits(account.mask);
+      const last4 = maskDigits || rawAccount.slice(-4);
+      const key = `${rawRouting}:${rawAccount}:${last4}`;
 
-      for (const candidate of variations) {
-        if (!candidate.accountNumber || !candidate.routingNumber) {
-          continue;
-        }
-
-        const key = `${candidate.routingNumber}:${candidate.accountNumber}`;
-        if (!uniqueCoordinates.has(key)) {
-          uniqueCoordinates.set(key, {
-            accountNumber: candidate.accountNumber,
-            routingNumber: candidate.routingNumber,
-            last4: (candidate.last4 ?? candidate.accountNumber.slice(-4)) || "",
-          });
-        }
+      if (!uniqueCoordinates.has(key)) {
+        uniqueCoordinates.set(key, {
+          accountNumber: rawAccount,
+          routingNumber: rawRouting,
+          last4,
+        });
       }
     }
 
@@ -218,6 +318,115 @@ function TurnkeyAuthContent() {
     };
   }, [turnkey]);
 
+  useEffect(() => {
+    if (!session || plaidHydrated) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const hydratePlaidData = async () => {
+      try {
+        const response = await fetch(`/api/db/user?userId=${encodeURIComponent(session.userId)}`);
+
+        if (!response.ok) {
+          return;
+        }
+
+        const data = await response.json();
+        const user = data.user as Record<string, unknown>;
+
+        const verificationCompleted = Boolean(user?.plaidVerificationCompleted);
+        const storedAccountsRaw = Array.isArray(user?.plaidAchAccounts)
+          ? (user.plaidAchAccounts as PlaidAchAccount[])
+          : [];
+
+        if (!verificationCompleted || storedAccountsRaw.length === 0) {
+          return;
+        }
+
+        const normalizedAccounts = normalizeAchAccounts(storedAccountsRaw);
+
+        if (normalizedAccounts.length === 0) {
+          return;
+        }
+
+        const mergedAccounts = mergeAchAccounts([], normalizedAccounts);
+
+        const identitySnapshot = (user.plaidIdentitySnapshot ?? null) as
+          | PlaidIdentitySnapshot
+          | null;
+
+        const fallbackIdentity: PlaidIdentitySnapshot = {
+          names:
+            Array.isArray(identitySnapshot?.names) && identitySnapshot.names.length > 0
+              ? identitySnapshot.names
+              : user?.plaidVerifiedName
+              ? [String(user.plaidVerifiedName)]
+              : [],
+          emails:
+            Array.isArray(identitySnapshot?.emails) && identitySnapshot.emails.length > 0
+              ? identitySnapshot.emails
+              : user?.plaidVerifiedEmail
+              ? [String(user.plaidVerifiedEmail)]
+              : [],
+          phones:
+            Array.isArray(identitySnapshot?.phones) && identitySnapshot.phones.length > 0
+              ? identitySnapshot.phones
+              : user?.plaidVerifiedPhone
+              ? [String(user.plaidVerifiedPhone)]
+              : [],
+          addresses:
+            Array.isArray(identitySnapshot?.addresses) && identitySnapshot.addresses.length > 0
+              ? identitySnapshot.addresses
+              : user?.plaidVerifiedAddress
+              ? [user.plaidVerifiedAddress as PlaidIdentitySnapshot["addresses"][number]]
+              : [],
+          achAccounts: mergedAccounts,
+        };
+
+        if (cancelled) {
+          return;
+        }
+
+        setPlaidIdentity(fallbackIdentity);
+        setLinkedAccounts(mergedAccounts);
+        setSelectedAccountKey(ALL_ACCOUNTS_KEY);
+      } catch (error) {
+        console.error("Failed to hydrate Plaid verification:", error);
+      } finally {
+        if (!cancelled) {
+          setPlaidHydrated(true);
+        }
+      }
+    };
+
+    void hydratePlaidData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [session, plaidHydrated, fetchTransfersForAccounts, ALL_ACCOUNTS_KEY]);
+
+  useEffect(() => {
+    const accountsToFetch =
+      selectedAccountKey === ALL_ACCOUNTS_KEY
+        ? linkedAccounts
+        : linkedAccounts.filter((account) => getAccountKey(account) === selectedAccountKey);
+
+    if (accountsToFetch.length === 0) {
+      if (linkedAccounts.length > 0 && selectedAccountKey !== ALL_ACCOUNTS_KEY) {
+        setSelectedAccountKey(ALL_ACCOUNTS_KEY);
+      }
+      if (linkedAccounts.length === 0) {
+        setTransferSummaries([]);
+      }
+      return;
+    }
+
+    void fetchTransfersForAccounts(accountsToFetch);
+  }, [selectedAccountKey, linkedAccounts, fetchTransfersForAccounts, ALL_ACCOUNTS_KEY]);
+
   const handleAuthSuccess = async (email: string) => {
     if (!turnkey) {
       setAuthError("Turnkey client is not ready. Check your configuration and try again.");
@@ -270,17 +479,39 @@ function TurnkeyAuthContent() {
     } finally {
       setSession(null);
       setPlaidIdentity(null);
+      setLinkedAccounts([]);
+      setSelectedAccountKey(ALL_ACCOUNTS_KEY);
+      setPlaidHydrated(false);
       setAuthError(null);
       setTransferSummaries([]);
       setTransferError(null);
+      setWithdrawInputs({});
+      setWithdrawLoading({});
+      setWithdrawErrors({});
+      setWithdrawSuccess({});
     }
   };
 
   const handlePlaidSuccess = async (identityData: PlaidIdentitySnapshot) => {
-    setPlaidIdentity(identityData);
-    setAuthError(null);
+    const normalizedAccounts = normalizeAchAccounts(identityData.achAccounts);
+    const mergedAccounts = mergeAchAccounts(linkedAccounts, normalizedAccounts);
 
-    void fetchTransfersForAccounts(identityData.achAccounts);
+    const nextSelectedKey =
+      selectedAccountKey === ALL_ACCOUNTS_KEY
+        ? ALL_ACCOUNTS_KEY
+        : mergedAccounts.some((account) => getAccountKey(account) === selectedAccountKey)
+        ? selectedAccountKey
+        : mergedAccounts.length > 0
+        ? getAccountKey(mergedAccounts[0])
+        : ALL_ACCOUNTS_KEY;
+
+    setLinkedAccounts(mergedAccounts);
+    setSelectedAccountKey(nextSelectedKey);
+    setPlaidIdentity({
+      ...identityData,
+      achAccounts: mergedAccounts,
+    });
+    setAuthError(null);
 
     if (session) {
       try {
@@ -296,8 +527,16 @@ function TurnkeyAuthContent() {
             plaidVerifiedPhone: identityData.phones[0],
             plaidVerifiedAddress: identityData.addresses[0],
             plaidVerificationCompleted: true,
-            plaidVerifiedAccountMask: identityData.achAccounts[0]?.mask,
-            plaidVerifiedRoutingNumber: identityData.achAccounts[0]?.routingNumber,
+            plaidVerifiedAccountMask: mergedAccounts[0]?.mask,
+            plaidVerifiedRoutingNumber: mergedAccounts[0]?.routingNumber,
+            plaidAchAccounts: mergedAccounts,
+            plaidIdentitySnapshot: {
+              names: identityData.names,
+              emails: identityData.emails,
+              phones: identityData.phones,
+              addresses: identityData.addresses,
+            },
+            plaidLastLinkedAt: new Date().toISOString(),
           }),
         });
       } catch (dbError) {
@@ -311,6 +550,322 @@ function TurnkeyAuthContent() {
     setTransferSummaries([]);
     setTransferError(error);
   };
+
+  const fetchWithdrawalQuote = useCallback(
+    async (transferId: string, targetAddress: string) => {
+      setQuoteLoading((previous) => ({
+        ...previous,
+        [transferId]: true,
+      }));
+      setQuoteErrors((previous) => ({
+        ...previous,
+        [transferId]: null,
+      }));
+
+      try {
+        const response = await fetch(
+          `/api/transfers/${transferId}/withdraw?targetAddress=${encodeURIComponent(targetAddress)}`
+        );
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.message ?? data.error ?? "Unable to estimate gas for withdrawal.");
+        }
+
+        const nextQuote: WithdrawalQuote = {
+          gasLimit: data.gasLimit,
+          maxFeePerGasWei: data.maxFeePerGasWei,
+          maxPriorityFeePerGasWei: data.maxPriorityFeePerGasWei,
+          totalFeeWei: data.totalFeeWei,
+          totalFeeEth: data.totalFeeEth,
+          walletBalanceWei: data.walletBalanceWei,
+          walletBalanceEth: data.walletBalanceEth,
+          topUpWei: data.topUpWei,
+          topUpEth: data.topUpEth,
+          hasSufficientBalance: Boolean(data.hasSufficientBalance),
+          destination: data.destination,
+          chainId: data.chainId,
+        };
+
+        setWithdrawQuotes((previous) => ({
+          ...previous,
+          [transferId]: nextQuote,
+        }));
+      } catch (error) {
+        console.error("Failed to compute withdrawal quote", error);
+        setQuoteErrors((previous) => ({
+          ...previous,
+          [transferId]: error instanceof Error ? error.message : "Unable to estimate gas for withdrawal.",
+        }));
+        setWithdrawQuotes((previous) => ({
+          ...previous,
+          [transferId]: null,
+        }));
+      } finally {
+        setQuoteLoading((previous) => ({
+          ...previous,
+          [transferId]: false,
+        }));
+      }
+    },
+    []
+  );
+
+  const handleWithdrawInputChange = useCallback(
+    (transferId: string, value: string) => {
+      setWithdrawInputs((previous) => ({
+        ...previous,
+        [transferId]: value,
+      }));
+      setWithdrawErrors((previous) => ({
+        ...previous,
+        [transferId]: null,
+      }));
+      setWithdrawSuccess((previous) => ({
+        ...previous,
+        [transferId]: null,
+      }));
+      setQuoteErrors((previous) => ({
+        ...previous,
+        [transferId]: null,
+      }));
+      setTopUpErrors((previous) => ({
+        ...previous,
+        [transferId]: null,
+      }));
+      setTopUpSuccess((previous) => ({
+        ...previous,
+        [transferId]: null,
+      }));
+
+      const normalized = value.trim();
+
+      if (HEX_ADDRESS_REGEX.test(normalized)) {
+        void fetchWithdrawalQuote(transferId, normalized);
+      } else {
+        setWithdrawQuotes((previous) => {
+          const next = { ...previous };
+          delete next[transferId];
+          return next;
+        });
+      }
+    },
+    [fetchWithdrawalQuote]
+  );
+
+  const handleConnectWallet = useCallback(async () => {
+    setWalletConnectError(null);
+
+    if (!privyReady) {
+      setWalletConnectError("Wallet connections are still initializing. Please try again shortly.");
+      return;
+    }
+
+    setIsWalletConnecting(true);
+
+    try {
+      if (!privyAuthenticated) {
+        await privyLogin({ loginMethods: ["wallet"] });
+      }
+
+      await privyConnectWallet();
+    } catch (error) {
+      console.error("Wallet connection failed", error);
+      setWalletConnectError(
+        error instanceof Error ? error.message : "Failed to connect wallet. Please retry."
+      );
+    } finally {
+      setIsWalletConnecting(false);
+    }
+  }, [privyReady, privyAuthenticated, privyLogin, privyConnectWallet]);
+
+  const handleTopUp = useCallback(
+    async (summary: TransferSummary) => {
+      const quote = withdrawQuotes[summary.transferId];
+      const destinationInput = (withdrawInputs[summary.transferId] ?? "").trim();
+
+      if (!quote) {
+        setTopUpErrors((previous) => ({
+          ...previous,
+          [summary.transferId]: "Enter a valid destination address to estimate gas first.",
+        }));
+        return;
+      }
+
+      const requiredWei = BigInt(quote.topUpWei);
+
+      if (requiredWei <= 0n) {
+        setTopUpErrors((previous) => ({
+          ...previous,
+          [summary.transferId]: "Managed wallet already holds enough ETH for gas.",
+        }));
+        return;
+      }
+
+      const fundingWallet = connectedEvmWallet;
+
+      if (!fundingWallet) {
+        setTopUpErrors((previous) => ({
+          ...previous,
+          [summary.transferId]: "Connect an Ethereum wallet to top up gas.",
+        }));
+        return;
+      }
+
+      setTopUpLoading((previous) => ({
+        ...previous,
+        [summary.transferId]: true,
+      }));
+      setTopUpErrors((previous) => ({
+        ...previous,
+        [summary.transferId]: null,
+      }));
+      setTopUpSuccess((previous) => ({
+        ...previous,
+        [summary.transferId]: null,
+      }));
+
+      try {
+        const currentChain = fundingWallet.chainId?.startsWith("eip155:")
+          ? Number(fundingWallet.chainId.split(":")[1])
+          : null;
+
+        if (currentChain !== BASE_CHAIN_ID) {
+          await fundingWallet.switchChain(BASE_CHAIN_HEX);
+        }
+
+        const provider = await fundingWallet.getEthereumProvider();
+
+        const txHash = (await provider.request({
+          method: "eth_sendTransaction",
+          params: [
+            {
+              from: fundingWallet.address,
+              to: summary.walletAddress,
+              value: bigintToHex(requiredWei),
+            },
+          ],
+        })) as string;
+
+        setTopUpSuccess((previous) => ({
+          ...previous,
+          [summary.transferId]: txHash,
+        }));
+
+        if (HEX_ADDRESS_REGEX.test(destinationInput)) {
+          await fetchWithdrawalQuote(summary.transferId, destinationInput);
+        }
+      } catch (error) {
+        console.error("Top-up transaction failed", error);
+        setTopUpErrors((previous) => ({
+          ...previous,
+          [summary.transferId]:
+            error instanceof Error ? error.message : "Failed to send top-up transaction.",
+        }));
+      } finally {
+        setTopUpLoading((previous) => ({
+          ...previous,
+          [summary.transferId]: false,
+        }));
+      }
+    },
+    [connectedEvmWallet, fetchWithdrawalQuote, withdrawInputs, withdrawQuotes]
+  );
+
+  const handleWithdraw = useCallback(
+    async (summary: TransferSummary) => {
+      const destinationInput = (withdrawInputs[summary.transferId] ?? "").trim();
+
+      if (!HEX_ADDRESS_REGEX.test(destinationInput)) {
+        setWithdrawErrors((previous) => ({
+          ...previous,
+          [summary.transferId]: "Enter a valid Base wallet address (0x…).",
+        }));
+        return;
+      }
+
+      setWithdrawLoading((previous) => ({
+        ...previous,
+        [summary.transferId]: true,
+      }));
+      setWithdrawErrors((previous) => ({
+        ...previous,
+        [summary.transferId]: null,
+      }));
+      setWithdrawSuccess((previous) => ({
+        ...previous,
+        [summary.transferId]: null,
+      }));
+
+      try {
+        const response = await fetch(`/api/transfers/${summary.transferId}/withdraw`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            targetAddress: destinationInput,
+          }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.message ?? data.error ?? "Withdrawal failed.");
+        }
+
+        setWithdrawSuccess((previous) => ({
+          ...previous,
+          [summary.transferId]: data.txHash as string,
+        }));
+
+        setWithdrawQuotes((previous) => {
+          const next = { ...previous };
+          delete next[summary.transferId];
+          return next;
+        });
+        setQuoteErrors((previous) => ({
+          ...previous,
+          [summary.transferId]: null,
+        }));
+        setTopUpErrors((previous) => ({
+          ...previous,
+          [summary.transferId]: null,
+        }));
+        setTopUpSuccess((previous) => ({
+          ...previous,
+          [summary.transferId]: null,
+        }));
+
+        setWithdrawInputs((previous) => ({
+          ...previous,
+          [summary.transferId]: "",
+        }));
+
+        const accountsToRefetch =
+          selectedAccountKey === ALL_ACCOUNTS_KEY
+            ? linkedAccounts
+            : linkedAccounts.filter((account) => getAccountKey(account) === selectedAccountKey);
+
+        if (accountsToRefetch.length > 0) {
+          await fetchTransfersForAccounts(accountsToRefetch);
+        }
+      } catch (error) {
+        setWithdrawErrors((previous) => ({
+          ...previous,
+          [summary.transferId]:
+            error instanceof Error ? error.message : "Withdrawal request failed.",
+        }));
+      } finally {
+        setWithdrawLoading((previous) => ({
+          ...previous,
+          [summary.transferId]: false,
+        }));
+      }
+    },
+    [ALL_ACCOUNTS_KEY, fetchTransfersForAccounts, linkedAccounts, selectedAccountKey, withdrawInputs]
+  );
 
   const userIdentifier = useMemo(() => session?.userId ?? "friend", [session]);
 
@@ -458,13 +1013,13 @@ function TurnkeyAuthContent() {
               from your bank for compliance verification.
             </p>
             {plaidIdentity ? (
-              <div className="mt-3 space-y-2 text-xs">
+              <div className="mt-3 space-y-3 text-xs">
                 <div className="flex items-center gap-2 font-medium text-emerald-600 dark:text-emerald-400">
                   <CheckCircle2 className="h-3.5 w-3.5" /> Bank verified
                 </div>
                 <div className="rounded-lg border border-slate-200/70 bg-white/50 p-3 dark:border-slate-700/50 dark:bg-slate-800/50">
                   <p className="font-medium text-slate-900 dark:text-white">
-                    {plaidIdentity.names[0]}
+                    {plaidIdentity.names[0] ?? "Linked account"}
                   </p>
                   {plaidIdentity.emails[0] && (
                     <p className="mt-1 text-slate-600 dark:text-slate-400">
@@ -482,23 +1037,91 @@ function TurnkeyAuthContent() {
                       {plaidIdentity.addresses[0].region} {plaidIdentity.addresses[0].postal_code}
                     </p>
                   )}
-                  {plaidIdentity.achAccounts[0] && (
-                    <div className="mt-2 grid grid-cols-1 gap-1 text-xs text-slate-500 dark:text-slate-400">
+                  {selectedAccount && (
+                    <div className="mt-3 grid grid-cols-1 gap-1 text-xs text-slate-500 dark:text-slate-400">
                       <div className="flex items-center justify-between">
                         <span className="uppercase tracking-wide">Routing</span>
-                        <span>{plaidIdentity.achAccounts[0].routingNumber}</span>
+                        <span>{selectedAccount.routingNumber}</span>
                       </div>
                       <div className="flex items-center justify-between">
                         <span className="uppercase tracking-wide">Account</span>
-                        <span>{plaidIdentity.achAccounts[0].accountNumber}</span>
+                        <span>{selectedAccount.accountNumber}</span>
                       </div>
                     </div>
                   )}
                 </div>
+
+                {linkedAccounts.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                      Linked accounts
+                    </p>
+                    <div className="space-y-2">
+                      {linkedAccounts.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedAccountKey(ALL_ACCOUNTS_KEY)}
+                          className={`w-full rounded-lg border px-3 py-2 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 ${
+                            selectedAccountKey === ALL_ACCOUNTS_KEY
+                              ? "border-sky-500 bg-sky-500/10 text-slate-900 dark:border-sky-500 dark:bg-sky-500/10 dark:text-slate-100"
+                              : "border-slate-200/70 bg-white/60 hover:border-slate-300 dark:border-slate-700/60 dark:bg-slate-800/40 dark:hover:border-slate-600"
+                          }`}
+                        >
+                          <p className="text-xs font-medium">
+                            All linked accounts
+                          </p>
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                            View combined deposits
+                          </p>
+                        </button>
+                      )}
+                      {linkedAccounts.map((account) => {
+                        const key = getAccountKey(account);
+                        const isSelected =
+                          selectedAccountKey === key ||
+                          (selectedAccountKey === ALL_ACCOUNTS_KEY && linkedAccounts.length === 1);
+                        const mask = account.mask ?? account.accountNumber.slice(-4);
+
+                        return (
+                          <button
+                            key={key}
+                            type="button"
+                            onClick={() => setSelectedAccountKey(key)}
+                            className={`w-full rounded-lg border px-3 py-2 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 ${
+                              isSelected
+                                ? "border-sky-500 bg-sky-500/10 text-slate-900 dark:border-sky-500 dark:bg-sky-500/10 dark:text-slate-100"
+                                : "border-slate-200/70 bg-white/60 hover:border-slate-300 dark:border-slate-700/60 dark:bg-slate-800/40 dark:hover:border-slate-600"
+                            }`}
+                          >
+                            <p className="text-xs font-medium text-slate-900 dark:text-slate-100">
+                              {`${account.name ?? "Account"} · ••••${mask}`}
+                            </p>
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                              Routing {account.routingNumber}
+                            </p>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <PlaidConnectButton
+                    userId={session.userId}
+                    label={linkedAccounts.length > 0 ? "Link another bank account" : "Connect bank account"}
+                    onSuccess={handlePlaidSuccess}
+                    onError={handlePlaidError}
+                  />
+                </div>
               </div>
             ) : (
               <div className="mt-3">
-                <PlaidConnectButton onSuccess={handlePlaidSuccess} onError={handlePlaidError} />
+                <PlaidConnectButton
+                  userId={session.userId}
+                  onSuccess={handlePlaidSuccess}
+                  onError={handlePlaidError}
+                />
               </div>
             )}
           </article>
@@ -518,42 +1141,223 @@ function TurnkeyAuthContent() {
                 </p>
               ) : (
                 <ul className="space-y-3 text-xs text-slate-600 dark:text-slate-300">
-                  {transferSummaries.map((summary) => (
-                    <li
-                      key={summary.transferId}
-                      className="rounded-lg border border-slate-200/70 p-3 dark:border-slate-700/50"
-                    >
-                      <p className="font-medium text-slate-700 dark:text-slate-100">
-                        {summary.amount} USDC · {summary.status.toLowerCase()}
-                      </p>
-                      <p className="mt-1 text-[11px] uppercase tracking-wide text-slate-400 dark:text-slate-500">
-                        Transfer {summary.transferId}
-                      </p>
-                      <dl className="mt-2 space-y-1">
-                        <div className="flex items-center gap-2">
-                          <CheckCircle2 className="h-3.5 w-3.5 text-sky-500" />
-                          <span className="truncate">{summary.walletAddress}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-slate-400 dark:text-slate-500">Wallet ID</span>
-                          <span className="truncate">{summary.walletId}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-slate-400 dark:text-slate-500">Recorded</span>
-                          <span>
-                            {new Date(summary.createdAt).toLocaleString(undefined, {
-                              dateStyle: "medium",
-                              timeStyle: "short",
-                            })}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-slate-400 dark:text-slate-500">Deposit</span>
-                          <span className="capitalize">{summary.depositMethod}</span>
-                        </div>
-                      </dl>
-                    </li>
-                  ))}
+                  {transferSummaries.map((summary) => {
+                    const destinationValue = (withdrawInputs[summary.transferId] ?? "").trim();
+                    const hasValidDestination = HEX_ADDRESS_REGEX.test(destinationValue);
+                    const quote = withdrawQuotes[summary.transferId];
+                    const quoteMatchesDestination = quote
+                      ? quote.destination.toLowerCase() === destinationValue.toLowerCase()
+                      : false;
+                    const requiresTopUp = quoteMatchesDestination
+                      ? BigInt(quote.topUpWei) > 0n
+                      : false;
+                    const isQuotePending = Boolean(quoteLoading[summary.transferId]);
+                    const withdrawDisabled = (() => {
+                      if (withdrawLoading[summary.transferId]) {
+                        return true;
+                      }
+
+                      if (!hasValidDestination) {
+                        return true;
+                      }
+
+                      if (!quoteMatchesDestination || requiresTopUp) {
+                        return true;
+                      }
+
+                      return false;
+                    })();
+
+                    return (
+                      <li
+                        key={summary.transferId}
+                        className="rounded-lg border border-slate-200/70 p-3 dark:border-slate-700/50"
+                      >
+                        <p className="font-medium text-slate-700 dark:text-slate-100">
+                          {summary.amount} USDC · {summary.status.toLowerCase()}
+                        </p>
+                        <p className="mt-1 text-[11px] uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                          Transfer {summary.transferId}
+                        </p>
+                        <dl className="mt-2 space-y-1">
+                          <div className="flex items-center gap-2">
+                            <CheckCircle2 className="h-3.5 w-3.5 text-sky-500" />
+                            <span className="truncate">{summary.walletAddress}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-slate-400 dark:text-slate-500">Wallet ID</span>
+                            <span className="truncate">{summary.walletId}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-slate-400 dark:text-slate-500">Recorded</span>
+                            <span>
+                              {new Date(summary.createdAt).toLocaleString(undefined, {
+                                dateStyle: "medium",
+                                timeStyle: "short",
+                              })}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-slate-400 dark:text-slate-500">Deposit</span>
+                            <span className="capitalize">{summary.depositMethod}</span>
+                          </div>
+                        </dl>
+                        {summary.status === "DEPOSITED" ? (
+                          <form
+                            className="mt-3 space-y-2"
+                            onSubmit={(event) => {
+                              event.preventDefault();
+                              void handleWithdraw(summary);
+                            }}
+                          >
+                            <div className="space-y-1.5">
+                              <p className="text-[11px] uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                                Transfer to Base wallet
+                              </p>
+                              <Input
+                                value={withdrawInputs[summary.transferId] ?? ""}
+                                onChange={(event) =>
+                                  handleWithdrawInputChange(summary.transferId, event.target.value)
+                                }
+                                placeholder="0x destination address"
+                                className="h-9 text-xs"
+                              />
+                              {isQuotePending && (
+                                <p className="text-[11px] text-slate-400 dark:text-slate-500">
+                                  Estimating Base gas requirements…
+                                </p>
+                              )}
+                              {quoteErrors[summary.transferId] && (
+                                <p className="text-[11px] text-red-500 dark:text-red-400">
+                                  {quoteErrors[summary.transferId]}
+                                </p>
+                              )}
+                              {quote && quoteMatchesDestination && (
+                                <div className="rounded-md border border-slate-200/60 bg-slate-50/70 p-2 text-[11px] dark:border-slate-700/60 dark:bg-slate-800/40">
+                                  <p className="font-medium text-slate-600 dark:text-slate-200">
+                                    Gas estimate · {formatEth(quote.totalFeeEth)} ETH
+                                  </p>
+                                  <p className="text-slate-500 dark:text-slate-400">
+                                    Wallet balance: {formatEth(quote.walletBalanceEth)} ETH
+                                  </p>
+                                  {requiresTopUp ? (
+                                    <p className="text-red-500 dark:text-red-400">
+                                      Needs {formatEth(quote.topUpEth)} ETH top-up.
+                                    </p>
+                                  ) : (
+                                    <p className="text-emerald-600 dark:text-emerald-400">
+                                      Gas funded. Ready to withdraw.
+                                    </p>
+                                  )}
+                                </div>
+                              )}
+                              <div className="flex flex-wrap items-center gap-2">
+                                <Button type="submit" size="sm" disabled={withdrawDisabled}>
+                                  {withdrawLoading[summary.transferId] ? "Transferring…" : "Send to Base"}
+                                </Button>
+                                <span className="text-[11px] text-slate-400 dark:text-slate-500">
+                                  Network: Base (8453) · Asset: USDC
+                                </span>
+                              </div>
+                              {quote && quoteMatchesDestination && requiresTopUp && (
+                                <div className="space-y-1">
+                                  {connectedEvmWallet ? (
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="outline"
+                                      disabled={Boolean(topUpLoading[summary.transferId])}
+                                      onClick={() => void handleTopUp(summary)}
+                                    >
+                                      {topUpLoading[summary.transferId] ? "Sending top-up…" : "Top up gas from connected wallet"}
+                                    </Button>
+                                  ) : (
+                                    <div className="space-y-1">
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="outline"
+                                        disabled={isWalletConnecting}
+                                        onClick={() => void handleConnectWallet()}
+                                      >
+                                        {isWalletConnecting ? "Connecting…" : "Connect wallet to top up"}
+                                      </Button>
+                                      {walletConnectError && (
+                                        <p className="text-[11px] text-red-500 dark:text-red-400">
+                                          {walletConnectError}
+                                        </p>
+                                      )}
+                                    </div>
+                                  )}
+                                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                                    Sends {formatEth(quote?.topUpEth ?? "0")} ETH to the managed wallet for gas.
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                            {withdrawErrors[summary.transferId] && (
+                              <p className="text-[11px] text-red-500 dark:text-red-400">
+                                {withdrawErrors[summary.transferId]}
+                              </p>
+                            )}
+                            {topUpErrors[summary.transferId] && (
+                              <p className="text-[11px] text-red-500 dark:text-red-400">
+                                {topUpErrors[summary.transferId]}
+                              </p>
+                            )}
+                            {topUpSuccess[summary.transferId] && (
+                              <p className="text-[11px] text-emerald-600 dark:text-emerald-400">
+                                Gas top-up sent ·{" "}
+                                <a
+                                  href={`https://basescan.org/tx/${topUpSuccess[summary.transferId]}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="underline"
+                                >
+                                  View on Basescan
+                                </a>
+                              </p>
+                            )}
+                            {withdrawSuccess[summary.transferId] && (
+                              <p className="text-[11px] text-emerald-600 dark:text-emerald-400">
+                                Withdrawal submitted ·{" "}
+                                <a
+                                  href={`https://basescan.org/tx/${withdrawSuccess[summary.transferId]}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="underline"
+                                >
+                                  View on Basescan
+                                </a>
+                              </p>
+                            )}
+                          </form>
+                        ) : summary.status === "WITHDRAWN" ? (
+                          <div className="mt-3 text-[11px] text-emerald-600 dark:text-emerald-400">
+                            Withdrawn to {summary.withdrawalTargetAddress ?? "recipient wallet"}
+                            {summary.withdrawalTxHash && (
+                              <>
+                                {" "}·{" "}
+                                <a
+                                  href={`https://basescan.org/tx/${summary.withdrawalTxHash}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="underline"
+                                >
+                                  View on Basescan
+                                </a>
+                              </>
+                            )}
+                            {summary.withdrawnAt && (
+                              <span className="text-slate-400 dark:text-slate-500">
+                                {" "}({new Date(summary.withdrawnAt).toLocaleString()})
+                              </span>
+                            )}
+                          </div>
+                        ) : null}
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
 

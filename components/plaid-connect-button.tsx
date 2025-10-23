@@ -28,39 +28,40 @@ interface PlaidIdentityData {
 }
 
 interface PlaidConnectButtonProps {
+  userId?: string;
+  label?: string;
   onSuccess: (identityData: PlaidIdentityData) => void;
   onError: (error: string) => void;
 }
 
-export function PlaidConnectButton({ onSuccess, onError }: PlaidConnectButtonProps) {
+export function PlaidConnectButton({ userId, label, onSuccess, onError }: PlaidConnectButtonProps) {
   const [linkToken, setLinkToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Fetch link token from our backend
-  useEffect(() => {
-    async function fetchLinkToken() {
-      try {
-        const response = await fetch("/api/plaid/create-link-token", {
-          method: "POST",
-        });
+  const loadLinkToken = useCallback(async () => {
+    try {
+      const response = await fetch("/api/plaid/create-link-token", {
+        method: "POST",
+      });
 
-        if (!response.ok) {
-          const errorData = await response.json();
-          console.error("Plaid link token error:", errorData);
-          throw new Error(errorData.message || "Failed to create link token");
-        }
-
-        const data = await response.json();
-        setLinkToken(data.link_token);
-      } catch (error) {
-        console.error("Failed to initialize Plaid:", error);
-        const message = error instanceof Error ? error.message : "Failed to initialize Plaid";
-        onError(message);
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error("Plaid link token error:", errorData);
+        throw new Error(errorData.message || "Failed to create link token");
       }
-    }
 
-    fetchLinkToken();
+      const data = await response.json();
+      setLinkToken(data.link_token);
+    } catch (error) {
+      console.error("Failed to initialize Plaid:", error);
+      const message = error instanceof Error ? error.message : "Failed to initialize Plaid";
+      onError(message);
+    }
   }, [onError]);
+
+  useEffect(() => {
+    void loadLinkToken();
+  }, [loadLinkToken]);
 
   const handleSuccess = useCallback(
     async (public_token: string) => {
@@ -71,7 +72,7 @@ export function PlaidConnectButton({ onSuccess, onError }: PlaidConnectButtonPro
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ public_token }),
+          body: JSON.stringify({ public_token, userId }),
         });
 
         if (!response.ok) {
@@ -89,6 +90,7 @@ export function PlaidConnectButton({ onSuccess, onError }: PlaidConnectButtonPro
         } else {
           throw new Error("No identity data received");
         }
+        await loadLinkToken();
       } catch (error) {
         const message = error instanceof Error ? error.message : "Failed to fetch identity data";
         onError(message);
@@ -96,7 +98,7 @@ export function PlaidConnectButton({ onSuccess, onError }: PlaidConnectButtonPro
         setIsLoading(false);
       }
     },
-    [onSuccess, onError]
+    [onSuccess, onError, userId, loadLinkToken]
   );
 
   const { open, ready } = usePlaidLink({
@@ -115,7 +117,7 @@ export function PlaidConnectButton({ onSuccess, onError }: PlaidConnectButtonPro
       disabled={!ready || isLoading}
       className="w-full sm:w-auto"
     >
-      {isLoading ? "Verifying..." : "Connect Bank Account"}
+      {isLoading ? "Verifying..." : label ?? "Connect Bank Account"}
     </Button>
   );
 }

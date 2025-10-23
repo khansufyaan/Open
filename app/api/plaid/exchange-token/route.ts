@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { Configuration, PlaidApi, PlaidEnvironments } from "plaid";
+import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
+import { DynamoDBDocumentClient, GetCommand, PutCommand } from "@aws-sdk/lib-dynamodb";
 
 function getPlaidClient() {
   const clientId = process.env.PLAID_CLIENT_ID;
@@ -25,6 +27,18 @@ function getPlaidClient() {
   });
 
   return new PlaidApi(configuration);
+}
+
+const USERS_TABLE = "blue-wallet-users";
+
+const dynamoClient = new DynamoDBClient({
+  region: process.env.AWS_REGION || "us-east-2",
+});
+
+const docClient = DynamoDBDocumentClient.from(dynamoClient);
+
+function sanitizeDigits(value: string | null | undefined): string {
+  return typeof value === "string" ? value.replace(/\D+/g, "") : "";
 }
 
 export async function POST(request: Request) {
@@ -54,7 +68,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const publicToken = (body as { public_token?: string }).public_token;
+  const { public_token: publicToken, userId } = body as { public_token?: string; userId?: string };
 
   if (!publicToken) {
     return NextResponse.json(
@@ -144,6 +158,70 @@ export async function POST(request: Request) {
         country: a.data.country,
       })) || [],
     };
+
+    const sanitizedAccounts = achAccounts
+      .map((account) => ({
+        accountId: account.accountId,
+        accountNumber: sanitizeDigits(account.accountNumber),
+        routingNumber: sanitizeDigits(account.routingNumber),
+        wireRoutingNumber: account.wireRoutingNumber ?? null,
+        mask: account.mask ?? null,
+        name: account.name ?? null,
+      }))
+      .filter((account) => account.accountNumber && account.routingNumber);
+
+    if (userId) {
+      try {
+        const timestamp = new Date().toISOString();
+        const existing = await docClient.send(
+          new GetCommand({
+            TableName: USERS_TABLE,
+            Key: { userId },
+          })
+        );
+
+        const previous = existing.Item ?? {};
+
+        const previousAccounts = Array.isArray(previous.plaidAchAccounts)
+          ? (previous.plaidAchAccounts as typeof sanitizedAccounts)
+          : [];
+
+        const accountMap = new Map<string, (typeof sanitizedAccounts)[number]>();
+
+        const accountKey = (account: (typeof sanitizedAccounts)[number]) =>
+          account.accountId ? account.accountId : `${account.routingNumber}:${account.accountNumber}`;
+
+        for (const account of previousAccounts) {
+          accountMap.set(accountKey(account), account);
+        }
+
+        for (const account of sanitizedAccounts) {
+          accountMap.set(accountKey(account), account);
+        }
+
+        const mergedAccounts = Array.from(accountMap.values());
+
+        await docClient.send(
+          new PutCommand({
+            TableName: USERS_TABLE,
+            Item: {
+              ...previous,
+              userId,
+              plaidAccessToken: accessToken,
+              plaidItemId: exchangeResponse.data.item_id ?? previous.plaidItemId,
+              plaidAchAccounts: mergedAccounts,
+              plaidIdentitySnapshot: identityData,
+              plaidVerificationCompleted: true,
+              plaidLastLinkedAt: timestamp,
+              createdAt: previous.createdAt ?? timestamp,
+              updatedAt: timestamp,
+            },
+          })
+        );
+      } catch (persistError) {
+        console.error("Failed to persist Plaid credentials:", persistError);
+      }
+    }
 
     return NextResponse.json({
       success: true,

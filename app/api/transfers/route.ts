@@ -26,10 +26,13 @@ type TransferRecord = {
   amountCents: number;
   walletId: string;
   walletAddress: string;
-  status: "DEPOSITED" | "PENDING" | "FAILED";
+  status: "DEPOSITED" | "PENDING" | "FAILED" | "WITHDRAWN";
   depositMethod: string;
   createdAt: string;
   updatedAt: string;
+  withdrawalTxHash?: string;
+  withdrawalTargetAddress?: string;
+  withdrawnAt?: string;
 };
 
 function normalizeAddress(address: string): string {
@@ -184,7 +187,7 @@ export async function POST(request: Request) {
       walletId,
       walletAddress,
       status: "DEPOSITED",
-      depositMethod: "simulated",
+      depositMethod: "ach",
       createdAt: timestamp,
       updatedAt: timestamp,
     };
@@ -299,8 +302,11 @@ export async function GET(request: Request) {
         walletAddress: item.walletAddress,
         amount: item.amount,
         status: item.status,
-        depositMethod: item.depositMethod,
+        depositMethod: item.depositMethod === "simulated" ? "ach" : item.depositMethod,
         createdAt: item.createdAt,
+        withdrawalTxHash: item.withdrawalTxHash ?? null,
+        withdrawalTargetAddress: item.withdrawalTargetAddress ?? null,
+        withdrawnAt: item.withdrawnAt ?? null,
       })),
     });
   } catch (error) {

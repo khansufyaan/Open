@@ -32,7 +32,7 @@ export function SenderExperience() {
   const [recipientRoutingNumber, setRecipientRoutingNumber] = useState("");
   const STORAGE_KEY = "blue_wallet_transfer_history";
 
-  const [amount, setAmount] = useState("1");
+  const [amount, setAmount] = useState("0.01");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [transfer, setTransfer] = useState<TransferResponse | null>(null);

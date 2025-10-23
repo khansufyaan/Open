@@ -45,9 +45,12 @@ export async function GET(request: Request) {
       );
     }
 
+    const { plaidAccessToken: _plaidAccessToken, ...sanitizedUser } = response.Item as Record<string, unknown>;
+    void _plaidAccessToken;
+
     return NextResponse.json({
       success: true,
-      user: response.Item,
+      user: sanitizedUser,
     });
   } catch (error) {
     console.error("Failed to get user:", error);
@@ -97,6 +100,31 @@ export async function POST(request: Request) {
       country: string;
     };
     plaidVerificationCompleted?: boolean;
+    plaidVerifiedAccountMask?: string;
+    plaidVerifiedRoutingNumber?: string;
+    plaidAchAccounts?: Array<{
+      accountId: string;
+      accountNumber: string;
+      routingNumber: string;
+      wireRoutingNumber?: string | null;
+      mask?: string | null;
+      name?: string | null;
+    }>;
+    plaidIdentitySnapshot?: {
+      names: string[];
+      emails: string[];
+      phones: string[];
+      addresses: Array<{
+        street: string;
+        city: string;
+        region: string;
+        postal_code: string;
+        country: string;
+      }>;
+    };
+    plaidAccessToken?: string;
+    plaidItemId?: string;
+    plaidLastLinkedAt?: string;
   };
 
   if (!data.userId) {
@@ -137,6 +165,16 @@ export async function POST(request: Request) {
       plaidVerifiedAddress: data.plaidVerifiedAddress ?? existingData.Item?.plaidVerifiedAddress,
       plaidVerificationCompleted:
         data.plaidVerificationCompleted ?? existingData.Item?.plaidVerificationCompleted ?? false,
+      plaidVerifiedAccountMask:
+        data.plaidVerifiedAccountMask ?? existingData.Item?.plaidVerifiedAccountMask,
+      plaidVerifiedRoutingNumber:
+        data.plaidVerifiedRoutingNumber ?? existingData.Item?.plaidVerifiedRoutingNumber,
+      plaidAchAccounts: data.plaidAchAccounts ?? existingData.Item?.plaidAchAccounts,
+      plaidIdentitySnapshot:
+        data.plaidIdentitySnapshot ?? existingData.Item?.plaidIdentitySnapshot,
+      plaidAccessToken: data.plaidAccessToken ?? existingData.Item?.plaidAccessToken,
+      plaidItemId: data.plaidItemId ?? existingData.Item?.plaidItemId,
+      plaidLastLinkedAt: data.plaidLastLinkedAt ?? existingData.Item?.plaidLastLinkedAt,
       createdAt: existingData.Item?.createdAt ?? timestamp,
       updatedAt: timestamp,
     };
