@@ -3,12 +3,22 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { usePrivy, useWallets } from "@privy-io/react-auth";
+import { createPublicClient, encodeFunctionData, http, parseAbi, parseUnits } from "viem";
+import type { Hex } from "viem";
+import { base } from "viem/chains";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 const DIGIT_REGEX = /\D+/g;
+const BASE_CHAIN_ID = base.id;
+const BASE_CHAIN_HEX = `0x${BASE_CHAIN_ID.toString(16)}` as const;
+const BASE_RPC_URL = process.env.NEXT_PUBLIC_BASE_RPC_URL ?? "https://mainnet.base.org";
+const BASE_USDC_CONTRACT = (process.env.NEXT_PUBLIC_BASE_USDC_CONTRACT ?? "0x833589fCD6edb6E08f4c7C0dC1bC64ED875FfC4d").toLowerCase();
+const ERC20_TRANSFER_ABI = parseAbi([
+  "function transfer(address to, uint256 value) returns (bool)",
+]);
 
 function sanitizeDigits(value: string): string {
   return value.replace(DIGIT_REGEX, "");
@@ -22,6 +32,8 @@ type TransferResponse = {
   status: string;
   accountMask: string;
   routingMask: string;
+  fundingStatus?: "PENDING" | "CONFIRMED" | "FAILED" | null;
+  fundingTxHash?: string | null;
 };
 
 type RecipientPreview = {
@@ -51,6 +63,8 @@ export function SenderExperience() {
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const previewControllerRef = useRef<AbortController | null>(null);
+  const [isFunding, setIsFunding] = useState(false);
+  const [fundingError, setFundingError] = useState<string | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -101,6 +115,148 @@ export function SenderExperience() {
     return evmWallet?.address ?? null;
   }, [wallets]);
 
+  const fundTransfer = useCallback(
+    async (currentTransfer: TransferResponse, amountValue: string) => {
+      const wallet = wallets.find((entry) => entry.type === "ethereum");
+
+      if (!wallet?.address) {
+        setFundingError("No connected Ethereum wallet detected.");
+        return;
+      }
+
+      const normalizedAmount = amountValue.trim();
+
+      if (!normalizedAmount) {
+        setFundingError("Transfer amount is missing.");
+        return;
+      }
+
+      if (!currentTransfer.walletAddress || !currentTransfer.walletAddress.startsWith("0x")) {
+        setFundingError("Recipient wallet address is invalid.");
+        return;
+      }
+
+      let amountUnits: bigint;
+
+      try {
+        amountUnits = parseUnits(normalizedAmount, 6);
+      } catch (parseError) {
+        setFundingError(
+          parseError instanceof Error ? parseError.message : "Failed to parse transfer amount."
+        );
+        return;
+      }
+
+      if (amountUnits <= 0n) {
+        setFundingError("Transfer amount must be greater than zero.");
+        return;
+      }
+
+      setIsFunding(true);
+      setFundingError(null);
+
+      try {
+        const currentChain = wallet.chainId?.startsWith("eip155:")
+          ? Number(wallet.chainId.split(":")[1])
+          : null;
+
+        if (currentChain !== BASE_CHAIN_ID) {
+          await wallet.switchChain(BASE_CHAIN_HEX);
+        }
+
+        const provider = await wallet.getEthereumProvider();
+
+        const data = encodeFunctionData({
+          abi: ERC20_TRANSFER_ABI,
+          functionName: "transfer",
+          args: [currentTransfer.walletAddress as `0x${string}`, amountUnits],
+        });
+
+        const txHash = (await provider.request({
+          method: "eth_sendTransaction",
+          params: [
+            {
+              from: wallet.address,
+              to: BASE_USDC_CONTRACT,
+              data,
+              value: "0x0",
+            },
+          ],
+        })) as string;
+
+        setTransfer((previous) =>
+          previous && previous.transferId === currentTransfer.transferId
+            ? { ...previous, fundingTxHash: txHash, fundingStatus: "PENDING" }
+            : previous
+        );
+
+        try {
+          await fetch(`/api/transfers/${currentTransfer.transferId}/funding`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ status: "PENDING", txHash }),
+          });
+        } catch (updateError) {
+          console.warn("Failed to record pending funding status", updateError);
+        }
+
+        const publicClient = createPublicClient({
+          chain: base,
+          transport: http(BASE_RPC_URL),
+        });
+
+        await publicClient.waitForTransactionReceipt({ hash: txHash as Hex });
+
+        setTransfer((previous) =>
+          previous && previous.transferId === currentTransfer.transferId
+            ? { ...previous, fundingStatus: "CONFIRMED" }
+            : previous
+        );
+
+        try {
+          await fetch(`/api/transfers/${currentTransfer.transferId}/funding`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ status: "CONFIRMED", txHash }),
+          });
+        } catch (updateError) {
+          console.warn("Failed to record confirmed funding status", updateError);
+        }
+      } catch (fundingErr) {
+        const message =
+          fundingErr instanceof Error
+            ? fundingErr.message
+            : "Failed to send USDC funding transaction.";
+        setFundingError(message);
+
+        setTransfer((previous) =>
+          previous && previous.transferId === currentTransfer.transferId
+            ? { ...previous, fundingStatus: "FAILED" }
+            : previous
+        );
+
+        try {
+          await fetch(`/api/transfers/${currentTransfer.transferId}/funding`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ status: "FAILED" }),
+          });
+        } catch (updateError) {
+          console.warn("Failed to record failed funding status", updateError);
+        }
+      } finally {
+        setIsFunding(false);
+      }
+    },
+    [wallets]
+  );
+
   const handleConnectWallet = useCallback(async () => {
     setError(null);
 
@@ -131,7 +287,10 @@ export function SenderExperience() {
     }
   }, [privyReady, authenticated, login, connectWallet, senderAddress]);
 
-  const isFormDisabled = useMemo(() => !senderAddress || isSubmitting, [senderAddress, isSubmitting]);
+  const isFormDisabled = useMemo(
+    () => !senderAddress || isSubmitting || isFunding,
+    [senderAddress, isSubmitting, isFunding]
+  );
 
   const handleSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
@@ -142,8 +301,9 @@ export function SenderExperience() {
         return;
       }
 
-      setIsSubmitting(true);
-      setError(null);
+    setIsSubmitting(true);
+    setError(null);
+    setFundingError(null);
 
       try {
         const response = await fetch("/api/transfers", {
@@ -165,7 +325,8 @@ export function SenderExperience() {
           throw new Error(data.message ?? "Failed to create transfer.");
         }
 
-        setTransfer(data.transfer as TransferResponse);
+      const createdTransfer = data.transfer as TransferResponse;
+      setTransfer(createdTransfer);
 
         try {
           const normalizedEntry = {
@@ -192,6 +353,8 @@ export function SenderExperience() {
         } catch (storageError) {
           console.warn("Failed to persist transfer history", storageError);
         }
+
+      await fundTransfer(createdTransfer, createdTransfer.amount);
       } catch (submitError) {
         const message =
           submitError instanceof Error ? submitError.message : "Unable to submit transfer.";
@@ -201,7 +364,7 @@ export function SenderExperience() {
         setIsSubmitting(false);
       }
     },
-    [senderAddress, recipientAccountNumber, recipientRoutingNumber, amount, history]
+    [senderAddress, recipientAccountNumber, recipientRoutingNumber, amount, history, fundTransfer]
   );
 
   useEffect(() => {
@@ -454,7 +617,44 @@ export function SenderExperience() {
                 <dt className="font-medium uppercase tracking-wide">Routing mask</dt>
                 <dd className="text-slate-700 dark:text-slate-200">{transfer.routingMask}</dd>
               </div>
+              <div>
+                <dt className="font-medium uppercase tracking-wide">Funding status</dt>
+                <dd className="text-slate-700 dark:text-slate-200">
+                  {isFunding
+                    ? "Waiting for confirmation"
+                    : transfer.fundingStatus ?? "Not started"}
+                </dd>
+              </div>
+              {transfer.fundingTxHash && (
+                <div>
+                  <dt className="font-medium uppercase tracking-wide">Funding tx</dt>
+                  <dd className="break-all text-slate-700 dark:text-slate-200">
+                    <a
+                      href={`https://basescan.org/tx/${transfer.fundingTxHash}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="underline"
+                    >
+                      {transfer.fundingTxHash}
+                    </a>
+                  </dd>
+                </div>
+              )}
             </dl>
+            {fundingError && <p className="text-sm text-red-200">{fundingError}</p>}
+            {transfer.fundingStatus === "FAILED" && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={isFunding}
+                onClick={() => {
+                  void fundTransfer(transfer, transfer.amount);
+                }}
+              >
+                Retry funding
+              </Button>
+            )}
           </div>
         )}
       </div>

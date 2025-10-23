@@ -212,6 +212,8 @@ export async function POST(request: Request) {
         status: record.status,
         accountMask: record.recipientAccountMask,
         routingMask: record.recipientRoutingMask,
+        fundingStatus: record.fundingStatus ?? "PENDING",
+        fundingTxHash: record.fundingTxHash ?? null,
       },
     });
   } catch (error) {
@@ -307,6 +309,8 @@ export async function GET(request: Request) {
         status: item.status,
         depositMethod: item.depositMethod === "simulated" ? "ach" : item.depositMethod,
         createdAt: item.createdAt,
+        fundingStatus: item.fundingStatus ?? null,
+        fundingTxHash: item.fundingTxHash ?? null,
         withdrawalTxHash: item.withdrawalTxHash ?? null,
         withdrawalTargetAddress: item.withdrawalTargetAddress ?? null,
         withdrawnAt: item.withdrawnAt ?? null,
