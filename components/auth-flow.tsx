@@ -695,7 +695,7 @@ function TurnkeyAuthContent() {
 
       const requiredWei = BigInt(quote.topUpWei);
 
-      if (requiredWei <= 0n) {
+      if (requiredWei <= BigInt(0)) {
         setTopUpErrors((previous) => ({
           ...previous,
           [summary.transferId]: "Managed wallet already holds enough ETH for gas.",
@@ -1149,7 +1149,7 @@ function TurnkeyAuthContent() {
                       ? quote.destination.toLowerCase() === destinationValue.toLowerCase()
                       : false;
                     const requiresTopUp = quoteMatchesDestination
-                      ? BigInt(quote.topUpWei) > 0n
+                      ? BigInt(quote.topUpWei) > BigInt(0)
                       : false;
                     const isQuotePending = Boolean(quoteLoading[summary.transferId]);
                     const withdrawDisabled = (() => {
