@@ -115,7 +115,7 @@ async function prepareWithdrawalTransaction({
   const gasLimit = await publicClient.estimateGas({
     account: walletAddress,
     to: contractAddress,
-    value: 0n,
+    value: BigInt(0),
     data,
   });
 
@@ -126,7 +126,7 @@ async function prepareWithdrawalTransaction({
     chainId: base.id,
     nonce,
     to: contractAddress,
-    value: 0n,
+    value: BigInt(0),
     gas: gasLimit,
     maxFeePerGas,
     maxPriorityFeePerGas,
@@ -164,7 +164,10 @@ async function buildWithdrawalQuote({
 
   const bufferedTotalFeeWei = (prepared.totalFeeWei * BigInt(125) + BigInt(99)) / BigInt(100);
   const walletBalanceWei = await publicClient.getBalance({ address: walletAddress });
-  const topUpWei = bufferedTotalFeeWei > walletBalanceWei ? bufferedTotalFeeWei - walletBalanceWei : 0n;
+  const topUpWei =
+    bufferedTotalFeeWei > walletBalanceWei
+      ? bufferedTotalFeeWei - walletBalanceWei
+      : BigInt(0);
 
   return {
     ...prepared,
@@ -293,7 +296,7 @@ export async function POST(request: Request, context: RouteContext) {
 
   const amountUnits = centsToUsdcUnits(record.amountCents ?? Math.round(Number(record.amount) * 100));
 
-  if (amountUnits <= 0n) {
+  if (amountUnits <= BigInt(0)) {
     return NextResponse.json(
       {
         error: "INVALID_AMOUNT",
@@ -314,7 +317,7 @@ export async function POST(request: Request, context: RouteContext) {
       amountUnits,
     });
 
-    if (quote.topUpWei > 0n) {
+    if (quote.topUpWei > BigInt(0)) {
       return NextResponse.json(
         {
           error: "INSUFFICIENT_GAS",
@@ -441,7 +444,7 @@ export async function GET(request: Request, context: RouteContext) {
 
   const amountUnits = centsToUsdcUnits(record.amountCents ?? Math.round(Number(record.amount) * 100));
 
-  if (amountUnits <= 0n) {
+  if (amountUnits <= BigInt(0)) {
     return NextResponse.json(
       {
         error: "INVALID_AMOUNT",
@@ -478,7 +481,7 @@ export async function GET(request: Request, context: RouteContext) {
       walletBalanceEth: formatEther(quote.walletBalanceWei),
       topUpWei: quote.topUpWei.toString(),
       topUpEth: formatEther(quote.topUpWei),
-      hasSufficientBalance: quote.topUpWei === 0n,
+          hasSufficientBalance: quote.topUpWei === BigInt(0),
       chainId: base.id,
     });
   } catch (error) {
