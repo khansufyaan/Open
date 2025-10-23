@@ -1148,7 +1148,7 @@ function TurnkeyAuthContent() {
                     const quoteMatchesDestination = quote
                       ? quote.destination.toLowerCase() === destinationValue.toLowerCase()
                       : false;
-                    const requiresTopUp = quoteMatchesDestination
+                    const requiresTopUp = quote && quoteMatchesDestination
                       ? BigInt(quote.topUpWei) > BigInt(0)
                       : false;
                     const isQuotePending = Boolean(quoteLoading[summary.transferId]);
