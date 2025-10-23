@@ -23,8 +23,6 @@ const dynamoClient = new DynamoDBClient({
 
 const docClient = DynamoDBDocumentClient.from(dynamoClient);
 
-type PublicClientType = ReturnType<typeof createPublicClient>;
-
 type TransferRecord = {
   recipientKey: string;
   transferId: string;
@@ -64,14 +62,16 @@ async function findTransferById(transferId: string): Promise<TransferRecord | nu
   return record ?? null;
 }
 
-function createBasePublicClient(): PublicClientType {
+function createBasePublicClient() {
   return createPublicClient({
     chain: base,
     transport: http(BASE_RPC_URL),
   });
 }
 
-async function fetchFeeData(publicClient: PublicClientType) {
+type BasePublicClient = ReturnType<typeof createBasePublicClient>;
+
+async function fetchFeeData(publicClient: BasePublicClient) {
   try {
     const feeData = await publicClient.estimateFeesPerGas();
     if (feeData) {
@@ -97,7 +97,7 @@ async function prepareWithdrawalTransaction({
   destination,
   amountUnits,
 }: {
-  publicClient: PublicClientType;
+  publicClient: BasePublicClient;
   walletAddress: Address;
   destination: Address;
   amountUnits: bigint;
@@ -150,7 +150,7 @@ async function buildWithdrawalQuote({
   destination,
   amountUnits,
 }: {
-  publicClient: PublicClientType;
+  publicClient: BasePublicClient;
   walletAddress: Address;
   destination: Address;
   amountUnits: bigint;
