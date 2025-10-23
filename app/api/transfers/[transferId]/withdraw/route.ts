@@ -46,7 +46,7 @@ function isHexAddress(value: string): boolean {
 }
 
 function centsToUsdcUnits(amountCents: number): bigint {
-  return BigInt(amountCents) * 10000n; // convert cents (1e2) to micro units (1e6)
+  return BigInt(amountCents) * BigInt(10000); // convert cents (1e2) to micro units (1e6)
 }
 
 async function findTransferById(transferId: string): Promise<TransferRecord | null> {
