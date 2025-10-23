@@ -103,27 +103,27 @@ function getAccountKey(account: PlaidAchAccount): string {
 }
 
 function normalizeAchAccounts(accounts: PlaidAchAccount[]): PlaidAchAccount[] {
-  return accounts
-    .map((account) => {
-      const accountNumber = sanitizeDigits(account.accountNumber);
-      const routingNumber = sanitizeDigits(account.routingNumber);
+  return accounts.reduce<PlaidAchAccount[]>((list, account) => {
+    const accountNumber = sanitizeDigits(account.accountNumber);
+    const routingNumber = sanitizeDigits(account.routingNumber);
 
-      if (!accountNumber || !routingNumber) {
-        return null;
-      }
+    if (!accountNumber || !routingNumber) {
+      return list;
+    }
 
-      const mask = account.mask ?? accountNumber.slice(-4);
+    const mask = account.mask ?? accountNumber.slice(-4);
 
-      return {
-        accountId: account.accountId,
-        accountNumber,
-        routingNumber,
-        wireRoutingNumber: account.wireRoutingNumber ?? null,
-        mask,
-        name: account.name ?? null,
-      };
-    })
-    .filter((value): value is PlaidAchAccount => value !== null);
+    list.push({
+      accountId: account.accountId,
+      accountNumber,
+      routingNumber,
+      wireRoutingNumber: account.wireRoutingNumber ?? null,
+      mask,
+      name: account.name ?? null,
+    });
+
+    return list;
+  }, []);
 }
 
 function mergeAchAccounts(
