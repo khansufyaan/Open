@@ -27,6 +27,7 @@ export function TurnkeyLoginForm({
   const [otpId, setOtpId] = useState<string | null>(null);
   const [otpCode, setOtpCode] = useState("");
   const [step, setStep] = useState<"request" | "verify">("request");
+  const [subOrgId, setSubOrgId] = useState<string | null>(null);
   const [isRequesting, setIsRequesting] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
 
@@ -69,15 +70,22 @@ export function TurnkeyLoginForm({
       };
       console.log(`[Auth] User registration result:`, userData);
 
-      const subOrgId = userData.subOrganizationId;
-      console.log(`[Auth] Sub-organization ID: ${subOrgId ?? 'not returned'}`);
+      const userSubOrgId = userData.subOrganizationId;
+      console.log(`[Auth] Sub-organization ID: ${userSubOrgId ?? 'not returned'}`);
+
+      if (!userSubOrgId) {
+        throw new Error("Sub-organization ID not returned - cannot proceed with OTP login");
+      }
+
+      // Store sub-org ID for later use in otpLogin
+      setSubOrgId(userSubOrgId);
 
       if (!turnkey) {
         throw new Error("Turnkey client not available");
       }
 
       console.log(`[Auth] Initiating email OTP for: ${trimmedEmail}`);
-      console.log(`[Auth] Using PARENT org ID for auth: ${process.env.NEXT_PUBLIC_TURNKEY_ORGANIZATION_ID}`);
+      console.log(`[Auth] Using PARENT org ID for initOtp: ${process.env.NEXT_PUBLIC_TURNKEY_ORGANIZATION_ID}`);
 
       const response = await turnkey.serverSign("initOtp", [{
         otpType: "OTP_TYPE_EMAIL",
@@ -115,19 +123,27 @@ export function TurnkeyLoginForm({
         throw new Error("Turnkey clients not available");
       }
 
+      console.log(`[Auth] Verifying OTP code with parent org ID`);
       const verifyResponse = await turnkey.serverSign("verifyOtp", [{
         otpId: otpId,
         otpCode: otpCode.trim(),
         organizationId: process.env.NEXT_PUBLIC_TURNKEY_ORGANIZATION_ID!
       }]) as { verificationToken: string };
 
+      console.log(`[Auth] OTP verified successfully`);
+
       await indexedDbClient.init();
       const publicKey = await indexedDbClient.getPublicKey();
 
+      if (!subOrgId) {
+        throw new Error("Sub-organization ID not available - cannot complete login");
+      }
+
+      console.log(`[Auth] Logging in with SUB-ORG ID: ${subOrgId}`);
       const loginResponse = await turnkey.serverSign("otpLogin", [{
         publicKey: publicKey,
         verificationToken: verifyResponse.verificationToken,
-        organizationId: process.env.NEXT_PUBLIC_TURNKEY_ORGANIZATION_ID!,
+        organizationId: subOrgId,
         expirationSeconds: "900"
       }]) as { session?: string };
 
