@@ -48,9 +48,12 @@ export async function POST() {
         client_user_id: "user-" + Date.now(), // In production, use actual user ID from session
       },
       client_name: "Blue Wallet",
-      products: [Products.Auth], // Removed Identity to skip phone verification
+      products: [Products.Identity, Products.Auth],
       country_codes: [CountryCode.Us],
       language: "en",
+      identity_verification: {
+        template_id: "idvtmp_skip", // Skip identity verification (including phone)
+      },
     });
 
     console.log("Plaid link token created successfully");
