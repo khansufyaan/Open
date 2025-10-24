@@ -88,26 +88,6 @@ export async function POST(request: Request) {
 
     const accessToken = exchangeResponse.data.access_token;
 
-    // Immediately fetch identity data
-    const identityResponse = await plaidClient.identityGet({
-      access_token: accessToken,
-    });
-
-    const accounts = identityResponse.data.accounts;
-
-    // Extract identity data from the first account
-    if (accounts.length === 0 || !accounts[0].owners || accounts[0].owners.length === 0) {
-      return NextResponse.json(
-        {
-          error: "NO_IDENTITY_DATA",
-          message: "No identity information found for this account.",
-        },
-        { status: 404 }
-      );
-    }
-
-    const owner = accounts[0].owners[0];
-
     let achAccounts: Array<{
       accountId: string;
       accountNumber: string;
@@ -123,40 +103,42 @@ export async function POST(request: Request) {
       });
 
       const achNumbers = authResponse.data.numbers?.ach ?? [];
-      const identityAccountsById = new Map(
-        accounts.map((account) => [account.account_id, account])
+      const authAccounts = authResponse.data.accounts ?? [];
+      const authAccountsById = new Map(
+        authAccounts.map((account) => [account.account_id, account])
       );
 
       achAccounts = achNumbers
         .map((achEntry) => {
-          const identityAccount = identityAccountsById.get(achEntry.account_id);
+          const authAccount = authAccountsById.get(achEntry.account_id);
 
           return {
             accountId: achEntry.account_id,
             accountNumber: achEntry.account,
             routingNumber: achEntry.routing,
             wireRoutingNumber: achEntry.wire_routing ?? null,
-            mask:
-              identityAccount?.mask ?? (achEntry.account ? achEntry.account.slice(-4) : null),
-            name: identityAccount?.name ?? identityAccount?.official_name ?? null,
+            mask: authAccount?.mask ?? (achEntry.account ? achEntry.account.slice(-4) : null),
+            name: authAccount?.name ?? authAccount?.official_name ?? null,
           };
         })
         .filter((value): value is NonNullable<typeof value> => Boolean(value.accountNumber && value.routingNumber));
     } catch (authError) {
       console.warn("Plaid authGet failed to return ACH data", authError);
+      return NextResponse.json(
+        {
+          error: "AUTH_GET_FAILED",
+          message: "Failed to retrieve bank account details.",
+        },
+        { status: 500 }
+      );
     }
 
+    // Minimal identity data (no longer fetching from Identity product)
     const identityData = {
-      names: owner.names || [],
-      emails: owner.emails?.map(e => e.data) || [],
-      phones: owner.phone_numbers?.map(p => p.data) || [],
-      addresses: owner.addresses?.map(a => ({
-        street: a.data.street,
-        city: a.data.city,
-        region: a.data.region,
-        postal_code: a.data.postal_code,
-        country: a.data.country,
-      })) || [],
+      names: [],
+      emails: [],
+      phones: [],
+      addresses: [],
     };
 
     const sanitizedAccounts = achAccounts
