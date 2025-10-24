@@ -7,94 +7,6 @@ import {
   isTurnkeyConfigured,
 } from "@/lib/turnkey/server";
 
-function parseEmailOtpTagIds(): string[] {
-  const raw = process.env.TURNKEY_EMAIL_OTP_TAG_IDS ?? "";
-
-  return Array.from(
-    new Set(
-      raw
-        .split(/[,\s]+/)
-        .map((value) => value.trim())
-        .filter((value) => value.length > 0)
-    )
-  );
-}
-
-async function ensureUserHasTags(params: {
-  turnkeyClient: ReturnType<typeof getTurnkeyApiClient>;
-  organizationId: string;
-  userId: string;
-  requiredTagIds: string[];
-}) {
-  const { turnkeyClient, organizationId, userId, requiredTagIds } = params;
-
-  if (!turnkeyClient || requiredTagIds.length === 0) {
-    return;
-  }
-
-  try {
-    const usersResponse = await turnkeyClient.getUsers({ organizationId });
-    const users = usersResponse.users ?? [];
-    const targetUser = users.find((user) => user.userId === userId);
-
-    if (!targetUser) {
-      return;
-    }
-
-    const currentTagIds = targetUser.userTags ?? [];
-    const missing = requiredTagIds.filter((tagId) => !currentTagIds.includes(tagId));
-
-    if (missing.length === 0) {
-      return;
-    }
-
-    const updatedTagIds = Array.from(new Set([...currentTagIds, ...requiredTagIds]));
-
-    await turnkeyClient.updateUser({
-      organizationId,
-      userId,
-      userTagIds: updatedTagIds,
-    });
-  } catch (error) {
-    console.error("Failed to ensure user tags", error);
-  }
-}
-
-async function ensureUserEmailHasTags(params: {
-  turnkeyClient: ReturnType<typeof getTurnkeyApiClient>;
-  organizationId: string;
-  email: string;
-  requiredTagIds: string[];
-}) {
-  const { turnkeyClient, organizationId, email, requiredTagIds } = params;
-
-  if (!turnkeyClient || requiredTagIds.length === 0) {
-    return;
-  }
-
-  try {
-    const usersResponse = await turnkeyClient.getUsers({ organizationId });
-    const users = usersResponse.users ?? [];
-    const normalizedEmail = email.toLowerCase();
-    const targetUser = users.find(
-      (user) => user.userEmail?.toLowerCase() === normalizedEmail
-    );
-
-    if (!targetUser) {
-      return;
-    }
-
-    await ensureUserHasTags({
-      turnkeyClient,
-      organizationId,
-      userId: targetUser.userId,
-      requiredTagIds,
-    });
-  } catch (error) {
-    console.error("Failed to ensure tags for user email", error);
-  }
-}
-
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
@@ -149,11 +61,9 @@ export async function POST(request: Request) {
 
   const turnkeyClient = getTurnkeyApiClient();
   const organizationId = getTurnkeyOrganizationId();
-  const emailOtpTagIds = parseEmailOtpTagIds();
 
   console.log(`[Turnkey Create User] Attempting to create/verify user for email: ${email}`);
   console.log(`[Turnkey Create User] Organization ID: ${organizationId}`);
-  console.log(`[Turnkey Create User] Email OTP Tag IDs configured: ${emailOtpTagIds.length > 0 ? emailOtpTagIds.join(", ") : "NONE"}`);
 
   if (!turnkeyClient || !organizationId) {
     console.error("[Turnkey Create User] Failed to initialize Turnkey client or get organization ID");
@@ -220,7 +130,7 @@ export async function POST(request: Request) {
         for (const subOrgId of subOrgIds) {
           try {
             const orgDetails = await turnkeyClient.getOrganization({ organizationId: subOrgId });
-            if (orgDetails.organization?.organizationName === subOrgName) {
+            if (orgDetails.organizationData?.name === subOrgName) {
               console.log(`[Turnkey Create User] Found existing sub-org: ${subOrgId}`);
               return NextResponse.json({
                 created: false,
