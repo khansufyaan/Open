@@ -409,6 +409,18 @@ export async function POST(request: Request, context: RouteContext) {
 }
 
 export async function GET(request: Request, context: RouteContext) {
+  const companyWalletAddress = process.env.COMPANY_WALLET_ADDRESS;
+
+  if (!companyWalletAddress) {
+    return NextResponse.json(
+      {
+        error: "COMPANY_WALLET_NOT_CONFIGURED",
+        message: "Company wallet is not configured. Run scripts/provision-company-wallet.ts",
+      },
+      { status: 500 }
+    );
+  }
+
   const resolvedParams = await Promise.resolve(context.params);
   const { transferId } = resolvedParams ?? {};
 
@@ -457,18 +469,6 @@ export async function GET(request: Request, context: RouteContext) {
     );
   }
 
-  const walletAddress = normalizeAddress(record.walletAddress);
-
-  if (!isHexAddress(walletAddress)) {
-    return NextResponse.json(
-      {
-        error: "INVALID_WALLET_ADDRESS",
-        message: "Stored wallet address for this transfer is invalid.",
-      },
-      { status: 500 }
-    );
-  }
-
   const amountUnits = centsToUsdcUnits(record.amountCents ?? Math.round(Number(record.amount) * 100));
 
   if (amountUnits <= BigInt(0)) {
@@ -487,7 +487,7 @@ export async function GET(request: Request, context: RouteContext) {
   try {
     const quote = await buildWithdrawalQuote({
       publicClient,
-      walletAddress: walletAddress as Address,
+      walletAddress: companyWalletAddress as Address,
       destination,
       amountUnits,
     });
@@ -500,7 +500,7 @@ export async function GET(request: Request, context: RouteContext) {
     return NextResponse.json({
       success: true,
       transferId,
-      walletAddress: record.walletAddress,
+      companyWalletAddress,
       destination,
       amount: record.amount,
       amountCents: record.amountCents,
