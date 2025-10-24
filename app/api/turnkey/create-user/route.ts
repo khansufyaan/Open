@@ -167,37 +167,31 @@ export async function POST(request: Request) {
   }
 
   try {
-    console.log(`[Turnkey Create User] Calling Turnkey API to create user: ${email}`);
-    const response = await turnkeyClient.createUsers({
+    console.log(`[Turnkey Create User] Creating sub-organization for: ${email}`);
+
+    const response = await turnkeyClient.createSubOrganization({
       organizationId,
-      users: [
+      subOrganizationName: `User: ${email}`,
+      rootUsers: [
         {
           userName: email,
           userEmail: email,
           apiKeys: [],
           authenticators: [],
           oauthProviders: [],
-          userTags: emailOtpTagIds,
         },
       ],
+      rootQuorumThreshold: 1,
     });
 
-    const createdUserId = response.userIds?.[0] ?? null;
-    console.log(`[Turnkey Create User] User created successfully with ID: ${createdUserId}`);
-
-    if (createdUserId && emailOtpTagIds.length > 0) {
-      console.log(`[Turnkey Create User] Ensuring user ${createdUserId} has required tags`);
-      await ensureUserHasTags({
-        turnkeyClient,
-        organizationId,
-        userId: createdUserId,
-        requiredTagIds: emailOtpTagIds,
-      });
-    }
+    const subOrgId = response.subOrganizationId;
+    console.log(`[Turnkey Create User] Sub-organization created successfully`);
+    console.log(`[Turnkey Create User] Sub-Org ID: ${subOrgId}`);
+    console.log(`[Turnkey Create User] Email OTP is enabled by default for sub-orgs`);
 
     return NextResponse.json({
       created: true,
-      userId: response.userIds?.[0] ?? null,
+      subOrganizationId: subOrgId,
     });
   } catch (rawError) {
     const error = rawError as unknown;
@@ -214,18 +208,37 @@ export async function POST(request: Request) {
       code === "CONFLICT" || normalizedMessage.includes("must be unique");
 
     if (duplicateEmail) {
-      console.log(`[Turnkey Create User] User ${email} already exists - ensuring tags are set`);
-      if (emailOtpTagIds.length > 0) {
-        await ensureUserEmailHasTags({
-          turnkeyClient,
-          organizationId,
-          email,
-          requiredTagIds: emailOtpTagIds,
-        });
+      console.log(`[Turnkey Create User] Sub-organization for ${email} already exists, finding its ID`);
+
+      try {
+        const subOrgName = `User: ${email}`;
+        const subOrgsResponse = await turnkeyClient.getSubOrgIds({ organizationId });
+        const subOrgIds = subOrgsResponse.organizationIds ?? [];
+
+        console.log(`[Turnkey Create User] Searching through ${subOrgIds.length} sub-orgs for: ${subOrgName}`);
+
+        for (const subOrgId of subOrgIds) {
+          try {
+            const orgDetails = await turnkeyClient.getOrganization({ organizationId: subOrgId });
+            if (orgDetails.organization?.organizationName === subOrgName) {
+              console.log(`[Turnkey Create User] Found existing sub-org: ${subOrgId}`);
+              return NextResponse.json({
+                created: false,
+                subOrgExists: true,
+                subOrganizationId: subOrgId,
+              });
+            }
+          } catch (err) {
+            console.log(`[Turnkey Create User] Could not check sub-org ${subOrgId}:`, err);
+          }
+        }
+
+        console.log(`[Turnkey Create User] Could not find existing sub-org by name, this might fail`);
+      } catch (searchError) {
+        console.error(`[Turnkey Create User] Failed to search for existing sub-org:`, searchError);
       }
 
-      console.log(`[Turnkey Create User] User ${email} already exists and is ready for OTP`);
-      return NextResponse.json({ created: false, userExists: true });
+      return NextResponse.json({ created: false, subOrgExists: true });
     }
 
     console.error(`[Turnkey Create User] Failed to create user ${email}:`, {

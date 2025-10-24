@@ -62,19 +62,28 @@ export function TurnkeyLoginForm({
         throw new Error(errorMessage);
       }
 
-      const userData = await ensureUserResponse.json();
+      const userData = await ensureUserResponse.json() as {
+        created: boolean;
+        subOrganizationId?: string;
+        subOrgExists?: boolean;
+      };
       console.log(`[Auth] User registration result:`, userData);
+
+      const subOrgId = userData.subOrganizationId;
+      if (!subOrgId) {
+        throw new Error("Sub-organization ID not returned from user creation");
+      }
 
       if (!turnkey) {
         throw new Error("Turnkey client not available");
       }
 
-      console.log(`[Auth] Initiating email OTP for: ${trimmedEmail}`);
+      console.log(`[Auth] Initiating email OTP for: ${trimmedEmail} (Sub-Org: ${subOrgId})`);
 
       const response = await turnkey.serverSign("initOtp", [{
         otpType: "OTP_TYPE_EMAIL",
         contact: trimmedEmail,
-        organizationId: process.env.NEXT_PUBLIC_TURNKEY_ORGANIZATION_ID!,
+        organizationId: subOrgId,
         otpLength: 6,
         alphanumeric: false,
         expirationSeconds: "300",
