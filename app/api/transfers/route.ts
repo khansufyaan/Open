@@ -1,11 +1,8 @@
 import { NextResponse } from "next/server";
-import { createHash, randomUUID } from "crypto";
+import { randomUUID } from "crypto";
 
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, PutCommand, QueryCommand, ScanCommand } from "@aws-sdk/lib-dynamodb";
-import { defaultEthereumAccountAtIndex } from "@turnkey/sdk-server";
-
-import { getTurnkeyApiClient, isTurnkeyConfigured } from "@/lib/turnkey/server";
 
 const TRANSFERS_TABLE = "blue-wallet-transfers";
 
@@ -16,16 +13,13 @@ const dynamoClient = new DynamoDBClient({
 const docClient = DynamoDBDocumentClient.from(dynamoClient);
 
 type TransferRecord = {
-  recipientKey: string;
   transferId: string;
   senderAddress: string;
-  recipientAccountMask: string;
-  recipientRoutingMask: string;
+  recipientRouting: string;
+  recipientAccount: string;
   recipientLast4: string;
   amount: string;
   amountCents: number;
-  walletId: string;
-  walletAddress: string;
   status: "DEPOSITED" | "PENDING" | "FAILED" | "WITHDRAWN";
   depositMethod: string;
   createdAt: string;
@@ -45,58 +39,14 @@ function sanitizeDigits(value: string): string {
   return value.replace(/\D+/g, "");
 }
 
-function buildRecipientKey(routingNumber: string, accountNumber: string): string {
-  const normalizedRouting = sanitizeDigits(routingNumber);
-  const normalizedAccount = sanitizeDigits(accountNumber);
-
-  return createHash("sha256")
-    .update(`${normalizedRouting}|${normalizedAccount}`, "utf8")
-    .digest("hex");
-}
-
-async function createRecipientWallet(walletName: string) {
-  const client = getTurnkeyApiClient();
-
-  if (!client) {
-    throw new Error("Unable to initialize Turnkey client");
-  }
-
-  await client.createWallet({
-    walletName,
-    accounts: [defaultEthereumAccountAtIndex(0)],
-  });
-
-  const walletsResponse = await client.getWallets({});
-  const wallets = walletsResponse.wallets ?? [];
-
-  const createdWallet = wallets.find((wallet) => wallet.walletName === walletName);
-
-  if (!createdWallet?.walletId) {
-    throw new Error("Failed to locate created wallet");
-  }
-
-  const accountsResponse = await client.getWalletAccounts({
-    walletId: createdWallet.walletId,
-  });
-
-  const primaryAccount = accountsResponse.accounts?.[0];
-
-  if (!primaryAccount?.address) {
-    throw new Error("Wallet account address is missing");
-  }
-
-  return {
-    walletId: createdWallet.walletId,
-    walletAddress: primaryAccount.address,
-  };
-}
-
 export async function POST(request: Request) {
-  if (!isTurnkeyConfigured()) {
+  const companyWalletAddress = process.env.COMPANY_WALLET_ADDRESS;
+
+  if (!companyWalletAddress) {
     return NextResponse.json(
       {
-        error: "TURNKEY_NOT_CONFIGURED",
-        message: "Turnkey API keys are missing on the server.",
+        error: "COMPANY_WALLET_NOT_CONFIGURED",
+        message: "Company wallet address is not configured. Run scripts/provision-company-wallet.ts",
       },
       { status: 500 }
     );
@@ -167,29 +117,21 @@ export async function POST(request: Request) {
   const amountCents = Math.round(Number(normalizedAmount) * 100);
   const normalizedAccount = sanitizeDigits(recipientAccountNumber);
   const normalizedRouting = sanitizeDigits(recipientRoutingNumber);
-  const recipientKey = buildRecipientKey(normalizedRouting, normalizedAccount);
   const recipientLast4 = normalizedAccount.slice(-4);
 
-  const walletName = `recipient-${Date.now()}-${randomUUID().slice(0, 8)}`;
-
   try {
-    const { walletId, walletAddress } = await createRecipientWallet(walletName);
-
     const timestamp = new Date().toISOString();
 
     const record: TransferRecord = {
-      recipientKey,
       transferId: randomUUID(),
       senderAddress: normalizeAddress(senderAddress),
-      recipientAccountMask: normalizedAccount.slice(-4).padStart(normalizedAccount.length, "*"),
-      recipientRoutingMask: normalizedRouting.slice(-4).padStart(normalizedRouting.length, "*"),
+      recipientRouting: normalizedRouting,
+      recipientAccount: normalizedAccount,
       recipientLast4,
       amount: normalizedAmount,
       amountCents,
-      walletId,
-      walletAddress,
-      status: "DEPOSITED",
-      depositMethod: "ach",
+      status: "PENDING",
+      depositMethod: "self_custody",
       createdAt: timestamp,
       updatedAt: timestamp,
       fundingStatus: "PENDING",
@@ -206,12 +148,9 @@ export async function POST(request: Request) {
       success: true,
       transfer: {
         transferId: record.transferId,
-        walletId: record.walletId,
-        walletAddress: record.walletAddress,
+        depositAddress: companyWalletAddress,
         amount: record.amount,
         status: record.status,
-        accountMask: record.recipientAccountMask,
-        routingMask: record.recipientRoutingMask,
         fundingStatus: record.fundingStatus ?? "PENDING",
         fundingTxHash: record.fundingTxHash ?? null,
       },
@@ -256,15 +195,15 @@ export async function GET(request: Request) {
   try {
     let items: TransferRecord[] = [];
 
+    // Primary match: Exact routing + account match
     if (normalizedAccount && normalizedRouting) {
-      const recipientKey = buildRecipientKey(normalizedRouting, normalizedAccount);
-
       const response = await docClient.send(
-        new QueryCommand({
+        new ScanCommand({
           TableName: TRANSFERS_TABLE,
-          KeyConditionExpression: "recipientKey = :key",
+          FilterExpression: "recipientRouting = :routing AND recipientAccount = :account",
           ExpressionAttributeValues: {
-            ":key": recipientKey,
+            ":routing": normalizedRouting,
+            ":account": normalizedAccount,
           },
         })
       );
@@ -272,6 +211,7 @@ export async function GET(request: Request) {
       items = (response.Items ?? []) as TransferRecord[];
     }
 
+    // Fallback match: Last4 + amount (for tokenized accounts)
     if (items.length === 0 && normalizedLast4) {
       const filterExpressions = ["recipientLast4 = :last4"];
       const expressionValues: Record<string, unknown> = {
@@ -303,8 +243,7 @@ export async function GET(request: Request) {
       success: true,
       transfers: items.map((item) => ({
         transferId: item.transferId,
-        walletId: item.walletId,
-        walletAddress: item.walletAddress,
+        depositAddress: process.env.COMPANY_WALLET_ADDRESS,
         amount: item.amount,
         status: item.status,
         depositMethod: item.depositMethod === "simulated" ? "ach" : item.depositMethod,

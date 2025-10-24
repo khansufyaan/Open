@@ -24,15 +24,15 @@ const dynamoClient = new DynamoDBClient({
 const docClient = DynamoDBDocumentClient.from(dynamoClient);
 
 type TransferRecord = {
-  recipientKey: string;
   transferId: string;
-  walletId: string;
-  walletAddress: string;
+  recipientRouting: string;
+  recipientAccount: string;
   amount: string;
   amountCents: number;
   status: "DEPOSITED" | "PENDING" | "FAILED" | "WITHDRAWN";
   withdrawalTxHash?: string;
   withdrawalTargetAddress?: string;
+  withdrawnAt?: string;
 };
 
 function normalizeAddress(address: string): string {
@@ -186,6 +186,20 @@ type RouteContext = {
 };
 
 export async function POST(request: Request, context: RouteContext) {
+  const companyWalletAddress = process.env.COMPANY_WALLET_ADDRESS;
+  const companyWalletId = process.env.COMPANY_WALLET_ID;
+  const companySubOrgId = process.env.COMPANY_WALLET_SUB_ORG_ID;
+
+  if (!companyWalletAddress || !companyWalletId || !companySubOrgId) {
+    return NextResponse.json(
+      {
+        error: "COMPANY_WALLET_NOT_CONFIGURED",
+        message: "Company wallet is not configured. Run scripts/provision-company-wallet.ts",
+      },
+      { status: 500 }
+    );
+  }
+
   if (!isTurnkeyConfigured()) {
     return NextResponse.json(
       {
@@ -282,18 +296,6 @@ export async function POST(request: Request, context: RouteContext) {
     );
   }
 
-  const walletAddress = normalizeAddress(record.walletAddress);
-
-  if (!isHexAddress(walletAddress)) {
-    return NextResponse.json(
-      {
-        error: "INVALID_WALLET_ADDRESS",
-        message: "Stored wallet address for this transfer is invalid.",
-      },
-      { status: 500 }
-    );
-  }
-
   const amountUnits = centsToUsdcUnits(record.amountCents ?? Math.round(Number(record.amount) * 100));
 
   if (amountUnits <= BigInt(0)) {
@@ -312,7 +314,7 @@ export async function POST(request: Request, context: RouteContext) {
   try {
     const quote = await buildWithdrawalQuote({
       publicClient,
-      walletAddress: walletAddress as Address,
+      walletAddress: companyWalletAddress as Address,
       destination,
       amountUnits,
     });
@@ -329,9 +331,10 @@ export async function POST(request: Request, context: RouteContext) {
     }
 
     const activity: TurnkeySDKApiTypes.TSignTransactionResponse = await turnkeyClient.signTransaction({
-      signWith: walletAddress,
+      signWith: companyWalletAddress,
       unsignedTransaction: quote.unsignedTransaction,
       type: "TRANSACTION_TYPE_ETHEREUM",
+      organizationId: companySubOrgId,
     });
 
     const signedTransaction = getSignedTransactionFromActivity(activity.activity) as Hex;
@@ -342,20 +345,22 @@ export async function POST(request: Request, context: RouteContext) {
 
     const timestamp = new Date().toISOString();
 
+    // Use conditional update to prevent race condition / double-withdrawal
     await docClient.send(
       new UpdateCommand({
         TableName: TRANSFERS_TABLE,
         Key: {
-          recipientKey: record.recipientKey,
           transferId: record.transferId,
         },
         UpdateExpression:
-          "SET #status = :status, withdrawalTxHash = :txHash, withdrawalTargetAddress = :targetAddress, withdrawnAt = :withdrawnAt, updatedAt = :updatedAt",
+          "SET #status = :withdrawn, withdrawalTxHash = :txHash, withdrawalTargetAddress = :targetAddress, withdrawnAt = :withdrawnAt, updatedAt = :updatedAt",
+        ConditionExpression: "#status = :deposited", // ← CRITICAL: Only update if still DEPOSITED
         ExpressionAttributeNames: {
           "#status": "status",
         },
         ExpressionAttributeValues: {
-          ":status": "WITHDRAWN",
+          ":withdrawn": "WITHDRAWN",
+          ":deposited": "DEPOSITED",
           ":txHash": txHash,
           ":targetAddress": destination,
           ":withdrawnAt": timestamp,
@@ -370,6 +375,17 @@ export async function POST(request: Request, context: RouteContext) {
     });
   } catch (error) {
     console.error("Transfer withdrawal failed:", error);
+
+    // Check if it was a conditional check failure (already withdrawn)
+    if (error instanceof Error && error.name === "ConditionalCheckFailedException") {
+      return NextResponse.json(
+        {
+          error: "ALREADY_WITHDRAWN",
+          message: "This transfer has already been withdrawn by another request.",
+        },
+        { status: 409 }
+      );
+    }
 
     return NextResponse.json(
       {
