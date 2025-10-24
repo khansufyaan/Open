@@ -19,8 +19,8 @@ const ERC20_ABI = parseAbi([
 
 function getSurchargePercentage(): number {
   const envValue = process.env.SURCHARGE_PERCENTAGE;
-  const parsed = envValue ? parseFloat(envValue) : 3;
-  return !isNaN(parsed) && parsed >= 0 && parsed <= 100 ? parsed : 3;
+  const parsed = envValue ? parseFloat(envValue) : 5;
+  return !isNaN(parsed) && parsed >= 0 && parsed <= 100 ? parsed : 5;
 }
 
 function applySurchargeToWei(amountWei: bigint, surchargePercentage: number): bigint {

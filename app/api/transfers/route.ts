@@ -18,9 +18,6 @@ type TransferRecord = {
   recipientRouting: string;
   recipientAccount: string;
   recipientLast4: string;
-  recipientName?: string;
-  recipientEmail?: string;
-  recipientPhone?: string;
   amount: string;
   amountCents: number;
   amountWithSurchargeCents: number;
@@ -46,8 +43,8 @@ function sanitizeDigits(value: string): string {
 
 function getSurchargePercentage(): number {
   const envValue = process.env.SURCHARGE_PERCENTAGE;
-  const parsed = envValue ? parseFloat(envValue) : 3;
-  return !isNaN(parsed) && parsed >= 0 && parsed <= 100 ? parsed : 3;
+  const parsed = envValue ? parseFloat(envValue) : 5;
+  return !isNaN(parsed) && parsed >= 0 && parsed <= 100 ? parsed : 5;
 }
 
 function applySurcharge(amountCents: number, surchargePercentage: number): number {
@@ -86,9 +83,6 @@ export async function POST(request: Request) {
     senderAddress,
     recipientAccountNumber,
     recipientRoutingNumber,
-    recipientName,
-    recipientEmail,
-    recipientPhone,
     amount,
   } = (payload ?? {}) as Partial<Record<string, unknown>>;
 
@@ -152,9 +146,6 @@ export async function POST(request: Request) {
       recipientRouting: normalizedRouting,
       recipientAccount: normalizedAccount,
       recipientLast4,
-      recipientName: typeof recipientName === "string" && recipientName.trim() ? recipientName.trim() : undefined,
-      recipientEmail: typeof recipientEmail === "string" && recipientEmail.trim() ? recipientEmail.trim() : undefined,
-      recipientPhone: typeof recipientPhone === "string" && recipientPhone.trim() ? recipientPhone.trim() : undefined,
       amount: normalizedAmount,
       amountCents,
       amountWithSurchargeCents,
@@ -266,7 +257,7 @@ export async function GET(request: Request) {
 
       if (fallbackItems.length > 0) {
         fallbackItems.sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
-        items = fallbackItems; // Return ALL matches for user confirmation
+        items = [fallbackItems[0]]; // Return most recent match
       }
     }
 
@@ -279,9 +270,6 @@ export async function GET(request: Request) {
         status: item.status,
         depositMethod: item.depositMethod === "simulated" ? "ach" : item.depositMethod,
         createdAt: item.createdAt,
-        recipientName: item.recipientName ?? null,
-        recipientEmail: item.recipientEmail ?? null,
-        recipientPhone: item.recipientPhone ?? null,
         recipientLast4: item.recipientLast4,
         fundingStatus: item.fundingStatus ?? null,
         fundingTxHash: item.fundingTxHash ?? null,
