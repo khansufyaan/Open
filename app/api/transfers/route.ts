@@ -18,8 +18,13 @@ type TransferRecord = {
   recipientRouting: string;
   recipientAccount: string;
   recipientLast4: string;
+  recipientName?: string;
+  recipientEmail?: string;
+  recipientPhone?: string;
   amount: string;
   amountCents: number;
+  amountWithSurchargeCents: number;
+  surchargePercentage: number;
   status: "DEPOSITED" | "PENDING" | "FAILED" | "WITHDRAWN";
   depositMethod: string;
   createdAt: string;
@@ -37,6 +42,17 @@ function normalizeAddress(address: string): string {
 
 function sanitizeDigits(value: string): string {
   return value.replace(/\D+/g, "");
+}
+
+function getSurchargePercentage(): number {
+  const envValue = process.env.SURCHARGE_PERCENTAGE;
+  const parsed = envValue ? parseFloat(envValue) : 3;
+  return !isNaN(parsed) && parsed >= 0 && parsed <= 100 ? parsed : 3;
+}
+
+function applySurcharge(amountCents: number, surchargePercentage: number): number {
+  const surchargeAmount = Math.round(amountCents * (surchargePercentage / 100));
+  return amountCents + surchargeAmount;
 }
 
 export async function POST(request: Request) {
@@ -70,6 +86,9 @@ export async function POST(request: Request) {
     senderAddress,
     recipientAccountNumber,
     recipientRoutingNumber,
+    recipientName,
+    recipientEmail,
+    recipientPhone,
     amount,
   } = (payload ?? {}) as Partial<Record<string, unknown>>;
 
@@ -119,6 +138,11 @@ export async function POST(request: Request) {
   const normalizedRouting = sanitizeDigits(recipientRoutingNumber);
   const recipientLast4 = normalizedAccount.slice(-4);
 
+  // Apply surcharge (default 3%)
+  const surchargePercentage = getSurchargePercentage();
+  const amountWithSurchargeCents = applySurcharge(amountCents, surchargePercentage);
+  const amountWithSurcharge = (amountWithSurchargeCents / 100).toFixed(2);
+
   try {
     const timestamp = new Date().toISOString();
 
@@ -128,8 +152,13 @@ export async function POST(request: Request) {
       recipientRouting: normalizedRouting,
       recipientAccount: normalizedAccount,
       recipientLast4,
+      recipientName: typeof recipientName === "string" && recipientName.trim() ? recipientName.trim() : undefined,
+      recipientEmail: typeof recipientEmail === "string" && recipientEmail.trim() ? recipientEmail.trim() : undefined,
+      recipientPhone: typeof recipientPhone === "string" && recipientPhone.trim() ? recipientPhone.trim() : undefined,
       amount: normalizedAmount,
       amountCents,
+      amountWithSurchargeCents,
+      surchargePercentage,
       status: "PENDING",
       depositMethod: "self_custody",
       createdAt: timestamp,
@@ -150,6 +179,8 @@ export async function POST(request: Request) {
         transferId: record.transferId,
         depositAddress: companyWalletAddress,
         amount: record.amount,
+        amountWithSurcharge, // User sees this at signature
+        surchargePercentage,
         status: record.status,
         fundingStatus: record.fundingStatus ?? "PENDING",
         fundingTxHash: record.fundingTxHash ?? null,
@@ -235,7 +266,7 @@ export async function GET(request: Request) {
 
       if (fallbackItems.length > 0) {
         fallbackItems.sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
-        items = [fallbackItems[0]];
+        items = fallbackItems; // Return ALL matches for user confirmation
       }
     }
 
@@ -248,6 +279,10 @@ export async function GET(request: Request) {
         status: item.status,
         depositMethod: item.depositMethod === "simulated" ? "ach" : item.depositMethod,
         createdAt: item.createdAt,
+        recipientName: item.recipientName ?? null,
+        recipientEmail: item.recipientEmail ?? null,
+        recipientPhone: item.recipientPhone ?? null,
+        recipientLast4: item.recipientLast4,
         fundingStatus: item.fundingStatus ?? null,
         fundingTxHash: item.fundingTxHash ?? null,
         withdrawalTxHash: item.withdrawalTxHash ?? null,

@@ -31,19 +31,11 @@ const TABLE_DEFINITIONS = [
       TableName: "blue-wallet-transfers",
       KeySchema: [
         {
-          AttributeName: "recipientKey",
-          KeyType: "HASH",
-        },
-        {
           AttributeName: "transferId",
-          KeyType: "RANGE",
+          KeyType: "HASH",
         },
       ],
       AttributeDefinitions: [
-        {
-          AttributeName: "recipientKey",
-          AttributeType: "S",
-        },
         {
           AttributeName: "transferId",
           AttributeType: "S",

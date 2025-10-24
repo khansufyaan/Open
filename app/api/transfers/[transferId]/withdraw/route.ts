@@ -17,6 +17,17 @@ const ERC20_ABI = parseAbi([
   "function transfer(address to, uint256 value) returns (bool)",
 ]);
 
+function getSurchargePercentage(): number {
+  const envValue = process.env.SURCHARGE_PERCENTAGE;
+  const parsed = envValue ? parseFloat(envValue) : 3;
+  return !isNaN(parsed) && parsed >= 0 && parsed <= 100 ? parsed : 3;
+}
+
+function applySurchargeToWei(amountWei: bigint, surchargePercentage: number): bigint {
+  const surcharge = (amountWei * BigInt(Math.round(surchargePercentage * 100))) / BigInt(10000);
+  return amountWei + surcharge;
+}
+
 const dynamoClient = new DynamoDBClient({
   region: process.env.AWS_REGION || "us-east-2",
 });
@@ -481,6 +492,11 @@ export async function GET(request: Request, context: RouteContext) {
       amountUnits,
     });
 
+    const surchargePercentage = getSurchargePercentage();
+    const topUpWithSurchargeWei = quote.topUpWei > BigInt(0)
+      ? applySurchargeToWei(quote.topUpWei, surchargePercentage)
+      : BigInt(0);
+
     return NextResponse.json({
       success: true,
       transferId,
@@ -497,7 +513,10 @@ export async function GET(request: Request, context: RouteContext) {
       walletBalanceEth: formatEther(quote.walletBalanceWei),
       topUpWei: quote.topUpWei.toString(),
       topUpEth: formatEther(quote.topUpWei),
-          hasSufficientBalance: quote.topUpWei === BigInt(0),
+      topUpWithSurchargeWei: topUpWithSurchargeWei.toString(),
+      topUpWithSurchargeEth: formatEther(topUpWithSurchargeWei),
+      surchargePercentage,
+      hasSufficientBalance: quote.topUpWei === BigInt(0),
       chainId: base.id,
     });
   } catch (error) {
