@@ -51,9 +51,6 @@ export async function POST() {
       products: [Products.Identity, Products.Auth],
       country_codes: [CountryCode.Us],
       language: "en",
-      identity_verification: {
-        template_id: "idvtmp_skip", // Skip identity verification (including phone)
-      },
     });
 
     console.log("Plaid link token created successfully");
