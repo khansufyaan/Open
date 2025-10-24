@@ -13,7 +13,7 @@
  *   COMPANY_WALLET_ADDRESS=...
  */
 
-import { Turnkey } from "@turnkey/sdk-server";
+import { Turnkey, defaultEthereumAccountAtIndex } from "@turnkey/sdk-server";
 
 async function provisionCompanyWallet() {
   const apiPublicKey = process.env.TURNKEY_API_PUBLIC_KEY;
@@ -55,20 +55,15 @@ async function provisionCompanyWallet() {
       rootQuorumThreshold: 1,
       wallet: {
         walletName: "Company Deposit Wallet",
-        accounts: [
-          {
-            curve: "SECP256K1",
-            pathFormat: "PATH_FORMAT_BIP32",
-            path: "m/44'/60'/0'/0/0",
-            addressFormat: "ADDRESS_FORMAT_ETHEREUM",
-          },
-        ],
+        accounts: [defaultEthereumAccountAtIndex(0)],
       },
     });
 
+    console.log("Response:", JSON.stringify(response, null, 2));
+
     const subOrgId = response.subOrganizationId;
-    const walletId = response.walletIds?.[0];
-    const walletAddress = response.walletAddresses?.[0];
+    const walletId = response.wallet?.walletId ?? response.walletIds?.[0];
+    const walletAddress = response.wallet?.addresses?.[0] ?? response.walletAddresses?.[0];
 
     console.log("✅ Company wallet created successfully!\n");
     console.log("Add these to your .env.local file:\n");
