@@ -70,20 +70,19 @@ export function TurnkeyLoginForm({
       console.log(`[Auth] User registration result:`, userData);
 
       const subOrgId = userData.subOrganizationId;
-      if (!subOrgId) {
-        throw new Error("Sub-organization ID not returned from user creation");
-      }
+      console.log(`[Auth] Sub-organization ID: ${subOrgId ?? 'not returned'}`);
 
       if (!turnkey) {
         throw new Error("Turnkey client not available");
       }
 
-      console.log(`[Auth] Initiating email OTP for: ${trimmedEmail} (Sub-Org: ${subOrgId})`);
+      console.log(`[Auth] Initiating email OTP for: ${trimmedEmail}`);
+      console.log(`[Auth] Using PARENT org ID for auth: ${process.env.NEXT_PUBLIC_TURNKEY_ORGANIZATION_ID}`);
 
       const response = await turnkey.serverSign("initOtp", [{
         otpType: "OTP_TYPE_EMAIL",
         contact: trimmedEmail,
-        organizationId: subOrgId,
+        organizationId: process.env.NEXT_PUBLIC_TURNKEY_ORGANIZATION_ID!,
         otpLength: 6,
         alphanumeric: false,
         expirationSeconds: "300",
