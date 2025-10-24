@@ -101,6 +101,7 @@ function normalizeEmail(email: string): string {
 
 export async function POST(request: Request) {
   if (!isTurnkeyConfigured()) {
+    console.error("[Turnkey Create User] Turnkey not configured - missing API keys");
     return NextResponse.json(
       {
         error: "TURNKEY_SERVER_NOT_CONFIGURED",
@@ -150,7 +151,12 @@ export async function POST(request: Request) {
   const organizationId = getTurnkeyOrganizationId();
   const emailOtpTagIds = parseEmailOtpTagIds();
 
+  console.log(`[Turnkey Create User] Attempting to create/verify user for email: ${email}`);
+  console.log(`[Turnkey Create User] Organization ID: ${organizationId}`);
+  console.log(`[Turnkey Create User] Email OTP Tag IDs configured: ${emailOtpTagIds.length > 0 ? emailOtpTagIds.join(", ") : "NONE"}`);
+
   if (!turnkeyClient || !organizationId) {
+    console.error("[Turnkey Create User] Failed to initialize Turnkey client or get organization ID");
     return NextResponse.json(
       {
         error: "TURNKEY_CLIENT_ERROR",
@@ -161,6 +167,7 @@ export async function POST(request: Request) {
   }
 
   try {
+    console.log(`[Turnkey Create User] Calling Turnkey API to create user: ${email}`);
     const response = await turnkeyClient.createUsers({
       organizationId,
       users: [
@@ -176,8 +183,10 @@ export async function POST(request: Request) {
     });
 
     const createdUserId = response.userIds?.[0] ?? null;
+    console.log(`[Turnkey Create User] User created successfully with ID: ${createdUserId}`);
 
-    if (createdUserId) {
+    if (createdUserId && emailOtpTagIds.length > 0) {
+      console.log(`[Turnkey Create User] Ensuring user ${createdUserId} has required tags`);
       await ensureUserHasTags({
         turnkeyClient,
         organizationId,
@@ -205,6 +214,7 @@ export async function POST(request: Request) {
       code === "CONFLICT" || normalizedMessage.includes("must be unique");
 
     if (duplicateEmail) {
+      console.log(`[Turnkey Create User] User ${email} already exists - ensuring tags are set`);
       if (emailOtpTagIds.length > 0) {
         await ensureUserEmailHasTags({
           turnkeyClient,
@@ -214,8 +224,18 @@ export async function POST(request: Request) {
         });
       }
 
-      return NextResponse.json({ created: false });
+      console.log(`[Turnkey Create User] User ${email} already exists and is ready for OTP`);
+      return NextResponse.json({ created: false, userExists: true });
     }
+
+    console.error(`[Turnkey Create User] Failed to create user ${email}:`, {
+      code,
+      message,
+      error: error instanceof TurnkeyRequestError ? {
+        message: error.message,
+        details: error.details,
+      } : error,
+    });
 
     if (error instanceof TurnkeyRequestError) {
       return NextResponse.json(

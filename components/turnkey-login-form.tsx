@@ -41,6 +41,8 @@ export function TurnkeyLoginForm({
 
     setIsRequesting(true);
     try {
+      console.log(`[Auth] Creating/verifying Turnkey user for: ${trimmedEmail}`);
+
       const ensureUserResponse = await fetch("/api/turnkey/create-user", {
         method: "POST",
         headers: {
@@ -51,15 +53,23 @@ export function TurnkeyLoginForm({
 
       if (!ensureUserResponse.ok) {
         const data = (await ensureUserResponse.json().catch(() => null)) as
-          | { message?: string }
+          | { message?: string; error?: string; details?: unknown }
           | null;
-        const errorMessage = data?.message ?? "Unable to prepare Turnkey user.";
+
+        console.error("[Auth] Failed to create/verify user:", data);
+
+        const errorMessage = data?.message ?? data?.error ?? "Unable to prepare Turnkey user.";
         throw new Error(errorMessage);
       }
+
+      const userData = await ensureUserResponse.json();
+      console.log(`[Auth] User registration result:`, userData);
 
       if (!turnkey) {
         throw new Error("Turnkey client not available");
       }
+
+      console.log(`[Auth] Initiating email OTP for: ${trimmedEmail}`);
 
       const response = await turnkey.serverSign("initOtp", [{
         otpType: "OTP_TYPE_EMAIL",
@@ -70,9 +80,12 @@ export function TurnkeyLoginForm({
         expirationSeconds: "300",
       }]) as { otpId: string };
 
+      console.log(`[Auth] OTP initiated successfully with ID: ${response.otpId}`);
+
       setOtpId(response.otpId);
       setStep("verify");
     } catch (error) {
+      console.error("[Auth] Email auth flow failed:", error);
       const message = error instanceof Error ? error.message : "Failed to send email OTP";
       onAuthError(message);
     } finally {
