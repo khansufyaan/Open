@@ -11,6 +11,10 @@ frontend:
         - env | grep -e PLAID_CLIENT_ID >> .env.production || true
         - env | grep -e PLAID_SECRET >> .env.production || true
         - env | grep -e PLAID_ENV >> .env.production || true
+        - env | grep -e COMPANY_WALLET_SUB_ORG_ID >> .env.production || true
+        - env | grep -e COMPANY_WALLET_ID >> .env.production || true
+        - env | grep -e COMPANY_WALLET_ADDRESS >> .env.production || true
+        - env | grep -e SURCHARGE_PERCENTAGE >> .env.production || true
     build:
       commands:
         - npm run build
