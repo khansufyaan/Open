@@ -59,11 +59,9 @@ async function provisionCompanyWallet() {
       },
     });
 
-    console.log("Response:", JSON.stringify(response, null, 2));
-
     const subOrgId = response.subOrganizationId;
-    const walletId = response.wallet?.walletId ?? response.walletIds?.[0];
-    const walletAddress = response.wallet?.addresses?.[0] ?? response.walletAddresses?.[0];
+    const walletId = response.wallet?.walletId;
+    const walletAddress = response.wallet?.addresses?.[0];
 
     console.log("✅ Company wallet created successfully!\n");
     console.log("Add these to your .env.local file:\n");
