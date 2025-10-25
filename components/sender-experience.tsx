@@ -47,7 +47,7 @@ type RecipientPreview = {
 };
 
 export function SenderExperience() {
-  const { ready: privyReady, authenticated, login, connectWallet } = usePrivy();
+  const { ready: privyReady, authenticated, login, connectWallet, logout } = usePrivy();
   const { wallets } = useWallets();
   const [isConnecting, setIsConnecting] = useState(false);
   const [recipientAccountNumber, setRecipientAccountNumber] = useState("");
@@ -283,6 +283,25 @@ export function SenderExperience() {
     }
   }, [privyReady, authenticated, login, connectWallet, senderAddress]);
 
+  const handleDisconnectWallet = useCallback(async () => {
+    setError(null);
+
+    if (!privyReady) {
+      setError("Wallet system is not ready. Please try again in a moment.");
+      return;
+    }
+
+    try {
+      await logout();
+    } catch (disconnectError) {
+      const message =
+        disconnectError instanceof Error
+          ? disconnectError.message
+          : "Failed to disconnect wallet.";
+      setError(message);
+    }
+  }, [privyReady, logout]);
+
   const isFormDisabled = useMemo(
     () => !senderAddress || isSubmitting || isFunding,
     [senderAddress, isSubmitting, isFunding]
@@ -437,14 +456,21 @@ export function SenderExperience() {
                 Connect a wallet, enter the recipient’s bank coordinates, and we’ll provision a Turnkey wallet for this transfer before funding it on Base.
               </p>
             </div>
-            <div className="mt-6 flex flex-wrap gap-3">
-              <Button size="lg" onClick={handleConnectWallet} disabled={isConnecting || !privyReady}>
-                {senderAddress
-                  ? `Connected: ${senderAddress.slice(0, 6)}…${senderAddress.slice(-4)}`
-                  : isConnecting
-                  ? "Connecting…"
-                  : "Connect wallet"}
-              </Button>
+            <div className="mt-6 flex flex-wrap items-center gap-3">
+              {senderAddress ? (
+                <>
+                  <Button size="lg" variant="outline" disabled>
+                    Connected: {senderAddress.slice(0, 6)}…{senderAddress.slice(-4)}
+                  </Button>
+                  <Button size="lg" variant="destructive" onClick={handleDisconnectWallet} disabled={!privyReady}>
+                    Disconnect wallet
+                  </Button>
+                </>
+              ) : (
+                <Button size="lg" onClick={handleConnectWallet} disabled={isConnecting || !privyReady}>
+                  {isConnecting ? "Connecting…" : "Connect wallet"}
+                </Button>
+              )}
               <p className="text-xs text-slate-500 dark:text-slate-400">
                 Make sure your wallet holds both USDC and Base ETH for gas.
               </p>

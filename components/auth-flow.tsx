@@ -162,7 +162,7 @@ export function AuthFlow() {
 }
 
 function TurnkeyAuthContent() {
-  const { ready: privyReady, authenticated: privyAuthenticated, login: privyLogin, connectWallet: privyConnectWallet } = usePrivy();
+  const { ready: privyReady, authenticated: privyAuthenticated, login: privyLogin, connectWallet: privyConnectWallet, logout: privyLogout } = usePrivy();
   const { wallets: connectedWallets } = useWallets();
   const turnkeyContext = useTurnkey();
   const turnkey = turnkeyContext.turnkey;
@@ -679,6 +679,24 @@ function TurnkeyAuthContent() {
       setIsWalletConnecting(false);
     }
   }, [privyReady, privyAuthenticated, privyLogin, privyConnectWallet]);
+
+  const handleDisconnectWallet = useCallback(async () => {
+    setWalletConnectError(null);
+
+    if (!privyReady) {
+      setWalletConnectError("Wallet system is not ready. Please try again in a moment.");
+      return;
+    }
+
+    try {
+      await privyLogout();
+    } catch (error) {
+      console.error("Wallet disconnect failed", error);
+      setWalletConnectError(
+        error instanceof Error ? error.message : "Failed to disconnect wallet. Please retry."
+      );
+    }
+  }, [privyReady, privyLogout]);
 
   const handleTopUp = useCallback(
     async (summary: TransferSummary) => {
@@ -1262,15 +1280,26 @@ function TurnkeyAuthContent() {
                               {quote && quoteMatchesDestination && requiresTopUp && (
                                 <div className="space-y-1">
                                   {connectedEvmWallet ? (
-                                    <Button
-                                      type="button"
-                                      size="sm"
-                                      variant="outline"
-                                      disabled={Boolean(topUpLoading[summary.transferId])}
-                                      onClick={() => void handleTopUp(summary)}
-                                    >
-                                      {topUpLoading[summary.transferId] ? "Sending top-up…" : "Top up gas from connected wallet"}
-                                    </Button>
+                                    <div className="flex gap-2">
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="outline"
+                                        disabled={Boolean(topUpLoading[summary.transferId])}
+                                        onClick={() => void handleTopUp(summary)}
+                                      >
+                                        {topUpLoading[summary.transferId] ? "Sending top-up…" : "Top up gas from connected wallet"}
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="destructive"
+                                        disabled={!privyReady}
+                                        onClick={() => void handleDisconnectWallet()}
+                                      >
+                                        Disconnect
+                                      </Button>
+                                    </div>
                                   ) : (
                                     <div className="space-y-1">
                                       <Button
