@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import { Instagram, Mail, MessageCircle, Phone, Send } from "lucide-react";
+
 import { Button } from "@/components/ui/button";
 
 export const metadata = {
@@ -85,8 +87,41 @@ export default function ContactPage() {
             </form>
           </section>
 
-          <section className="text-sm text-slate-500 dark:text-slate-400">
-            Prefer a call? Mention it in your message and we’ll coordinate a time.
+          <section className="space-y-6 rounded-3xl border border-slate-200/80 bg-white/70 p-6 text-slate-600 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-200">
+            <h2 className="text-base font-semibold text-slate-900 dark:text-white">Reach us directly</h2>
+            <ul className="space-y-4 text-sm">
+              <li className="flex items-center gap-3">
+                <Mail className="h-4 w-4 text-sky-500" aria-hidden />
+                <a href="mailto:ezulqarni2@gmail.com" className="hover:underline">
+                  ezulqarni2@gmail.com
+                </a>
+              </li>
+              <li className="flex items-center gap-3">
+                <Phone className="h-4 w-4 text-sky-500" aria-hidden />
+                <a href="tel:+16303634339" className="hover:underline">
+                  +1 (630) 363-4339
+                </a>
+              </li>
+              <li className="flex items-center gap-3">
+                <Instagram className="h-4 w-4 text-sky-500" aria-hidden />
+                <a href="https://www.instagram.com/ebrahim575" target="_blank" rel="noopener noreferrer" className="hover:underline">
+                  @ebrahim575
+                </a>
+              </li>
+              <li className="flex items-center gap-3">
+                <Send className="h-4 w-4 text-sky-500" aria-hidden />
+                <a href="https://t.me/thomasShelby0B3" target="_blank" rel="noopener noreferrer" className="hover:underline">
+                  Telegram: @thomasShelby0B3
+                </a>
+              </li>
+              <li className="flex items-center gap-3">
+                <MessageCircle className="h-4 w-4 text-sky-500" aria-hidden />
+                <span>Discord: iliyavidic</span>
+              </li>
+            </ul>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Prefer a call or live chat? Mention it in your message and we’ll coordinate a time.
+            </p>
           </section>
         </main>
       </div>
