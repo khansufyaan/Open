@@ -510,8 +510,8 @@ export function SenderExperience() {
   }, [recipientAccountNumber, recipientRoutingNumber]);
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 lg:flex-row lg:items-start lg:justify-center">
-      <section className="w-full lg:max-w-xl">
+    <div className="mx-auto w-full max-w-4xl space-y-6">
+      <section>
         <div className="rounded-3xl border border-slate-200/80 bg-white/70 p-6 text-slate-700 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-200">
         <div className="space-y-4">
           <div className="text-center">
@@ -736,7 +736,7 @@ export function SenderExperience() {
     </section>
 
       {senderAddress && (
-        <aside className="w-full lg:w-[22rem] lg:flex-shrink-0 lg:self-start lg:sticky lg:top-6">
+        <section>
           <div className="rounded-3xl border border-slate-200/80 bg-white/70 text-slate-700 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-200">
             <button
               onClick={() => setIsHistoryOpen(!isHistoryOpen)}
@@ -821,7 +821,7 @@ export function SenderExperience() {
               </div>
             )}
           </div>
-        </aside>
+        </section>
       )}
     </div>
   );
