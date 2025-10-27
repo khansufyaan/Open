@@ -424,7 +424,7 @@ export async function POST(request: Request) {
       transfer: {
         transferId: record.transferId,
         depositAddress: companyWalletAddress,
-        walletAddress: companyWalletAddress,
+        walletAddress: record.walletAddress,
         amount: record.amount,
         amountWithSurcharge, // User sees this at signature
         surchargePercentage,
@@ -541,7 +541,7 @@ export async function GET(request: Request) {
       transfers: items.map((item) => ({
         transferId: item.transferId,
         depositAddress: process.env.COMPANY_WALLET_ADDRESS,
-        walletAddress: item.walletAddress ?? process.env.COMPANY_WALLET_ADDRESS,
+        walletAddress: item.walletAddress ?? null,
         recipientWalletAddress: item.walletAddress ?? null,
         recipientWalletId: item.walletId ?? null,
         recipientWalletName: item.walletName ?? null,

@@ -43,11 +43,17 @@ type PlaidIdentitySnapshot = {
 type TransferSummary = {
   transferId: string;
   walletId: string;
-  walletAddress: string;
+  walletAddress: string | null;
+  depositAddress?: string | null;
   amount: string;
   status: string;
   depositMethod: string;
   createdAt: string;
+  fundingStatus?: string | null;
+  fundingTxHash?: string | null;
+  recipientWalletAddress?: string | null;
+  recipientWalletId?: string | null;
+  recipientWalletName?: string | null;
   withdrawalTxHash?: string | null;
   withdrawalTargetAddress?: string | null;
   withdrawnAt?: string | null;
@@ -275,11 +281,28 @@ function TurnkeyAuthContent() {
         })
       );
 
-      const flattened = lookups.flat();
+      const flattened = lookups.flat().filter((entry): entry is TransferSummary => Boolean(entry));
 
-      setTransferSummaries(flattened);
+      const deduped = new Map<string, TransferSummary>();
 
-      if (flattened.length === 0) {
+      for (const item of flattened) {
+        if (!item?.transferId) {
+          continue;
+        }
+
+        deduped.set(item.transferId, {
+          ...item,
+          walletAddress: item.recipientWalletAddress ?? item.walletAddress ?? null,
+        });
+      }
+
+      const ordered = Array.from(deduped.values()).sort(
+        (a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)
+      );
+
+      setTransferSummaries(ordered);
+
+      if (ordered.length === 0) {
         setTransferError("No transfers have been allocated to this bank account yet.");
       }
     } catch (error) {
@@ -727,6 +750,14 @@ function TurnkeyAuthContent() {
         setTopUpErrors((previous) => ({
           ...previous,
           [summary.transferId]: "Connect an Ethereum wallet to top up gas.",
+        }));
+        return;
+      }
+
+      if (!summary.walletAddress) {
+        setTopUpErrors((previous) => ({
+          ...previous,
+          [summary.transferId]: "Managed wallet is not yet provisioned. Try again shortly.",
         }));
         return;
       }
@@ -1197,16 +1228,30 @@ function TurnkeyAuthContent() {
                         <p className="mt-1 text-[11px] uppercase tracking-wide text-slate-400 dark:text-slate-500">
                           Transfer {summary.transferId}
                         </p>
-                        <dl className="mt-2 space-y-1">
-                          <div className="flex items-center gap-2">
-                            <CheckCircle2 className="h-3.5 w-3.5 text-sky-500" />
-                            <span className="truncate">{summary.walletAddress}</span>
+                        <dl className="mt-2 space-y-1 text-[11px]">
+                          <div className="flex items-start gap-2">
+                            <span className="text-slate-400 dark:text-slate-500 uppercase">Vault</span>
+                            <span className="truncate">
+                              {summary.depositAddress ?? "—"}
+                            </span>
                           </div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-start gap-2">
+                            <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 text-sky-500" />
+                            <span className="truncate">
+                              {summary.walletAddress ?? "Wallet provisioning in progress"}
+                            </span>
+                          </div>
+                          {summary.recipientWalletName && (
+                            <div className="flex items-start gap-2">
+                              <span className="text-slate-400 dark:text-slate-500">Label</span>
+                              <span className="truncate">{summary.recipientWalletName}</span>
+                            </div>
+                          )}
+                          <div className="flex items-start gap-2">
                             <span className="text-slate-400 dark:text-slate-500">Wallet ID</span>
                             <span className="truncate">{summary.walletId}</span>
                           </div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-start gap-2">
                             <span className="text-slate-400 dark:text-slate-500">Recorded</span>
                             <span>
                               {new Date(summary.createdAt).toLocaleString(undefined, {
@@ -1215,10 +1260,16 @@ function TurnkeyAuthContent() {
                               })}
                             </span>
                           </div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-start gap-2">
                             <span className="text-slate-400 dark:text-slate-500">Deposit</span>
                             <span className="capitalize">{summary.depositMethod}</span>
                           </div>
+                          {summary.fundingStatus && (
+                            <div className="flex items-start gap-2">
+                              <span className="text-slate-400 dark:text-slate-500">Funding</span>
+                              <span className="capitalize">{summary.fundingStatus.toLowerCase()}</span>
+                            </div>
+                          )}
                         </dl>
                         {summary.status === "DEPOSITED" ? (
                           <form
@@ -1383,7 +1434,12 @@ function TurnkeyAuthContent() {
                               </span>
                             )}
                           </div>
-                        ) : null}
+                        ) : (
+                          <p className="mt-3 text-[11px] text-slate-500 dark:text-slate-400">
+                            Transfer is still processing. We’ll surface the claim action once the deposit is
+                            confirmed on-chain.
+                          </p>
+                        )}
                       </li>
                     );
                   })}

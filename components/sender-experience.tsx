@@ -33,6 +33,7 @@ type TransferResponse = {
   transferId: string;
   walletId: string;
   walletAddress: string;
+  depositAddress: string;
   amount: string;
   status: string;
   accountMask: string;
@@ -54,6 +55,7 @@ type PastTransfer = {
   recipientAccount?: string;
   recipientRouting?: string;
   walletAddress?: string;
+  depositAddress?: string;
   recipientWalletAddress?: string | null;
   recipientWalletId?: string | null;
   recipientWalletName?: string | null;
@@ -192,8 +194,10 @@ export function SenderExperience() {
         throw new Error("Transfer amount is missing.");
       }
 
-      if (!currentTransfer.walletAddress || !currentTransfer.walletAddress.startsWith("0x")) {
-        throw new Error("Recipient wallet address is invalid.");
+      const depositAddress = currentTransfer.depositAddress || currentTransfer.walletAddress;
+
+      if (!depositAddress || !depositAddress.startsWith("0x")) {
+        throw new Error("Deposit wallet address is invalid.");
       }
 
       let amountUnits: bigint;
@@ -245,7 +249,7 @@ export function SenderExperience() {
         const data = encodeFunctionData({
           abi: ERC20_TRANSFER_ABI,
           functionName: "transfer",
-          args: [currentTransfer.walletAddress as `0x${string}`, amountUnits],
+          args: [depositAddress as `0x${string}`, amountUnits],
         });
 
         txHash = (await provider.request({
@@ -678,13 +682,13 @@ export function SenderExperience() {
                     <dl className="mt-3 space-y-2 text-[11px]">
                       <div>
                         <dt className="uppercase tracking-wide text-emerald-900/70 dark:text-emerald-100/70">Vault address</dt>
-                        <dd className="break-all text-emerald-950 dark:text-emerald-50">{transfer.walletAddress}</dd>
+                        <dd className="break-all text-emerald-950 dark:text-emerald-50">{transfer.depositAddress}</dd>
                       </div>
-                      {transfer.recipientWalletAddress && (
+                      {(transfer.recipientWalletAddress || transfer.walletAddress) && (
                         <div>
                           <dt className="uppercase tracking-wide text-emerald-900/70 dark:text-emerald-100/70">Recipient wallet</dt>
                           <dd className="break-all text-emerald-950 dark:text-emerald-50">
-                            {transfer.recipientWalletAddress}
+                            {transfer.recipientWalletAddress ?? transfer.walletAddress}
                           </dd>
                         </div>
                       )}
@@ -793,9 +797,14 @@ export function SenderExperience() {
                               <span className="font-medium">Routing:</span> {txn.recipientRouting}
                             </p>
                           )}
-                          {txn.walletAddress && (
+                          {txn.depositAddress && (
                             <p className="text-xs text-slate-600 dark:text-slate-300 break-all">
-                              <span className="font-medium">Wallet:</span> {txn.walletAddress}
+                              <span className="font-medium">Vault:</span> {txn.depositAddress}
+                            </p>
+                          )}
+                          {(txn.recipientWalletAddress || txn.walletAddress) && (
+                            <p className="text-xs text-slate-600 dark:text-slate-300 break-all">
+                              <span className="font-medium">Recipient wallet:</span> {txn.recipientWalletAddress ?? txn.walletAddress}
                             </p>
                           )}
                         </div>

@@ -139,6 +139,17 @@ export async function POST(request: Request, context: RouteContext) {
     ":updatedAt": timestamp,
   };
 
+  if (normalizedStatus === "CONFIRMED") {
+    updateExpressions.push("#transferStatus = :deposited", "depositedAt = :depositedAt");
+    attributeNames["#transferStatus"] = "status";
+    attributeValues[":deposited"] = "DEPOSITED";
+    attributeValues[":depositedAt"] = timestamp;
+  } else if (normalizedStatus === "FAILED") {
+    updateExpressions.push("#transferStatus = :failed");
+    attributeNames["#transferStatus"] = "status";
+    attributeValues[":failed"] = "FAILED";
+  }
+
   if (typeof txHashInput === "string") {
     updateExpressions.push("fundingTxHash = :txHash");
     attributeValues[":txHash"] = txHashInput;
