@@ -10,7 +10,7 @@ import { getTurnkeyApiClient, isTurnkeyConfigured } from "@/lib/turnkey/server";
 import type { TurnkeySDKApiTypes } from "@turnkey/sdk-server";
 
 const TRANSFERS_TABLE = "blue-wallet-transfers";
-const BASE_USDC_CONTRACT = (process.env.BASE_USDC_CONTRACT ?? "0x833589fCD6edb6E08f4c7C0dC1bC64ED875FfC4d").toLowerCase();
+const BASE_USDC_CONTRACT = (process.env.BASE_USDC_CONTRACT ?? "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913").toLowerCase();
 const BASE_RPC_URL = process.env.BASE_RPC_URL ?? "https://mainnet.base.org";
 
 const ERC20_ABI = parseAbi([

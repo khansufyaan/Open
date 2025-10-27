@@ -81,6 +81,7 @@ export async function GET(request: Request) {
     accountMask: string | null;
     routingMask: string | null;
   }> = [];
+  const seenAccountKeys = new Set<string>();
 
   let exclusiveStartKey: Record<string, unknown> | undefined;
 
@@ -141,23 +142,37 @@ export async function GET(request: Request) {
           const identityNames = Array.isArray(identity.names) ? identity.names : [];
           const identityEmails = Array.isArray(identity.emails) ? identity.emails : [];
           const identityPhones = Array.isArray(identity.phones) ? identity.phones : [];
+          const identityAddresses = Array.isArray(identity.addresses) ? identity.addresses : [];
 
           const fallbackName = typeof item.plaidVerifiedName === "string" ? item.plaidVerifiedName : null;
           const fallbackEmail = typeof item.plaidVerifiedEmail === "string" ? item.plaidVerifiedEmail : null;
           const fallbackPhone = typeof item.plaidVerifiedPhone === "string" ? item.plaidVerifiedPhone : null;
+          const fallbackAddress = item.plaidVerifiedAddress && typeof item.plaidVerifiedAddress === "object"
+            ? item.plaidVerifiedAddress
+            : null;
 
-          const accountMask = account.mask ?? maskValue(storedAccount);
-          const routingMask = maskValue(storedRouting || sanitizeDigits(item.plaidVerifiedRoutingNumber));
+          const accountDisplay = storedAccount;
+          const routingDisplay = storedRouting || sanitizeDigits(item.plaidVerifiedRoutingNumber);
 
           const matchEntry = {
             userId,
             name: identityNames[0] ?? fallbackName ?? null,
             email: identityEmails[0] ?? fallbackEmail ?? null,
             phone: identityPhones[0] ?? fallbackPhone ?? null,
+            address: identityAddresses[0] ?? fallbackAddress ?? null,
             confidence,
-            accountMask: accountMask ?? null,
-            routingMask: routingMask ?? null,
+            accountMask: accountDisplay ?? null,
+            routingMask: routingDisplay ?? null,
           };
+          const matchKey = storedRouting && storedAccount
+            ? `${storedRouting}:${storedAccount}`
+            : storedRoutingMask && storedMask
+            ? `${storedRoutingMask}:${storedMask}`
+            : null;
+
+          if (matchKey && seenAccountKeys.has(matchKey)) {
+            continue;
+          }
 
           bestConfidence = confidence;
 
@@ -167,6 +182,10 @@ export async function GET(request: Request) {
             matches[existingIndex] = matchEntry;
           } else {
             matches.push(matchEntry);
+          }
+
+          if (matchKey) {
+            seenAccountKeys.add(matchKey);
           }
 
           if (confidence === "exact") {

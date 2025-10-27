@@ -1,10 +1,19 @@
 import { NextResponse } from "next/server";
-import { randomUUID } from "crypto";
+import { createHash, randomUUID } from "crypto";
 
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, PutCommand, ScanCommand } from "@aws-sdk/lib-dynamodb";
+import { DynamoDBDocumentClient, GetCommand, PutCommand, ScanCommand } from "@aws-sdk/lib-dynamodb";
+import { defaultEthereumAccountAtIndex } from "@turnkey/sdk-server";
+
+import {
+  getTurnkeyApiClient,
+  getTurnkeyOrganizationId,
+  isTurnkeyConfigured,
+} from "@/lib/turnkey/server";
 
 const TRANSFERS_TABLE = "blue-wallet-transfers";
+const RECIPIENT_WALLETS_TABLE =
+  process.env.RECIPIENT_WALLETS_TABLE ?? "blue-wallet-recipient-wallets";
 
 const dynamoClient = new DynamoDBClient({
   region: process.env.AWS_REGION || "us-east-2",
@@ -13,6 +22,7 @@ const dynamoClient = new DynamoDBClient({
 const docClient = DynamoDBDocumentClient.from(dynamoClient);
 
 type TransferRecord = {
+  recipientKey: string;
   transferId: string;
   senderAddress: string;
   recipientRouting: string;
@@ -31,6 +41,16 @@ type TransferRecord = {
   withdrawalTxHash?: string;
   withdrawalTargetAddress?: string;
   withdrawnAt?: string;
+  walletId?: string;
+  walletAddress?: string;
+  walletCreatedAt?: string;
+};
+
+type RecipientWalletRecord = {
+  recipientKey: string;
+  walletId: string;
+  walletAddress: string;
+  walletCreatedAt: string;
 };
 
 function normalizeAddress(address: string): string {
@@ -39,6 +59,15 @@ function normalizeAddress(address: string): string {
 
 function sanitizeDigits(value: string): string {
   return value.replace(/\D+/g, "");
+}
+
+function buildRecipientKey(routingNumber: string, accountNumber: string): string {
+  const normalizedRouting = sanitizeDigits(routingNumber);
+  const normalizedAccount = sanitizeDigits(accountNumber);
+
+  return createHash("sha256")
+    .update(`${normalizedRouting}|${normalizedAccount}`, "utf8")
+    .digest("hex");
 }
 
 function getSurchargePercentage(): number {
@@ -50,6 +79,153 @@ function getSurchargePercentage(): number {
 function applySurcharge(amountCents: number, surchargePercentage: number): number {
   const surchargeAmount = Math.round(amountCents * (surchargePercentage / 100));
   return amountCents + surchargeAmount;
+}
+
+async function findWalletInTransfers(recipientKey: string): Promise<RecipientWalletRecord | null> {
+  const response = await docClient.send(
+    new ScanCommand({
+      TableName: TRANSFERS_TABLE,
+      FilterExpression: "recipientKey = :recipientKey AND attribute_exists(walletAddress)",
+      ExpressionAttributeValues: {
+        ":recipientKey": recipientKey,
+      },
+      Limit: 1,
+    })
+  );
+
+  const fallbackItem = response.Items?.[0] as TransferRecord | undefined;
+  if (!fallbackItem?.walletId || !fallbackItem.walletAddress) {
+    return null;
+  }
+
+  return {
+    recipientKey,
+    walletId: fallbackItem.walletId,
+    walletAddress: fallbackItem.walletAddress,
+    walletCreatedAt: fallbackItem.walletCreatedAt ?? fallbackItem.createdAt,
+  };
+}
+
+async function getRecipientWallet(recipientKey: string): Promise<RecipientWalletRecord | null> {
+  try {
+    const response = await docClient.send(
+      new GetCommand({
+        TableName: RECIPIENT_WALLETS_TABLE,
+        Key: { recipientKey },
+      })
+    );
+
+    if (!response.Item) {
+      return null;
+    }
+
+    const item = response.Item as RecipientWalletRecord;
+    if (!item.walletId || !item.walletAddress) {
+      return null;
+    }
+
+    return item;
+  } catch (error) {
+    if (error instanceof Error && error.name === "ResourceNotFoundException") {
+      return findWalletInTransfers(recipientKey);
+    }
+
+    console.error("Failed to fetch recipient wallet", error);
+    throw new Error("Unable to load recipient wallet mapping.");
+  }
+}
+
+async function saveRecipientWallet(record: RecipientWalletRecord): Promise<void> {
+  try {
+    await docClient.send(
+      new PutCommand({
+        TableName: RECIPIENT_WALLETS_TABLE,
+        Item: record,
+        ConditionExpression: "attribute_not_exists(recipientKey)",
+      })
+    );
+  } catch (error) {
+    if (error instanceof Error && error.name === "ConditionalCheckFailedException") {
+      // Another request inserted the wallet first. Swallow so caller refetches.
+      return;
+    }
+
+    if (error instanceof Error && error.name === "ResourceNotFoundException") {
+      console.warn("Recipient wallet table missing; skip persistence");
+      return;
+    }
+
+    console.error("Failed to persist recipient wallet", error);
+    throw new Error("Unable to persist recipient wallet mapping.");
+  }
+}
+
+async function createRecipientWallet(recipientKey: string): Promise<RecipientWalletRecord> {
+  if (!isTurnkeyConfigured()) {
+    throw new Error("Turnkey is not configured for wallet provisioning.");
+  }
+
+  const client = getTurnkeyApiClient();
+  const organizationId = getTurnkeyOrganizationId();
+
+  if (!client || !organizationId) {
+    throw new Error("Unable to initialize Turnkey client for wallet provisioning.");
+  }
+
+  const walletName = `Recipient-${recipientKey.slice(0, 12)}`;
+
+  const createResponse = await client.createWallet({
+    organizationId,
+    walletName,
+    accounts: [defaultEthereumAccountAtIndex(0)],
+  });
+
+  const walletId =
+    (createResponse.wallet && createResponse.wallet.walletId) ||
+    (createResponse.walletIds && createResponse.walletIds[0]);
+
+  if (!walletId) {
+    throw new Error("Turnkey did not return a wallet identifier.");
+  }
+
+  const accountsResponse = await client.getWalletAccounts({ walletId });
+  const account = accountsResponse.accounts?.[0];
+  const walletAddress = account?.address?.toLowerCase();
+
+  if (!walletAddress) {
+    throw new Error("Turnkey wallet does not expose an EVM address.");
+  }
+
+  const record: RecipientWalletRecord = {
+    recipientKey,
+    walletId,
+    walletAddress,
+    walletCreatedAt: new Date().toISOString(),
+  };
+
+  await saveRecipientWallet(record);
+
+  return record;
+}
+
+async function ensureRecipientWallet(recipientKey: string): Promise<RecipientWalletRecord> {
+  const existing = await getRecipientWallet(recipientKey);
+  if (existing) {
+    return existing;
+  }
+
+  try {
+    return await createRecipientWallet(recipientKey);
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("persist recipient wallet")) {
+      const fallback = await getRecipientWallet(recipientKey);
+      if (fallback) {
+        return fallback;
+      }
+    }
+
+    throw error instanceof Error ? error : new Error("Failed to provision recipient wallet.");
+  }
 }
 
 export async function POST(request: Request) {
@@ -130,6 +306,7 @@ export async function POST(request: Request) {
   const amountCents = Math.round(Number(normalizedAmount) * 100);
   const normalizedAccount = sanitizeDigits(recipientAccountNumber);
   const normalizedRouting = sanitizeDigits(recipientRoutingNumber);
+  const recipientKey = buildRecipientKey(normalizedRouting, normalizedAccount);
   const recipientLast4 = normalizedAccount.slice(-4);
 
   // Apply surcharge (default 3%)
@@ -137,10 +314,29 @@ export async function POST(request: Request) {
   const amountWithSurchargeCents = applySurcharge(amountCents, surchargePercentage);
   const amountWithSurcharge = (amountWithSurchargeCents / 100).toFixed(2);
 
+  let recipientWallet: RecipientWalletRecord;
+
+  try {
+    recipientWallet = await ensureRecipientWallet(recipientKey);
+  } catch (error) {
+    console.error("Recipient wallet provisioning failed", error);
+    return NextResponse.json(
+      {
+        error: "WALLET_PROVISIONING_FAILED",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Unable to provision a recipient wallet.",
+      },
+      { status: 500 }
+    );
+  }
+
   try {
     const timestamp = new Date().toISOString();
 
     const record: TransferRecord = {
+      recipientKey,
       transferId: randomUUID(),
       senderAddress: normalizeAddress(senderAddress),
       recipientRouting: normalizedRouting,
@@ -155,6 +351,9 @@ export async function POST(request: Request) {
       createdAt: timestamp,
       updatedAt: timestamp,
       fundingStatus: "PENDING",
+      walletId: recipientWallet.walletId,
+      walletAddress: recipientWallet.walletAddress,
+      walletCreatedAt: recipientWallet.walletCreatedAt,
     };
 
     await docClient.send(
@@ -169,12 +368,15 @@ export async function POST(request: Request) {
       transfer: {
         transferId: record.transferId,
         depositAddress: companyWalletAddress,
+        walletAddress: companyWalletAddress,
         amount: record.amount,
         amountWithSurcharge, // User sees this at signature
         surchargePercentage,
         status: record.status,
         fundingStatus: record.fundingStatus ?? "PENDING",
         fundingTxHash: record.fundingTxHash ?? null,
+        recipientWalletAddress: record.walletAddress,
+        recipientWalletId: record.walletId,
       },
     });
   } catch (error) {
@@ -196,6 +398,7 @@ export async function GET(request: Request) {
   const routingNumber = searchParams.get("routingNumber");
   const last4Param = searchParams.get("last4");
   const amountParam = searchParams.get("amount");
+  const senderAddress = searchParams.get("senderAddress");
 
   const normalizedAccount = accountNumber ? sanitizeDigits(accountNumber) : "";
   const normalizedRouting = routingNumber ? sanitizeDigits(routingNumber) : "";
@@ -204,11 +407,11 @@ export async function GET(request: Request) {
     ? Math.round(Number(amountParam) * 100)
     : undefined;
 
-  if (!normalizedAccount && !normalizedRouting && !normalizedLast4) {
+  if (!normalizedAccount && !normalizedRouting && !normalizedLast4 && !senderAddress) {
     return NextResponse.json(
       {
         error: "MISSING_PARAMETERS",
-        message: "Provide either account/routing numbers or last4 for lookup.",
+        message: "Provide either account/routing numbers, last4, or sender address for lookup.",
       },
       { status: 400 }
     );
@@ -217,8 +420,23 @@ export async function GET(request: Request) {
   try {
     let items: TransferRecord[] = [];
 
+    // Sender address lookup
+    if (senderAddress && !normalizedAccount && !normalizedRouting) {
+      const response = await docClient.send(
+        new ScanCommand({
+          TableName: TRANSFERS_TABLE,
+          FilterExpression: "senderAddress = :senderAddress",
+          ExpressionAttributeValues: {
+            ":senderAddress": normalizeAddress(senderAddress),
+          },
+        })
+      );
+
+      items = (response.Items ?? []) as TransferRecord[];
+      items.sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+    }
     // Primary match: Exact routing + account match
-    if (normalizedAccount && normalizedRouting) {
+    else if (normalizedAccount && normalizedRouting) {
       const response = await docClient.send(
         new ScanCommand({
           TableName: TRANSFERS_TABLE,
@@ -266,6 +484,9 @@ export async function GET(request: Request) {
       transfers: items.map((item) => ({
         transferId: item.transferId,
         depositAddress: process.env.COMPANY_WALLET_ADDRESS,
+        walletAddress: item.walletAddress ?? process.env.COMPANY_WALLET_ADDRESS,
+        recipientWalletAddress: item.walletAddress ?? null,
+        recipientWalletId: item.walletId ?? null,
         amount: item.amount,
         status: item.status,
         depositMethod: item.depositMethod === "simulated" ? "ach" : item.depositMethod,

@@ -10,15 +10,20 @@ import { base } from "viem/chains";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ChevronDown, ChevronUp } from "lucide-react";
 
 const DIGIT_REGEX = /\D+/g;
 const BASE_CHAIN_ID = base.id;
 const BASE_CHAIN_HEX = `0x${BASE_CHAIN_ID.toString(16)}` as const;
 const BASE_RPC_URL = process.env.NEXT_PUBLIC_BASE_RPC_URL ?? "https://mainnet.base.org";
-const BASE_USDC_CONTRACT = (process.env.NEXT_PUBLIC_BASE_USDC_CONTRACT ?? "0x833589fCD6edb6E08f4c7C0dC1bC64ED875FfC4d").toLowerCase();
+const BASE_USDC_CONTRACT = (process.env.NEXT_PUBLIC_BASE_USDC_CONTRACT ?? "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913").toLowerCase();
 const ERC20_TRANSFER_ABI = parseAbi([
   "function transfer(address to, uint256 value) returns (bool)",
 ]);
+const RAW_COMPANY_WALLET_ADDRESS = process.env.NEXT_PUBLIC_COMPANY_WALLET_ADDRESS;
+const COMPANY_WALLET_ADDRESS = RAW_COMPANY_WALLET_ADDRESS
+  ? RAW_COMPANY_WALLET_ADDRESS.trim()
+  : undefined;
 
 function sanitizeDigits(value: string): string {
   return value.replace(DIGIT_REGEX, "");
@@ -34,6 +39,20 @@ type TransferResponse = {
   routingMask: string;
   fundingStatus?: "PENDING" | "CONFIRMED" | "FAILED" | null;
   fundingTxHash?: string | null;
+  recipientWalletAddress?: string | null;
+  recipientWalletId?: string | null;
+};
+
+type PastTransfer = {
+  transferId: string;
+  amount: string;
+  createdAt: string;
+  fundingStatus: string | null;
+  fundingTxHash: string | null;
+  recipientLast4: string;
+  recipientAccount?: string;
+  recipientRouting?: string;
+  walletAddress?: string;
 };
 
 type RecipientPreview = {
@@ -44,6 +63,13 @@ type RecipientPreview = {
   confidence: "exact" | "mask" | "mask-routing";
   accountMask: string | null;
   routingMask: string | null;
+  address?: {
+    street: string;
+    city: string;
+    region: string;
+    postal_code: string;
+    country: string | null;
+  } | null;
 };
 
 export function SenderExperience() {
@@ -66,6 +92,9 @@ export function SenderExperience() {
   const previewControllerRef = useRef<AbortController | null>(null);
   const [isFunding, setIsFunding] = useState(false);
   const [fundingError, setFundingError] = useState<string | null>(null);
+  const [pastTransfers, setPastTransfers] = useState<PastTransfer[]>([]);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -115,6 +144,30 @@ export function SenderExperience() {
     const evmWallet = wallets.find((wallet) => wallet.type === "ethereum");
     return evmWallet?.address ?? null;
   }, [wallets]);
+
+  useEffect(() => {
+    if (!senderAddress) {
+      setPastTransfers([]);
+      return;
+    }
+
+    setIsLoadingHistory(true);
+    fetch(`/api/transfers?senderAddress=${encodeURIComponent(senderAddress)}`)
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error("Failed to fetch transfer history");
+        }
+        const data = await response.json();
+        setPastTransfers(data.transfers ?? []);
+      })
+      .catch((error) => {
+        console.error("Failed to load transfer history:", error);
+        setPastTransfers([]);
+      })
+      .finally(() => {
+        setIsLoadingHistory(false);
+      });
+  }, [senderAddress]);
 
   const fundTransfer = useCallback(
     async (currentTransfer: TransferResponse, amountValue: string) => {
@@ -446,277 +499,272 @@ export function SenderExperience() {
   }, [recipientAccountNumber, recipientRoutingNumber]);
 
   return (
-    <section className="space-y-8">
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,520px)_minmax(0,1fr)]">
+    <div className="flex gap-6 w-full max-h-full">
+      <section className="space-y-6 flex-shrink-0 w-full max-w-lg max-h-full overflow-y-auto">
+        <div className="rounded-3xl border border-slate-200/80 bg-white/70 p-8 text-slate-700 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-200">
         <div className="space-y-6">
-          <div className="rounded-3xl border border-slate-200/80 bg-white/70 p-8 text-slate-700 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-200">
-            <div className="space-y-3">
-              <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">Send USDC</h1>
-              <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
-                Connect a wallet, enter the recipient’s bank coordinates, and we’ll provision a Turnkey wallet for this transfer before funding it on Base.
-              </p>
-            </div>
-            <div className="mt-6 flex flex-wrap items-center gap-3">
-              {senderAddress ? (
-                <>
-                  <Button size="lg" variant="outline" disabled>
-                    Connected: {senderAddress.slice(0, 6)}…{senderAddress.slice(-4)}
-                  </Button>
-                  <Button size="lg" variant="destructive" onClick={handleDisconnectWallet} disabled={!privyReady}>
-                    Disconnect wallet
-                  </Button>
-                </>
-              ) : (
-                <Button size="lg" onClick={handleConnectWallet} disabled={isConnecting || !privyReady}>
-                  {isConnecting ? "Connecting…" : "Connect wallet"}
-                </Button>
-              )}
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Make sure your wallet holds both USDC and Base ETH for gas.
-              </p>
-            </div>
+          <div className="text-center">
+            <h1 className="text-4xl font-semibold tracking-tight">Sender</h1>
           </div>
 
-          <div className="rounded-3xl border border-slate-200/80 bg-white/70 p-8 text-slate-700 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-200">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-              Transfer details
-            </h2>
-            <form className="mt-6 space-y-5" onSubmit={handleSubmit}>
-              <div className="space-y-2">
-                <Label htmlFor="accountNumber">Recipient account number</Label>
-                <Input
-                  id="accountNumber"
-                  name="accountNumber"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  required
-                  value={recipientAccountNumber}
-                  onChange={(event) => handleAccountNumberChange(event.target.value)}
-                  placeholder="000123456789"
-                  disabled={isFormDisabled}
-                  list="sender-account-history"
-                />
-                {history.length > 0 && (
-                  <datalist id="sender-account-history">
-                    {history.map((entry) => (
-                      <option
-                        key={`${entry.routingNumber}-${entry.accountNumber}`}
-                        value={entry.accountNumber}
-                        label={`Account ••••${entry.accountNumber.slice(-4)} · Routing ${entry.routingNumber}`}
-                      />
-                    ))}
-                  </datalist>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="routingNumber">Recipient routing number</Label>
-                <Input
-                  id="routingNumber"
-                  name="routingNumber"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  required
-                  value={recipientRoutingNumber}
-                  onChange={(event) => handleRoutingNumberChange(event.target.value)}
-                  placeholder="021000021"
-                  disabled={isFormDisabled}
-                  maxLength={9}
-                  list="sender-routing-history"
-                />
-                {history.length > 0 && (
-                  <datalist id="sender-routing-history">
-                    {[...new Map(history.map((entry) => [entry.routingNumber, entry.routingNumber])).values()].map((routing) => (
-                      <option key={routing} value={routing} />
-                    ))}
-                  </datalist>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="amount">Amount (USDC)</Label>
-                <Input
-                  id="amount"
-                  name="amount"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  required
-                  value={amount}
-                  onChange={(event) => setAmount(event.target.value)}
-                  placeholder="1000"
-                  disabled={isFormDisabled}
-                />
-              </div>
-
-              <div className="rounded-xl border border-slate-200/70 bg-white/70 p-4 text-sm dark:border-slate-800/60 dark:bg-slate-900/60">
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                  Recipient verification
-                </h3>
-                {isPreviewLoading ? (
-                  <p className="mt-2 text-slate-600 dark:text-slate-300">Checking for existing recipient…</p>
-                ) : preview && preview.length > 0 ? (
-                  <ul className="mt-3 space-y-3">
-                    {preview.map((entry) => (
-                      <li key={entry.userId} className="rounded-lg border border-slate-200/60 bg-white/80 p-3 dark:border-slate-700/60 dark:bg-slate-900/70">
-                        <p className="text-sm font-medium text-slate-700 dark:text-slate-100">
-                          {entry.name ?? "Verified recipient"}
-                        </p>
-                        <dl className="mt-1 space-y-1 text-xs text-slate-600 dark:text-slate-300">
-                          {entry.email && (
-                            <div className="flex gap-2">
-                              <dt className="font-semibold uppercase tracking-wide text-[10px] text-slate-500 dark:text-slate-400">
-                                Email
-                              </dt>
-                              <dd>{entry.email}</dd>
-                            </div>
-                          )}
-                          {entry.phone && (
-                            <div className="flex gap-2">
-                              <dt className="font-semibold uppercase tracking-wide text-[10px] text-slate-500 dark:text-slate-400">
-                                Phone
-                              </dt>
-                              <dd>{entry.phone}</dd>
-                            </div>
-                          )}
-                          {entry.accountMask && (
-                            <div className="flex gap-2">
-                              <dt className="font-semibold uppercase tracking-wide text-[10px] text-slate-500 dark:text-slate-400">
-                                Account
-                              </dt>
-                              <dd>{entry.accountMask}</dd>
-                            </div>
-                          )}
-                          {entry.routingMask && (
-                            <div className="flex gap-2">
-                              <dt className="font-semibold uppercase tracking-wide text-[10px] text-slate-500 dark:text-slate-400">
-                                Routing
-                              </dt>
-                              <dd>{entry.routingMask}</dd>
-                            </div>
-                          )}
-                        </dl>
-                        <p className="mt-2 text-[11px] uppercase tracking-wide text-slate-400 dark:text-slate-500">
-                          Match confidence: {entry.confidence === "exact" ? "Exact" : entry.confidence === "mask-routing" ? "Mask + routing" : "Mask"}
-                        </p>
-                      </li>
-                    ))}
-                  </ul>
-                ) : previewError ? (
-                  <p className="mt-2 text-slate-500 dark:text-slate-400">{previewError}</p>
-                ) : (
-                  <p className="mt-2 text-slate-500 dark:text-slate-400">
-                    Enter full bank details to check if a verified recipient already exists.
-                  </p>
-                )}
-              </div>
-
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                <Button type="submit" size="lg" disabled={isFormDisabled}>
-                  {isSubmitting ? "Sending…" : "Send"}
+          {!senderAddress ? (
+            <div className="flex flex-col items-center gap-3">
+              <Button size="lg" onClick={handleConnectWallet} disabled={isConnecting || !privyReady} className="w-full">
+                {isConnecting ? "Connecting…" : "Connect wallet"}
+              </Button>
+            </div>
+          ) : (
+            <>
+              <div className="flex flex-col items-center gap-2">
+                <p className="text-xs text-slate-600 dark:text-slate-300 font-mono break-all">
+                  {senderAddress}
+                </p>
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  onClick={handleDisconnectWallet}
+                  disabled={!privyReady}
+                  className="bg-red-600 hover:bg-red-700 text-white"
+                >
+                  Disconnect
                 </Button>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  We create the wallet first, then prompt you to send USDC on-chain.
-                </p>
               </div>
-            </form>
-          </div>
-        </div>
 
-        <div className="space-y-6">
-          {error && (
-            <div className="rounded-3xl border border-red-200/70 bg-red-50/70 p-6 text-sm text-red-700 shadow-sm dark:border-red-800/60 dark:bg-red-950/40 dark:text-red-200">
-              <h3 className="text-base font-semibold">Submission failed</h3>
-              <p className="mt-2">{error}</p>
-            </div>
-          )}
+              <form className="space-y-4" onSubmit={handleSubmit}>
+                <div className="space-y-2">
+                  <Label htmlFor="accountNumber">Account number</Label>
+                  <Input
+                    id="accountNumber"
+                    name="accountNumber"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    required
+                    value={recipientAccountNumber}
+                    onChange={(event) => handleAccountNumberChange(event.target.value)}
+                    placeholder="000123456789"
+                    disabled={isFormDisabled}
+                    list="sender-account-history"
+                  />
+                  {history.length > 0 && (
+                    <datalist id="sender-account-history">
+                      {history.map((entry) => (
+                        <option
+                          key={`${entry.routingNumber}-${entry.accountNumber}`}
+                          value={entry.accountNumber}
+                          label={`Account ••••${entry.accountNumber.slice(-4)} · Routing ${entry.routingNumber}`}
+                        />
+                      ))}
+                    </datalist>
+                  )}
+                </div>
 
-          {pendingTransfer && (
-            <div className="rounded-3xl border border-slate-200/80 bg-white/70 p-6 text-sm text-slate-700 shadow-sm dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-200">
-              <h3 className="text-base font-semibold">Awaiting funding</h3>
-              <p className="mt-1">
-                {isFunding
-                  ? `Approve the ${pendingTransfer.amount} USDC transfer in your wallet to continue.`
-                  : fundingError
-                  ? "Funding was not completed. Retry to send USDC to the managed wallet."
-                  : "Waiting for on-chain confirmation."}
-              </p>
-              <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                Recipient wallet details appear after the transaction confirms.
-              </p>
-              {isFunding && (
-                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                  A wallet prompt should be visible. Confirm the transaction to continue.
-                </p>
-              )}
-              {fundingError && (
-                <div className="mt-4 space-y-3">
-                  <p className="text-sm text-red-600 dark:text-red-400">Funding failed: {fundingError}</p>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      if (!pendingTransfer) {
-                        return;
-                      }
-                      void executeFunding(pendingTransfer);
-                    }}
-                  >
-                    Retry funding
-                  </Button>
+                <div className="space-y-2">
+                  <Label htmlFor="routingNumber">Routing number</Label>
+                  <Input
+                    id="routingNumber"
+                    name="routingNumber"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    required
+                    value={recipientRoutingNumber}
+                    onChange={(event) => handleRoutingNumberChange(event.target.value)}
+                    placeholder="021000021"
+                    disabled={isFormDisabled}
+                    maxLength={9}
+                    list="sender-routing-history"
+                  />
+                  {history.length > 0 && (
+                    <datalist id="sender-routing-history">
+                      {[...new Map(history.map((entry) => [entry.routingNumber, entry.routingNumber])).values()].map((routing) => (
+                        <option key={routing} value={routing} />
+                      ))}
+                    </datalist>
+                  )}
                 </div>
-              )}
-            </div>
-          )}
 
-          {transfer && (
-            <div className="rounded-3xl border border-emerald-200/70 bg-emerald-50/70 p-6 text-emerald-800 shadow-sm dark:border-emerald-800/60 dark:bg-emerald-900/60 dark:text-emerald-100">
-              <h3 className="text-base font-semibold">Transfer funded</h3>
-              <p className="mt-1 text-sm">
-                {transfer.amount} USDC was sent to the dedicated wallet. Share these details with the recipient for on-chain visibility.
-              </p>
-              <dl className="mt-4 grid grid-cols-1 gap-3 text-xs sm:grid-cols-2">
-                <div>
-                  <dt className="font-medium uppercase tracking-wide">Wallet address</dt>
-                  <dd className="break-all text-slate-700 dark:text-slate-200">{transfer.walletAddress}</dd>
+                <div className="space-y-2">
+                  <Label htmlFor="amount">Amount (USDC)</Label>
+                  <Input
+                    id="amount"
+                    name="amount"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    required
+                    value={amount}
+                    onChange={(event) => setAmount(event.target.value)}
+                    placeholder="1000"
+                    disabled={isFormDisabled}
+                  />
                 </div>
-                <div>
-                  <dt className="font-medium uppercase tracking-wide">Transfer ID</dt>
-                  <dd className="break-all text-slate-700 dark:text-slate-200">{transfer.transferId}</dd>
-                </div>
-                <div>
-                  <dt className="font-medium uppercase tracking-wide">Account mask</dt>
-                  <dd className="text-slate-700 dark:text-slate-200">{transfer.accountMask}</dd>
-                </div>
-                <div>
-                  <dt className="font-medium uppercase tracking-wide">Routing mask</dt>
-                  <dd className="text-slate-700 dark:text-slate-200">{transfer.routingMask}</dd>
-                </div>
-                <div>
-                  <dt className="font-medium uppercase tracking-wide">Funding status</dt>
-                  <dd className="text-slate-700 dark:text-slate-200">{transfer.fundingStatus ?? "CONFIRMED"}</dd>
-                </div>
-                {transfer.fundingTxHash && (
-                  <div>
-                    <dt className="font-medium uppercase tracking-wide">Funding tx</dt>
-                    <dd className="break-all text-slate-700 dark:text-slate-200">
-                      <a
-                        href={`https://basescan.org/tx/${transfer.fundingTxHash}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="underline"
-                      >
-                        {transfer.fundingTxHash}
-                      </a>
-                    </dd>
+
+                {preview && preview.length > 0 && (
+                  <div className="rounded-lg border border-slate-200/60 bg-slate-50/50 p-3 text-xs dark:border-slate-700/60 dark:bg-slate-800/50 max-h-32 overflow-y-auto">
+                    <p className="font-medium text-slate-700 dark:text-slate-200 mb-2">
+                      {preview[0].name}
+                    </p>
+                    <div className="space-y-1">
+                      {preview[0].email && (
+                        <p className="text-slate-600 dark:text-slate-300">
+                          <span className="font-medium">Email:</span> {preview[0].email}
+                        </p>
+                      )}
+                      {preview[0].phone && (
+                        <p className="text-slate-600 dark:text-slate-300">
+                          <span className="font-medium">Phone:</span> {preview[0].phone}
+                        </p>
+                      )}
+                      {preview[0].address && (
+                        <p className="text-slate-600 dark:text-slate-300">
+                          <span className="font-medium">Address:</span> {preview[0].address.street}, {preview[0].address.city}, {preview[0].address.region} {preview[0].address.postal_code}
+                        </p>
+                      )}
+                      {preview[0].accountMask && (
+                        <p className="text-slate-600 dark:text-slate-300">
+                          <span className="font-medium">Account:</span> {preview[0].accountMask}
+                        </p>
+                      )}
+                      {preview[0].routingMask && (
+                        <p className="text-slate-600 dark:text-slate-300">
+                          <span className="font-medium">Routing:</span> {preview[0].routingMask}
+                        </p>
+                      )}
+                    </div>
                   </div>
                 )}
-              </dl>
-            </div>
+
+                <Button type="submit" size="lg" disabled={isFormDisabled} className="w-full">
+                  {isSubmitting ? "Sending…" : isFunding ? "Confirm in wallet…" : "Send"}
+                </Button>
+
+                {COMPANY_WALLET_ADDRESS && (
+                  <p className="text-xs text-slate-500 dark:text-slate-400 text-center break-all">
+                    Company vault: {COMPANY_WALLET_ADDRESS}
+                  </p>
+                )}
+
+                {error && (
+                  <p className="text-sm text-red-600 dark:text-red-400 text-center">{error}</p>
+                )}
+
+                {fundingError && (
+                  <p className="text-sm text-red-600 dark:text-red-400 text-center">{fundingError}</p>
+                )}
+
+                {transfer && (
+                  <div className="text-center space-y-2">
+                    <p className="text-sm text-emerald-600 dark:text-emerald-400 font-medium">
+                      Transfer completed!
+                    </p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 break-all">
+                      {transfer.fundingTxHash && (
+                        <a
+                          href={`https://basescan.org/tx/${transfer.fundingTxHash}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="underline"
+                        >
+                          View on Basescan
+                        </a>
+                      )}
+                    </p>
+                  </div>
+                )}
+              </form>
+            </>
           )}
         </div>
       </div>
     </section>
+
+      {senderAddress && (
+        <aside className="w-80 flex-shrink-0">
+          <div className="rounded-3xl border border-slate-200/80 bg-white/70 text-slate-700 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-200">
+            <button
+              onClick={() => setIsHistoryOpen(!isHistoryOpen)}
+              className="w-full p-6 flex items-center justify-between text-left hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition-colors rounded-3xl"
+            >
+              <h2 className="text-lg font-semibold">Past transfers</h2>
+              {isHistoryOpen ? (
+                <ChevronUp className="h-5 w-5 text-slate-400" />
+              ) : (
+                <ChevronDown className="h-5 w-5 text-slate-400" />
+              )}
+            </button>
+
+            {isHistoryOpen && (
+              <div className="px-6 pb-6 max-h-[calc(100vh-16rem)] overflow-y-auto">
+                {isLoadingHistory ? (
+                  <p className="text-sm text-slate-500 dark:text-slate-400">Loading...</p>
+                ) : pastTransfers.length === 0 ? (
+                  <p className="text-sm text-slate-500 dark:text-slate-400">No past transfers</p>
+                ) : (
+                  <div className="space-y-3">
+                    {pastTransfers
+                      .filter((txn) => txn.fundingStatus === "CONFIRMED" || txn.fundingStatus === "FAILED")
+                      .map((txn) => (
+                      <div
+                        key={txn.transferId}
+                        className="rounded-lg border border-slate-200/60 bg-white/80 p-3 dark:border-slate-700/60 dark:bg-slate-900/70"
+                      >
+                        <div className="flex justify-between items-start mb-2">
+                          <div>
+                            <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
+                              ${txn.amount} USDC
+                            </p>
+                          </div>
+                          <span
+                            className={`text-xs px-2 py-1 rounded ${
+                              txn.fundingStatus === "CONFIRMED"
+                                ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400"
+                                : "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400"
+                            }`}
+                          >
+                            {txn.fundingStatus}
+                          </span>
+                        </div>
+
+                        <div className="space-y-1 mt-2">
+                          {txn.recipientAccount && (
+                            <p className="text-xs text-slate-600 dark:text-slate-300">
+                              <span className="font-medium">Account:</span> {txn.recipientAccount}
+                            </p>
+                          )}
+                          {txn.recipientRouting && (
+                            <p className="text-xs text-slate-600 dark:text-slate-300">
+                              <span className="font-medium">Routing:</span> {txn.recipientRouting}
+                            </p>
+                          )}
+                          {txn.walletAddress && (
+                            <p className="text-xs text-slate-600 dark:text-slate-300 break-all">
+                              <span className="font-medium">Wallet:</span> {txn.walletAddress}
+                            </p>
+                          )}
+                        </div>
+
+                        <p className="text-xs text-slate-400 dark:text-slate-500 mt-2">
+                          {new Date(txn.createdAt).toLocaleDateString()} {new Date(txn.createdAt).toLocaleTimeString()}
+                        </p>
+
+                        {txn.fundingTxHash && (
+                          <a
+                            href={`https://basescan.org/tx/${txn.fundingTxHash}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-blue-600 dark:text-blue-400 hover:underline block mt-2 break-all"
+                          >
+                            {txn.fundingTxHash}
+                          </a>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </aside>
+      )}
+    </div>
   );
 }

@@ -3,10 +3,10 @@ import { SenderExperience } from "@/components/sender-experience";
 
 export default function Home() {
   return (
-    <div className="min-h-screen bg-white dark:bg-slate-950">
+    <div className="h-screen overflow-hidden bg-white dark:bg-slate-950 flex flex-col">
       <Navbar />
-      <div className="mx-auto max-w-4xl px-6 py-16 sm:px-10 lg:px-12">
-        <main className="space-y-16">
+      <div className="flex-1 flex items-start justify-center px-6 py-8 gap-6">
+        <main className="w-full max-w-lg flex-shrink-0">
           <SenderExperience />
         </main>
       </div>

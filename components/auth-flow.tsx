@@ -975,7 +975,7 @@ function TurnkeyAuthContent() {
       <section className="space-y-5 rounded-3xl border border-slate-200/80 bg-white/70 p-10 text-slate-700 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-200">
         <div className="space-y-3">
           <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-            Welcome back, {userIdentifier}
+            Receive
           </h1>
           <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
             You&apos;re signed in with Turnkey. Everything you need next lives below—create wallets, copy

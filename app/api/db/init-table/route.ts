@@ -44,6 +44,25 @@ const TABLE_DEFINITIONS = [
       BillingMode: "PAY_PER_REQUEST",
     }),
   },
+  {
+    name: "blue-wallet-recipient-wallets",
+    createCommand: new CreateTableCommand({
+      TableName: "blue-wallet-recipient-wallets",
+      KeySchema: [
+        {
+          AttributeName: "recipientKey",
+          KeyType: "HASH",
+        },
+      ],
+      AttributeDefinitions: [
+        {
+          AttributeName: "recipientKey",
+          AttributeType: "S",
+        },
+      ],
+      BillingMode: "PAY_PER_REQUEST",
+    }),
+  },
 ];
 
 export async function POST() {
