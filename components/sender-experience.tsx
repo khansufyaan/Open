@@ -41,6 +41,7 @@ type TransferResponse = {
   fundingTxHash?: string | null;
   recipientWalletAddress?: string | null;
   recipientWalletId?: string | null;
+  recipientWalletName?: string | null;
 };
 
 type PastTransfer = {
@@ -53,6 +54,9 @@ type PastTransfer = {
   recipientAccount?: string;
   recipientRouting?: string;
   walletAddress?: string;
+  recipientWalletAddress?: string | null;
+  recipientWalletId?: string | null;
+  recipientWalletName?: string | null;
 };
 
 type RecipientPreview = {
@@ -145,29 +149,34 @@ export function SenderExperience() {
     return evmWallet?.address ?? null;
   }, [wallets]);
 
-  useEffect(() => {
+  const refreshPastTransfers = useCallback(async () => {
     if (!senderAddress) {
       setPastTransfers([]);
       return;
     }
 
     setIsLoadingHistory(true);
-    fetch(`/api/transfers?senderAddress=${encodeURIComponent(senderAddress)}`)
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error("Failed to fetch transfer history");
-        }
-        const data = await response.json();
-        setPastTransfers(data.transfers ?? []);
-      })
-      .catch((error) => {
-        console.error("Failed to load transfer history:", error);
-        setPastTransfers([]);
-      })
-      .finally(() => {
-        setIsLoadingHistory(false);
-      });
+
+    try {
+      const response = await fetch(`/api/transfers?senderAddress=${encodeURIComponent(senderAddress)}`);
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch transfer history");
+      }
+
+      const data = await response.json();
+      setPastTransfers(Array.isArray(data.transfers) ? data.transfers : []);
+    } catch (error) {
+      console.error("Failed to load transfer history:", error);
+      setPastTransfers([]);
+    } finally {
+      setIsLoadingHistory(false);
+    }
   }, [senderAddress]);
+
+  useEffect(() => {
+    void refreshPastTransfers();
+  }, [refreshPastTransfers]);
 
   const fundTransfer = useCallback(
     async (currentTransfer: TransferResponse, amountValue: string) => {
@@ -296,6 +305,8 @@ export function SenderExperience() {
           fundingStatus: result.status,
           fundingTxHash: result.txHash,
         });
+
+        void refreshPastTransfers();
       } catch (fundingErr) {
         setFundingError(
           fundingErr instanceof Error ? fundingErr.message : "Failed to fund transfer."
@@ -303,7 +314,7 @@ export function SenderExperience() {
         setTransfer(null);
       }
     },
-    [fundTransfer]
+    [fundTransfer, refreshPastTransfers]
   );
 
   const handleConnectWallet = useCallback(async () => {
@@ -499,12 +510,12 @@ export function SenderExperience() {
   }, [recipientAccountNumber, recipientRoutingNumber]);
 
   return (
-    <div className="flex gap-6 w-full max-h-full">
-      <section className="space-y-6 flex-shrink-0 w-full max-w-lg max-h-full overflow-y-auto">
-        <div className="rounded-3xl border border-slate-200/80 bg-white/70 p-8 text-slate-700 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-200">
-        <div className="space-y-6">
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 lg:flex-row lg:items-start lg:justify-center">
+      <section className="w-full lg:max-w-xl">
+        <div className="rounded-3xl border border-slate-200/80 bg-white/70 p-6 text-slate-700 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-200">
+        <div className="space-y-4">
           <div className="text-center">
-            <h1 className="text-4xl font-semibold tracking-tight">Sender</h1>
+            <h1 className="text-3xl font-semibold tracking-tight">Sender</h1>
           </div>
 
           {!senderAddress ? (
@@ -521,10 +532,10 @@ export function SenderExperience() {
                 </p>
                 <Button
                   size="sm"
-                  variant="destructive"
+                  variant="outline"
                   onClick={handleDisconnectWallet}
                   disabled={!privyReady}
-                  className="bg-red-600 hover:bg-red-700 text-white"
+                  className="border-slate-300 hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-800"
                 >
                   Disconnect
                 </Button>
@@ -633,9 +644,16 @@ export function SenderExperience() {
                   </div>
                 )}
 
-                <Button type="submit" size="lg" disabled={isFormDisabled} className="w-full">
-                  {isSubmitting ? "Sending…" : isFunding ? "Confirm in wallet…" : "Send"}
-                </Button>
+                <div className="flex justify-center">
+                  <Button
+                    type="submit"
+                    size="lg"
+                    disabled={isFormDisabled}
+                    className="px-8"
+                  >
+                    {isSubmitting ? "Sending…" : isFunding ? "Confirm in wallet…" : "Send"}
+                  </Button>
+                </div>
 
                 {COMPANY_WALLET_ADDRESS && (
                   <p className="text-xs text-slate-500 dark:text-slate-400 text-center break-all">
@@ -652,22 +670,62 @@ export function SenderExperience() {
                 )}
 
                 {transfer && (
-                  <div className="text-center space-y-2">
-                    <p className="text-sm text-emerald-600 dark:text-emerald-400 font-medium">
-                      Transfer completed!
+                  <div className="rounded-3xl border border-emerald-200/70 bg-emerald-50/70 p-5 text-left text-emerald-800 shadow-sm dark:border-emerald-800/60 dark:bg-emerald-900/60 dark:text-emerald-100">
+                    <p className="text-sm font-semibold">Deposit confirmed</p>
+                    <p className="mt-1 text-xs text-emerald-900/80 dark:text-emerald-100/80">
+                      {transfer.amount} USDC is now in the BlueWallet company vault. The recipient’s dedicated warehouse wallet was provisioned and will receive the vault funds once they claim.
                     </p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 break-all">
-                      {transfer.fundingTxHash && (
-                        <a
-                          href={`https://basescan.org/tx/${transfer.fundingTxHash}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="underline"
-                        >
-                          View on Basescan
-                        </a>
+                    <dl className="mt-3 space-y-2 text-[11px]">
+                      <div>
+                        <dt className="uppercase tracking-wide text-emerald-900/70 dark:text-emerald-100/70">Vault address</dt>
+                        <dd className="break-all text-emerald-950 dark:text-emerald-50">{transfer.walletAddress}</dd>
+                      </div>
+                      {transfer.recipientWalletAddress && (
+                        <div>
+                          <dt className="uppercase tracking-wide text-emerald-900/70 dark:text-emerald-100/70">Recipient wallet</dt>
+                          <dd className="break-all text-emerald-950 dark:text-emerald-50">
+                            {transfer.recipientWalletAddress}
+                          </dd>
+                        </div>
                       )}
-                    </p>
+                      {transfer.recipientWalletName && (
+                        <div>
+                          <dt className="uppercase tracking-wide text-emerald-900/70 dark:text-emerald-100/70">Wallet name</dt>
+                          <dd className="break-all text-emerald-950 dark:text-emerald-50">
+                            {transfer.recipientWalletName}
+                          </dd>
+                        </div>
+                      )}
+                      {transfer.recipientWalletId && (
+                        <div>
+                          <dt className="uppercase tracking-wide text-emerald-900/70 dark:text-emerald-100/70">Recipient wallet ID</dt>
+                          <dd className="break-all text-emerald-950 dark:text-emerald-50">
+                            {transfer.recipientWalletId}
+                          </dd>
+                        </div>
+                      )}
+                      {transfer.transferId && (
+                        <div>
+                          <dt className="uppercase tracking-wide text-emerald-900/70 dark:text-emerald-100/70">Transfer ID</dt>
+                          <dd className="break-all text-emerald-950 dark:text-emerald-50">{transfer.transferId}</dd>
+                        </div>
+                      )}
+                      {transfer.fundingTxHash && (
+                        <div>
+                          <dt className="uppercase tracking-wide text-emerald-900/70 dark:text-emerald-100/70">Funding tx</dt>
+                          <dd className="break-all text-emerald-950 dark:text-emerald-50">
+                            <a
+                              href={`https://basescan.org/tx/${transfer.fundingTxHash}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="underline"
+                            >
+                              {transfer.fundingTxHash}
+                            </a>
+                          </dd>
+                        </div>
+                      )}
+                    </dl>
                   </div>
                 )}
               </form>
@@ -678,7 +736,7 @@ export function SenderExperience() {
     </section>
 
       {senderAddress && (
-        <aside className="w-80 flex-shrink-0">
+        <aside className="w-full lg:w-[22rem] lg:flex-shrink-0 lg:self-start lg:sticky lg:top-6">
           <div className="rounded-3xl border border-slate-200/80 bg-white/70 text-slate-700 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-200">
             <button
               onClick={() => setIsHistoryOpen(!isHistoryOpen)}
@@ -693,7 +751,7 @@ export function SenderExperience() {
             </button>
 
             {isHistoryOpen && (
-              <div className="px-6 pb-6 max-h-[calc(100vh-16rem)] overflow-y-auto">
+              <div className="px-6 pb-6 max-h-96 overflow-y-auto">
                 {isLoadingHistory ? (
                   <p className="text-sm text-slate-500 dark:text-slate-400">Loading...</p>
                 ) : pastTransfers.length === 0 ? (

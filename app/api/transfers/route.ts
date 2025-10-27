@@ -3,7 +3,8 @@ import { createHash, randomUUID } from "crypto";
 
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, GetCommand, PutCommand, ScanCommand } from "@aws-sdk/lib-dynamodb";
-import { defaultEthereumAccountAtIndex } from "@turnkey/sdk-server";
+import { TurnkeyRequestError, defaultEthereumAccountAtIndex } from "@turnkey/sdk-server";
+import { randomBytes } from "crypto";
 
 import {
   getTurnkeyApiClient,
@@ -44,6 +45,7 @@ type TransferRecord = {
   walletId?: string;
   walletAddress?: string;
   walletCreatedAt?: string;
+  walletName?: string;
 };
 
 type RecipientWalletRecord = {
@@ -51,6 +53,7 @@ type RecipientWalletRecord = {
   walletId: string;
   walletAddress: string;
   walletCreatedAt: string;
+  walletName?: string;
 };
 
 function normalizeAddress(address: string): string {
@@ -103,6 +106,7 @@ async function findWalletInTransfers(recipientKey: string): Promise<RecipientWal
     walletId: fallbackItem.walletId,
     walletAddress: fallbackItem.walletAddress,
     walletCreatedAt: fallbackItem.walletCreatedAt ?? fallbackItem.createdAt,
+    walletName: fallbackItem.walletName,
   };
 }
 
@@ -174,15 +178,65 @@ async function createRecipientWallet(recipientKey: string): Promise<RecipientWal
 
   const walletName = `Recipient-${recipientKey.slice(0, 12)}`;
 
-  const createResponse = await client.createWallet({
-    organizationId,
-    walletName,
-    accounts: [defaultEthereumAccountAtIndex(0)],
-  });
+  const resolveWalletId = async (): Promise<{ walletId: string | null; walletName?: string } | null> => {
+    const walletsResponse = await client.getWallets({ organizationId });
+    const matched = walletsResponse.wallets?.find((wallet) => wallet.walletName === walletName);
+    if (!matched) {
+      return null;
+    }
+  const matchedId = matched.walletId ?? matched.walletIds?.[0] ?? null;
+  if (!matchedId) {
+    return null;
+  }
+  return {
+    walletId: matchedId,
+    walletName: matched.walletName ?? walletName,
+  };
+};
 
-  const walletId =
-    (createResponse.wallet && createResponse.wallet.walletId) ||
-    (createResponse.walletIds && createResponse.walletIds[0]);
+  const existing = await resolveWalletId();
+
+  let walletId: string | null = existing?.walletId ?? null;
+  let finalWalletName = existing?.walletName ?? walletName;
+
+  if (!walletId) {
+    let attemptName = walletName;
+    for (let attempt = 0; attempt < 3 && !walletId; attempt += 1) {
+      try {
+        const createResponse = await client.createWallet({
+          organizationId,
+          walletName: attemptName,
+          accounts: [defaultEthereumAccountAtIndex(0)],
+        });
+
+        walletId =
+          (createResponse as { walletId?: string }).walletId ??
+          ((createResponse as { wallet?: { walletId?: string } }).wallet?.walletId ?? null);
+        finalWalletName = attemptName;
+      } catch (error) {
+        if (error instanceof TurnkeyRequestError && error.code === 3) {
+          const resolved = await resolveWalletId();
+          if (resolved?.walletId) {
+            walletId = resolved.walletId;
+            finalWalletName = resolved.walletName ?? attemptName;
+            break;
+          }
+
+          attemptName = `${walletName}-${randomBytes(2).toString("hex")}`;
+        } else {
+          throw error instanceof Error ? error : new Error("Turnkey wallet provisioning failed.");
+        }
+      }
+    }
+  }
+
+  if (!walletId) {
+    const resolved = await resolveWalletId();
+    if (resolved?.walletId) {
+      walletId = resolved.walletId;
+      finalWalletName = resolved.walletName ?? walletName;
+    }
+  }
 
   if (!walletId) {
     throw new Error("Turnkey did not return a wallet identifier.");
@@ -201,6 +255,7 @@ async function createRecipientWallet(recipientKey: string): Promise<RecipientWal
     walletId,
     walletAddress,
     walletCreatedAt: new Date().toISOString(),
+    walletName: finalWalletName,
   };
 
   await saveRecipientWallet(record);
@@ -354,6 +409,7 @@ export async function POST(request: Request) {
       walletId: recipientWallet.walletId,
       walletAddress: recipientWallet.walletAddress,
       walletCreatedAt: recipientWallet.walletCreatedAt,
+      walletName: recipientWallet.walletName,
     };
 
     await docClient.send(
@@ -377,6 +433,7 @@ export async function POST(request: Request) {
         fundingTxHash: record.fundingTxHash ?? null,
         recipientWalletAddress: record.walletAddress,
         recipientWalletId: record.walletId,
+        recipientWalletName: record.walletName ?? null,
       },
     });
   } catch (error) {
@@ -487,6 +544,7 @@ export async function GET(request: Request) {
         walletAddress: item.walletAddress ?? process.env.COMPANY_WALLET_ADDRESS,
         recipientWalletAddress: item.walletAddress ?? null,
         recipientWalletId: item.walletId ?? null,
+        recipientWalletName: item.walletName ?? null,
         amount: item.amount,
         status: item.status,
         depositMethod: item.depositMethod === "simulated" ? "ach" : item.depositMethod,
