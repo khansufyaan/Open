@@ -614,36 +614,52 @@ export function SenderExperience() {
                 </div>
 
                 {preview && preview.length > 0 && (
-                  <div className="rounded-lg border border-slate-200/60 bg-slate-50/50 p-3 text-xs dark:border-slate-700/60 dark:bg-slate-800/50 max-h-32 overflow-y-auto">
-                    <p className="font-medium text-slate-700 dark:text-slate-200 mb-2">
-                      {preview[0].name}
-                    </p>
-                    <div className="space-y-1">
+                  <div className="rounded-lg border border-slate-200/60 bg-slate-50/50 p-4 dark:border-slate-700/60 dark:bg-slate-800/50">
+                    <div className="space-y-3">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                          {preview[0].name}
+                        </p>
+                      </div>
+
                       {preview[0].email && (
-                        <p className="text-slate-600 dark:text-slate-300">
-                          <span className="font-medium">Email:</span> {preview[0].email}
-                        </p>
+                        <div>
+                          <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Email</p>
+                          <p className="text-sm text-slate-700 dark:text-slate-200">{preview[0].email}</p>
+                        </div>
                       )}
+
                       {preview[0].phone && (
-                        <p className="text-slate-600 dark:text-slate-300">
-                          <span className="font-medium">Phone:</span> {preview[0].phone}
-                        </p>
+                        <div>
+                          <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Phone</p>
+                          <p className="text-sm text-slate-700 dark:text-slate-200">{preview[0].phone}</p>
+                        </div>
                       )}
+
                       {preview[0].address && (
-                        <p className="text-slate-600 dark:text-slate-300">
-                          <span className="font-medium">Address:</span> {preview[0].address.street}, {preview[0].address.city}, {preview[0].address.region} {preview[0].address.postal_code}
-                        </p>
+                        <div>
+                          <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Address</p>
+                          <p className="text-sm text-slate-700 dark:text-slate-200">
+                            {preview[0].address.street}, {preview[0].address.city}, {preview[0].address.region} {preview[0].address.postal_code}
+                          </p>
+                        </div>
                       )}
-                      {preview[0].accountMask && (
-                        <p className="text-slate-600 dark:text-slate-300">
-                          <span className="font-medium">Account:</span> {preview[0].accountMask}
-                        </p>
-                      )}
-                      {preview[0].routingMask && (
-                        <p className="text-slate-600 dark:text-slate-300">
-                          <span className="font-medium">Routing:</span> {preview[0].routingMask}
-                        </p>
-                      )}
+
+                      <div className="grid grid-cols-2 gap-3">
+                        {preview[0].accountMask && (
+                          <div>
+                            <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Account</p>
+                            <p className="text-sm font-mono text-slate-700 dark:text-slate-200">{preview[0].accountMask}</p>
+                          </div>
+                        )}
+
+                        {preview[0].routingMask && (
+                          <div>
+                            <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Routing</p>
+                            <p className="text-sm font-mono text-slate-700 dark:text-slate-200">{preview[0].routingMask}</p>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 )}
