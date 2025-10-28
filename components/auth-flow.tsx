@@ -1297,15 +1297,6 @@ function TurnkeyAuthContent() {
                           {selectedAccount.accountNumber}
                         </p>
                       </div>
-
-                      {selectedAccount.mask && (
-                        <div>
-                          <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Last 4 Digits</p>
-                          <p className="text-sm font-mono text-slate-900 dark:text-white">
-                            ••••{selectedAccount.mask}
-                          </p>
-                        </div>
-                      )}
                     </div>
                   </div>
                 )}
