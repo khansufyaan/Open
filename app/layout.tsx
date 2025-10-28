@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import NextTopLoader from "nextjs-toploader";
 
 import { AppProviders } from "@/components/app-providers";
 import { Footer } from "@/components/footer";
@@ -18,7 +17,6 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className="font-sans antialiased">
-        <NextTopLoader color="#0ea5e9" height={3} showSpinner={false} />
         <AppProviders>
           <div className="flex min-h-screen flex-col">
             <div className="flex-1">{children}</div>
