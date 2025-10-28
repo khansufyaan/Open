@@ -356,21 +356,32 @@ function TurnkeyAuthContent() {
 
   useEffect(() => {
     if (!session || plaidHydrated) {
+      console.log("[Plaid Hydration] Skipped:", { hasSession: !!session, plaidHydrated });
       return;
     }
 
     let cancelled = false;
 
     const hydratePlaidData = async () => {
+      console.log("[Plaid Hydration] Starting for userId:", session.userId);
       try {
         const response = await fetch(`/api/db/user?userId=${encodeURIComponent(session.userId)}`);
 
+        console.log("[Plaid Hydration] Response status:", response.status);
+
         if (!response.ok) {
+          console.log("[Plaid Hydration] Response not OK");
           return;
         }
 
         const data = await response.json();
         const user = data.user as Record<string, unknown>;
+
+        console.log("[Plaid Hydration] User data:", {
+          hasPlaidVerificationCompleted: !!user?.plaidVerificationCompleted,
+          plaidAchAccountsCount: Array.isArray(user?.plaidAchAccounts) ? user.plaidAchAccounts.length : 0,
+          plaidVerifiedName: user?.plaidVerifiedName,
+        });
 
         const verificationCompleted = Boolean(user?.plaidVerificationCompleted);
         const storedAccountsRaw = Array.isArray(user?.plaidAchAccounts)
@@ -378,14 +389,18 @@ function TurnkeyAuthContent() {
           : [];
 
         if (!verificationCompleted || storedAccountsRaw.length === 0) {
+          console.log("[Plaid Hydration] No saved Plaid data found");
           return;
         }
 
         const normalizedAccounts = normalizeAchAccounts(storedAccountsRaw);
 
         if (normalizedAccounts.length === 0) {
+          console.log("[Plaid Hydration] No accounts after normalization");
           return;
         }
+
+        console.log("[Plaid Hydration] Normalized accounts:", normalizedAccounts.length);
 
         const mergedAccounts = mergeAchAccounts([], normalizedAccounts);
 
@@ -422,16 +437,19 @@ function TurnkeyAuthContent() {
         };
 
         if (cancelled) {
+          console.log("[Plaid Hydration] Cancelled before setting state");
           return;
         }
 
+        console.log("[Plaid Hydration] Successfully hydrated Plaid data, setting state");
         setPlaidIdentity(fallbackIdentity);
         setLinkedAccounts(mergedAccounts);
         setSelectedAccountKey(ALL_ACCOUNTS_KEY);
       } catch (error) {
-        console.error("Failed to hydrate Plaid verification:", error);
+        console.error("[Plaid Hydration] Failed to hydrate Plaid verification:", error);
       } finally {
         if (!cancelled) {
+          console.log("[Plaid Hydration] Setting plaidHydrated to true");
           setPlaidHydrated(true);
         }
       }
@@ -530,8 +548,11 @@ function TurnkeyAuthContent() {
   };
 
   const handlePlaidSuccess = async (identityData: PlaidIdentitySnapshot) => {
+    console.log("[Plaid Save] Starting Plaid success handler");
     const normalizedAccounts = normalizeAchAccounts(identityData.achAccounts);
     const mergedAccounts = mergeAchAccounts(linkedAccounts, normalizedAccounts);
+
+    console.log("[Plaid Save] Merged accounts count:", mergedAccounts.length);
 
     const nextSelectedKey =
       selectedAccountKey === ALL_ACCOUNTS_KEY
@@ -551,8 +572,9 @@ function TurnkeyAuthContent() {
     setAuthError(null);
 
     if (session) {
+      console.log("[Plaid Save] Saving to database for userId:", session.userId);
       try {
-        await fetch("/api/db/user", {
+        const response = await fetch("/api/db/user", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -576,9 +598,14 @@ function TurnkeyAuthContent() {
             plaidLastLinkedAt: new Date().toISOString(),
           }),
         });
+        console.log("[Plaid Save] Database save response status:", response.status);
+        const data = await response.json();
+        console.log("[Plaid Save] Database save response:", data.success ? "Success" : "Failed");
       } catch (dbError) {
-        console.error("Failed to store Plaid data:", dbError);
+        console.error("[Plaid Save] Failed to store Plaid data:", dbError);
       }
+    } else {
+      console.log("[Plaid Save] No session found, cannot save to database");
     }
   };
 
@@ -1080,14 +1107,9 @@ function TurnkeyAuthContent() {
               <div>
                 <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Identity Verified</h3>
                 <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-                  You're signed in with Turnkey. Session: {session?.userId}
+                  You're signed in with Turnkey.
                 </p>
               </div>
-            </div>
-            <div className="mt-4 flex gap-2">
-              <Button variant="outline" onClick={handleLogout} size="sm">
-                <LogOut className="mr-2 h-4 w-4" /> Sign Out
-              </Button>
             </div>
           </article>
         )}
