@@ -187,7 +187,7 @@ async function createRecipientWallet(recipientKey: string): Promise<RecipientWal
     if (!matched) {
       return null;
     }
-  const matchedId = matched.walletId ?? matched.walletIds?.[0] ?? null;
+  const matchedId = matched.walletId ?? null;
   if (!matchedId) {
     return null;
   }
