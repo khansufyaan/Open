@@ -3,6 +3,7 @@
 import Link from "next/link";
 
 import { ThemeToggle } from "@/components/theme-toggle";
+import { WalletButton } from "@/components/wallet-button";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -28,6 +29,7 @@ export function Navbar({ className }: { className?: string }) {
           <Button variant="ghost" size="sm" asChild>
             <Link href="/contact">Contact</Link>
           </Button>
+          <WalletButton />
           <ThemeToggle />
         </div>
       </nav>
