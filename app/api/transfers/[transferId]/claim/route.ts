@@ -121,7 +121,7 @@ async function prepareVaultTransfer({
     chainId: base.id,
     nonce,
     to: BASE_USDC_CONTRACT as Address,
-    value: 0n,
+    value: BigInt(0),
     gas: gasLimit,
     maxFeePerGas,
     maxPriorityFeePerGas,
@@ -229,7 +229,7 @@ export async function POST(request: Request, context: RouteContext) {
 
   const amountUnits = centsToUsdcUnits(record.amountCents ?? Math.round(Number(record.amount) * 100));
 
-  if (amountUnits <= 0n) {
+  if (amountUnits <= BigInt(0)) {
     return NextResponse.json(
       {
         error: "INVALID_AMOUNT",
