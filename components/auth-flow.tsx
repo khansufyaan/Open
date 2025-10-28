@@ -201,6 +201,10 @@ function TurnkeyAuthContent() {
   const [claimErrors, setClaimErrors] = useState<Record<string, string | null>>({});
   const [claimSuccess, setClaimSuccess] = useState<Record<string, string | null>>({});
   const [currentStep, setCurrentStep] = useState(0);
+  const [userWalletInfo, setUserWalletInfo] = useState<{
+    walletId?: string;
+    walletAddress?: string;
+  } | null>(null);
 
   const steps = [
     { id: "verify", title: "Verify Identity", description: "Sign in with Turnkey" },
@@ -388,8 +392,19 @@ function TurnkeyAuthContent() {
           plaidAchAccountsCount: Array.isArray(user?.plaidAchAccounts) ? user.plaidAchAccounts.length : 0,
           plaidVerifiedName: user?.plaidVerifiedName,
           plaidVerifiedEmail: user?.plaidVerifiedEmail,
+          walletId: user?.walletId,
+          walletAddress: user?.walletAddress,
           allKeys: Object.keys(user || {}),
         });
+
+        // Extract wallet info if available
+        if (user?.walletId || user?.walletAddress) {
+          console.log("[Plaid Hydration] Found wallet info for user");
+          setUserWalletInfo({
+            walletId: user.walletId as string | undefined,
+            walletAddress: user.walletAddress as string | undefined,
+          });
+        }
 
         const verificationCompleted = Boolean(user?.plaidVerificationCompleted);
         const storedAccountsRaw = Array.isArray(user?.plaidAchAccounts)
@@ -1142,13 +1157,42 @@ function TurnkeyAuthContent() {
               </div>
 
               {/* User Information */}
-              <div className="rounded-lg border border-slate-200/70 bg-white/50 p-3 space-y-2 dark:border-slate-700/50 dark:bg-slate-800/50">
+              <div className="rounded-lg border border-slate-200/70 bg-white/50 p-3 space-y-3 dark:border-slate-700/50 dark:bg-slate-800/50">
                 <div>
                   <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">User ID</p>
                   <p className="text-sm font-mono text-slate-900 dark:text-white break-all">
                     {session.userId}
                   </p>
                 </div>
+
+                {(userWalletInfo?.walletAddress || transferSummaries.length > 0) && (
+                  <div>
+                    <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Wallet Address</p>
+                    <p className="text-sm font-mono text-slate-900 dark:text-white break-all">
+                      {userWalletInfo?.walletAddress || transferSummaries[0]?.walletAddress || "Not provisioned yet"}
+                    </p>
+                    {(userWalletInfo?.walletAddress || transferSummaries[0]?.walletAddress) && (
+                      <a
+                        href={`https://basescan.org/address/${userWalletInfo?.walletAddress || transferSummaries[0]?.walletAddress}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-sky-500 hover:underline"
+                      >
+                        View on Basescan
+                      </a>
+                    )}
+                  </div>
+                )}
+
+                {(userWalletInfo?.walletId || transferSummaries.length > 0) && (
+                  <div>
+                    <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Wallet ID</p>
+                    <p className="text-sm font-mono text-slate-900 dark:text-white break-all">
+                      {userWalletInfo?.walletId || transferSummaries[0]?.walletId || "Not assigned yet"}
+                    </p>
+                  </div>
+                )}
+
                 {plaidIdentity && (
                   <div>
                     <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Bank Account Status</p>
