@@ -203,9 +203,9 @@ function TurnkeyAuthContent() {
   const [currentStep, setCurrentStep] = useState(0);
 
   const steps = [
+    { id: "verify", title: "Verify Identity", description: "Sign in with Turnkey" },
     { id: "bank", title: "Link Bank", description: "Connect your bank account" },
-    { id: "transfers", title: "View Transfers", description: "See pending transfers" },
-    { id: "manage", title: "Claim & Withdraw", description: "Manage your funds" },
+    { id: "transfers", title: "View & Manage", description: "See and manage transfers" },
   ];
   const [walletConnectError, setWalletConnectError] = useState<string | null>(null);
   const [isWalletConnecting, setIsWalletConnecting] = useState(false);
@@ -480,6 +480,7 @@ function TurnkeyAuthContent() {
 
       setSession(activeSession);
       setAuthError(null);
+      setCurrentStep(1); // Move to Step 2: Link Bank after successful login
 
       try {
         await fetch("/api/db/user", {
@@ -1001,74 +1002,36 @@ function TurnkeyAuthContent() {
   if (!session) {
     return (
       <>
-        <section className="flex min-h-[calc(100vh-8rem)] items-center justify-center">
-          <div className="mx-auto max-w-2xl space-y-8 text-center">
-            <div className="space-y-4">
-              <h1 className="text-4xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-5xl">
-                Blue Wallet
-              </h1>
-              <p className="text-lg leading-relaxed text-slate-600 dark:text-slate-400">
-                Identity-attested wallets for a compliant crypto world. Verify your identity, create a managed wallet, and stay compliant—all in one streamlined flow.
-              </p>
-            </div>
-            <Button
-              size="lg"
-              onClick={handleScrollToSteps}
-              className="text-base"
-            >
-              Set up or Login
-            </Button>
-            {authError && (
-              <p className="text-sm text-red-600 dark:text-red-400">{authError}</p>
-            )}
+        <section className="space-y-6 rounded-3xl border border-slate-200/80 bg-white/70 p-10 text-slate-700 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-200">
+          <div className="space-y-4">
+            <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
+              Receive
+            </h1>
+            <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
+              Complete the steps below to link your bank account and manage transfers.
+            </p>
           </div>
+
+          <Stepper steps={steps} currentStep={0} />
+
+          {authError && (
+            <p className="text-sm text-red-600 dark:text-red-400">{authError}</p>
+          )}
         </section>
 
         <section
           ref={stepsRef}
-          className="space-y-6 rounded-3xl border border-slate-200/80 bg-white/70 p-10 text-slate-700 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-200"
+          className="space-y-4 rounded-3xl border border-slate-200/80 bg-white/70 p-6 text-slate-700 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-200"
         >
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-            How it works
-          </h2>
-          <div className="space-y-6">
-            <article className="rounded-2xl border border-slate-200 bg-white/80 p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
-              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Step 1 · Verify identity</h3>
-              <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                Sign in with email OTP and let Turnkey establish a short-lived session for secure actions.
-              </p>
-              <Button className="mt-4 w-full sm:w-auto" onClick={() => setShowAuthModal(true)}>
-                Sign in with Turnkey
-              </Button>
-            </article>
-
-            <article className="rounded-2xl border border-slate-200 bg-white/80 p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
-              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Step 2 · Wallet provisioning</h3>
-              <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                When a sender submits a transfer, we generate a fresh Turnkey wallet behind the scenes and bind it to the recipient&apos;s bank coordinates.
-              </p>
-              <Button className="mt-4 w-full sm:w-auto" disabled>
-                Wallets appear automatically
-              </Button>
-            </article>
-
-            <article className="rounded-2xl border border-slate-200 bg-white/80 p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
-              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Step 3 · Verify bank identity</h3>
-              <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                Connect your bank account to verify your identity with Plaid for compliance purposes.
-              </p>
-              <Button className="mt-4 w-full sm:w-auto" disabled>
-                Sign in to verify identity
-              </Button>
-            </article>
-
-            <article className="rounded-2xl border border-slate-200 bg-white/80 p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
-              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Step 4 · Stay compliant</h3>
-              <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                Operate with policy controls, audit trails, and identity-linked addresses—all surfaced below.
-              </p>
-            </article>
-          </div>
+          <article className="rounded-2xl border border-slate-200 bg-white/80 p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Verify Identity</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
+              Sign in with email OTP and let Turnkey establish a short-lived session for secure actions.
+            </p>
+            <Button className="mt-4 w-full sm:w-auto" onClick={() => setShowAuthModal(true)}>
+              Sign in with Turnkey
+            </Button>
+          </article>
         </section>
 
         <TurnkeyLoginForm
@@ -1109,10 +1072,10 @@ function TurnkeyAuthContent() {
         ref={stepsRef}
         className="space-y-4 rounded-3xl border border-slate-200/80 bg-white/70 p-6 text-slate-700 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-200"
       >
-        {/* Step 0: Link Bank Account */}
-        {currentStep === 0 && (
+        {/* Step 1: Link Bank Account */}
+        {currentStep === 1 && (
           <article className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
-            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Step 3 · Verify bank identity</h3>
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Link Bank Account</h3>
             <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
               Connect your bank account to verify your identity. Plaid securely retrieves your personal information
               from your bank for compliance verification.
@@ -1232,10 +1195,10 @@ function TurnkeyAuthContent() {
           </article>
         )}
 
-        {/* Steps 1 & 2: View and Manage Transfers */}
-        {(currentStep === 1 || currentStep === 2) && (
+        {/* Step 2: View and Manage Transfers */}
+        {currentStep === 2 && (
           <article className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
-            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Step 4 · Review deposits</h3>
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">View & Manage Transfers</h3>
             <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
               Each bank transfer lands in its own managed wallet. Confirm the allocations below and use the
               wallet addresses for on-chain visibility.
