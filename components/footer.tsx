@@ -47,11 +47,6 @@ export function Footer({ className }: { className?: string }) {
                   Terms of Service
                 </Link>
               </li>
-              <li>
-                <Link href="#" className="hover:text-foreground transition-colors">
-                  Cookie Policy
-                </Link>
-              </li>
             </ul>
           </div>
 
@@ -60,17 +55,7 @@ export function Footer({ className }: { className?: string }) {
             <ul className="space-y-2 text-sm text-muted-foreground">
               <li>
                 <Link href="#" className="hover:text-foreground transition-colors">
-                  Help Center
-                </Link>
-              </li>
-              <li>
-                <Link href="#" className="hover:text-foreground transition-colors">
                   Contact Us
-                </Link>
-              </li>
-              <li>
-                <Link href="#" className="hover:text-foreground transition-colors">
-                  Status
                 </Link>
               </li>
             </ul>
