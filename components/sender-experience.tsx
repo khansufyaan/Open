@@ -530,21 +530,6 @@ export function SenderExperience() {
             </div>
           ) : (
             <>
-              <div className="flex flex-col items-center gap-2">
-                <p className="text-xs text-slate-600 dark:text-slate-300 font-mono break-all">
-                  {senderAddress}
-                </p>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleDisconnectWallet}
-                  disabled={!privyReady}
-                  className="border-slate-300 hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-800"
-                >
-                  Disconnect
-                </Button>
-              </div>
-
               <form className="space-y-4" onSubmit={handleSubmit}>
                 <div className="space-y-2">
                   <Label htmlFor="accountNumber">Account number</Label>
