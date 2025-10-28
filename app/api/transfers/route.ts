@@ -33,7 +33,7 @@ type TransferRecord = {
   amountCents: number;
   amountWithSurchargeCents: number;
   surchargePercentage: number;
-  status: "DEPOSITED" | "PENDING" | "FAILED" | "WITHDRAWN";
+  status: "DEPOSITED" | "PENDING" | "FAILED" | "CLAIMED" | "WITHDRAWN";
   depositMethod: string;
   createdAt: string;
   updatedAt: string;
@@ -46,6 +46,8 @@ type TransferRecord = {
   walletAddress?: string;
   walletCreatedAt?: string;
   walletName?: string;
+  claimedAt?: string;
+  claimTxHash?: string;
 };
 
 type RecipientWalletRecord = {
@@ -410,6 +412,8 @@ export async function POST(request: Request) {
       walletAddress: recipientWallet.walletAddress,
       walletCreatedAt: recipientWallet.walletCreatedAt,
       walletName: recipientWallet.walletName,
+      claimedAt: undefined,
+      claimTxHash: undefined,
     };
 
     await docClient.send(
@@ -434,6 +438,8 @@ export async function POST(request: Request) {
         recipientWalletAddress: record.walletAddress,
         recipientWalletId: record.walletId,
         recipientWalletName: record.walletName ?? null,
+        claimTxHash: record.claimTxHash ?? null,
+        claimedAt: record.claimedAt ?? null,
       },
     });
   } catch (error) {
@@ -552,6 +558,8 @@ export async function GET(request: Request) {
         recipientLast4: item.recipientLast4,
         fundingStatus: item.fundingStatus ?? null,
         fundingTxHash: item.fundingTxHash ?? null,
+        claimTxHash: item.claimTxHash ?? null,
+        claimedAt: item.claimedAt ?? null,
         withdrawalTxHash: item.withdrawalTxHash ?? null,
         withdrawalTargetAddress: item.withdrawalTargetAddress ?? null,
         withdrawnAt: item.withdrawnAt ?? null,

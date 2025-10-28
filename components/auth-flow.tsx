@@ -54,6 +54,8 @@ type TransferSummary = {
   recipientWalletAddress?: string | null;
   recipientWalletId?: string | null;
   recipientWalletName?: string | null;
+  claimTxHash?: string | null;
+  claimedAt?: string | null;
   withdrawalTxHash?: string | null;
   withdrawalTargetAddress?: string | null;
   withdrawnAt?: string | null;
@@ -194,6 +196,9 @@ function TurnkeyAuthContent() {
   const [topUpLoading, setTopUpLoading] = useState<Record<string, boolean>>({});
   const [topUpErrors, setTopUpErrors] = useState<Record<string, string | null>>({});
   const [topUpSuccess, setTopUpSuccess] = useState<Record<string, string | null>>({});
+  const [claimLoading, setClaimLoading] = useState<Record<string, boolean>>({});
+  const [claimErrors, setClaimErrors] = useState<Record<string, string | null>>({});
+  const [claimSuccess, setClaimSuccess] = useState<Record<string, string | null>>({});
   const [walletConnectError, setWalletConnectError] = useState<string | null>(null);
   const [isWalletConnecting, setIsWalletConnecting] = useState(false);
 
@@ -822,6 +827,73 @@ function TurnkeyAuthContent() {
     [connectedEvmWallet, fetchWithdrawalQuote, withdrawInputs, withdrawQuotes]
   );
 
+  const handleClaim = useCallback(
+    async (summary: TransferSummary) => {
+      setClaimErrors((previous) => ({
+        ...previous,
+        [summary.transferId]: null,
+      }));
+      setClaimSuccess((previous) => ({
+        ...previous,
+        [summary.transferId]: null,
+      }));
+      setClaimLoading((previous) => ({
+        ...previous,
+        [summary.transferId]: true,
+      }));
+
+      try {
+        const response = await fetch(`/api/transfers/${summary.transferId}/claim`, {
+          method: "POST",
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.message ?? "Failed to claim transfer.");
+        }
+
+        const txHash = typeof data.txHash === "string" ? data.txHash : null;
+
+        setClaimSuccess((previous) => ({
+          ...previous,
+          [summary.transferId]: txHash,
+        }));
+
+        setTransferSummaries((previous) =>
+          previous.map((entry) =>
+            entry.transferId === summary.transferId
+              ? {
+                  ...entry,
+                  status: "CLAIMED",
+                  claimTxHash: txHash,
+                  claimedAt: new Date().toISOString(),
+                  walletAddress: entry.recipientWalletAddress ?? entry.walletAddress ?? null,
+                }
+              : entry
+          )
+        );
+
+        if (linkedAccounts.length > 0) {
+          await fetchTransfersForAccounts(linkedAccounts);
+        }
+      } catch (error) {
+        console.error("Claim transfer failed", error);
+        setClaimErrors((previous) => ({
+          ...previous,
+          [summary.transferId]:
+            error instanceof Error ? error.message : "Failed to claim transfer. Please retry.",
+        }));
+      } finally {
+        setClaimLoading((previous) => ({
+          ...previous,
+          [summary.transferId]: false,
+        }));
+      }
+    },
+    [fetchTransfersForAccounts, linkedAccounts]
+  );
+
   const handleWithdraw = useCallback(
     async (summary: TransferSummary) => {
       const destinationInput = (withdrawInputs[summary.transferId] ?? "").trim();
@@ -1272,6 +1344,38 @@ function TurnkeyAuthContent() {
                           )}
                         </dl>
                         {summary.status === "DEPOSITED" ? (
+                          <div className="mt-3 space-y-2">
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                              Claim this transfer to move funds from the company vault into your managed wallet.
+                            </p>
+                            {claimErrors[summary.transferId] && (
+                              <p className="text-[11px] text-red-500 dark:text-red-400">
+                                {claimErrors[summary.transferId]}
+                              </p>
+                            )}
+                            {claimSuccess[summary.transferId] && (
+                              <p className="text-[11px] text-emerald-600 dark:text-emerald-400">
+                                Claimed on-chain ·{" "}
+                                <a
+                                  href={`https://basescan.org/tx/${claimSuccess[summary.transferId]}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="underline"
+                                >
+                                  View transaction
+                                </a>
+                              </p>
+                            )}
+                            <Button
+                              type="button"
+                              size="sm"
+                              disabled={Boolean(claimLoading[summary.transferId])}
+                              onClick={() => void handleClaim(summary)}
+                            >
+                              {claimLoading[summary.transferId] ? "Claiming…" : "Claim funds"}
+                            </Button>
+                          </div>
+                        ) : summary.status === "CLAIMED" ? (
                           <form
                             className="mt-3 space-y-2"
                             onSubmit={(event) => {
@@ -1280,6 +1384,19 @@ function TurnkeyAuthContent() {
                             }}
                           >
                             <div className="space-y-1.5">
+                              {summary.claimTxHash && (
+                                <p className="text-[11px] text-emerald-600 dark:text-emerald-400">
+                                  Claimed ·{" "}
+                                  <a
+                                    href={`https://basescan.org/tx/${summary.claimTxHash}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="underline"
+                                  >
+                                    View claim tx
+                                  </a>
+                                </p>
+                              )}
                               <p className="text-[11px] uppercase tracking-wide text-slate-400 dark:text-slate-500">
                                 Transfer to Base wallet
                               </p>

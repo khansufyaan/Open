@@ -525,7 +525,7 @@ export function SenderExperience() {
           {!senderAddress ? (
             <div className="flex flex-col items-center gap-3">
               <Button size="lg" onClick={handleConnectWallet} disabled={isConnecting || !privyReady} className="w-full">
-                {isConnecting ? "Connecting…" : "Connect wallet"}
+                {!privyReady ? "Loading…" : isConnecting ? "Connecting…" : "Connect wallet"}
               </Button>
             </div>
           ) : (

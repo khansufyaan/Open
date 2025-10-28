@@ -40,10 +40,12 @@ type TransferRecord = {
   recipientAccount: string;
   amount: string;
   amountCents: number;
-  status: "DEPOSITED" | "PENDING" | "FAILED" | "WITHDRAWN";
+  status: "DEPOSITED" | "PENDING" | "FAILED" | "CLAIMED" | "WITHDRAWN";
   withdrawalTxHash?: string;
   withdrawalTargetAddress?: string;
   withdrawnAt?: string;
+  claimTxHash?: string;
+  claimedAt?: string;
 };
 
 function normalizeAddress(address: string): string {
@@ -297,7 +299,7 @@ export async function POST(request: Request, context: RouteContext) {
     );
   }
 
-  if (record.status !== "DEPOSITED") {
+  if (record.status !== "CLAIMED" && record.status !== "DEPOSITED") {
     return NextResponse.json(
       {
         error: "TRANSFER_NOT_READY",
@@ -363,15 +365,16 @@ export async function POST(request: Request, context: RouteContext) {
         Key: {
           transferId: record.transferId,
         },
-        UpdateExpression:
+      UpdateExpression:
           "SET #status = :withdrawn, withdrawalTxHash = :txHash, withdrawalTargetAddress = :targetAddress, withdrawnAt = :withdrawnAt, updatedAt = :updatedAt",
-        ConditionExpression: "#status = :deposited", // ← CRITICAL: Only update if still DEPOSITED
+        ConditionExpression: "(#status = :deposited OR #status = :claimed)", // prevent double-withdrawal
         ExpressionAttributeNames: {
           "#status": "status",
         },
         ExpressionAttributeValues: {
           ":withdrawn": "WITHDRAWN",
           ":deposited": "DEPOSITED",
+          ":claimed": "CLAIMED",
           ":txHash": txHash,
           ":targetAddress": destination,
           ":withdrawnAt": timestamp,
@@ -459,7 +462,7 @@ export async function GET(request: Request, context: RouteContext) {
     );
   }
 
-  if (record.status !== "DEPOSITED") {
+  if (record.status !== "CLAIMED" && record.status !== "DEPOSITED") {
     return NextResponse.json(
       {
         error: "TRANSFER_NOT_READY",
