@@ -36,6 +36,7 @@ const docClient = DynamoDBDocumentClient.from(dynamoClient);
 
 type TransferRecord = {
   transferId: string;
+  recipientKey: string;
   recipientRouting: string;
   recipientAccount: string;
   amount: string;
