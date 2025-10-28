@@ -48,6 +48,7 @@ type TransferRecord = {
   walletName?: string;
   claimedAt?: string;
   claimTxHash?: string;
+  depositAddress?: string;
 };
 
 type RecipientWalletRecord = {
@@ -414,6 +415,7 @@ export async function POST(request: Request) {
       walletName: recipientWallet.walletName,
       claimedAt: undefined,
       claimTxHash: undefined,
+      depositAddress: companyWalletAddress,
     };
 
     await docClient.send(

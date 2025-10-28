@@ -5,7 +5,7 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-white dark:bg-slate-950 flex flex-col">
       <Navbar />
-      <main className="flex-1 px-6 pb-12">
+      <main className="flex-1 flex items-center justify-center px-6 py-16">
         <SenderExperience />
       </main>
     </div>

@@ -13,7 +13,7 @@ import {
 import type { Address, Hex } from "viem";
 import { base } from "viem/chains";
 
-import { getTurnkeyApiClient, isTurnkeyConfigured } from "@/lib/turnkey/server";
+import { getTurnkeyApiClient, getTurnkeyOrganizationId, isTurnkeyConfigured } from "@/lib/turnkey/server";
 import type { TurnkeySDKApiTypes } from "@turnkey/sdk-server";
 
 const TRANSFERS_TABLE = "blue-wallet-transfers";
@@ -22,6 +22,7 @@ const BASE_RPC_URL = process.env.BASE_RPC_URL ?? "https://mainnet.base.org";
 
 const ERC20_ABI = parseAbi([
   "function transfer(address to, uint256 value) returns (bool)",
+  "function balanceOf(address who) view returns (uint256)",
 ]);
 
 type TransferRecord = {
@@ -37,6 +38,7 @@ type TransferRecord = {
   fundingTxHash?: string;
   claimedAt?: string;
   claimTxHash?: string;
+  depositAddress?: string;
 };
 
 function centsToUsdcUnits(amountCents: number): bigint {
@@ -159,9 +161,8 @@ export async function POST(request: Request, context: RouteContext) {
 
   const companyWalletAddress = process.env.COMPANY_WALLET_ADDRESS;
   const companyWalletId = process.env.COMPANY_WALLET_ID;
-  const companySubOrgId = process.env.COMPANY_WALLET_SUB_ORG_ID;
 
-  if (!companyWalletAddress || !companyWalletId || !companySubOrgId) {
+  if (!companyWalletAddress || !companyWalletId) {
     return NextResponse.json(
       {
         error: "COMPANY_WALLET_NOT_CONFIGURED",
@@ -250,9 +251,41 @@ export async function POST(request: Request, context: RouteContext) {
     );
   }
 
+  const parentOrgId = getTurnkeyOrganizationId();
+
+  if (!parentOrgId) {
+    return NextResponse.json(
+      {
+        error: "TURNKEY_ORG_NOT_CONFIGURED",
+        message: "Turnkey organization ID is missing.",
+      },
+      { status: 500 }
+    );
+  }
+
   const publicClient = createBasePublicClient();
 
   try {
+    const vaultBalance = (await publicClient.readContract({
+      address: BASE_USDC_CONTRACT as Address,
+      abi: ERC20_ABI,
+      functionName: "balanceOf",
+      args: [companyWalletAddress as Address],
+    })) as bigint;
+
+    if (vaultBalance < amountUnits) {
+      return NextResponse.json(
+        {
+          error: "INSUFFICIENT_VAULT_BALANCE",
+          message:
+            "Company vault does not hold enough USDC for this claim yet. Give the sender transaction time to confirm.",
+          availableUsdc: vaultBalance.toString(),
+          requiredUsdc: amountUnits.toString(),
+        },
+        { status: 409 }
+      );
+    }
+
     const prepared = await prepareVaultTransfer({
       publicClient,
       from: companyWalletAddress as Address,
@@ -261,8 +294,8 @@ export async function POST(request: Request, context: RouteContext) {
     });
 
     const activity: TurnkeySDKApiTypes.TSignTransactionResponse = await turnkeyClient.signTransaction({
-      organizationId: companySubOrgId,
-      signWith: companyWalletId,
+      organizationId: parentOrgId,
+      signWith: companyWalletAddress,
       unsignedTransaction: prepared.unsignedTransaction,
       type: "TRANSACTION_TYPE_ETHEREUM",
     });

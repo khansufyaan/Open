@@ -6,7 +6,7 @@ import { createPublicClient, encodeFunctionData, formatEther, http, parseAbi, se
 import type { Address, Hex } from "viem";
 import { base } from "viem/chains";
 
-import { getTurnkeyApiClient, isTurnkeyConfigured } from "@/lib/turnkey/server";
+import { getTurnkeyApiClient, getTurnkeyOrganizationId, isTurnkeyConfigured } from "@/lib/turnkey/server";
 import type { TurnkeySDKApiTypes } from "@turnkey/sdk-server";
 
 const TRANSFERS_TABLE = "blue-wallet-transfers";
@@ -46,6 +46,7 @@ type TransferRecord = {
   withdrawnAt?: string;
   claimTxHash?: string;
   claimedAt?: string;
+  depositAddress?: string;
 };
 
 function normalizeAddress(address: string): string {
@@ -201,13 +202,12 @@ type RouteContext = {
 export async function POST(request: Request, context: RouteContext) {
   const companyWalletAddress = process.env.COMPANY_WALLET_ADDRESS;
   const companyWalletId = process.env.COMPANY_WALLET_ID;
-  const companySubOrgId = process.env.COMPANY_WALLET_SUB_ORG_ID;
 
-  if (!companyWalletAddress || !companyWalletId || !companySubOrgId) {
+  if (!companyWalletAddress || !companyWalletId) {
     return NextResponse.json(
       {
         error: "COMPANY_WALLET_NOT_CONFIGURED",
-        message: "Company wallet is not configured. Run scripts/provision-company-wallet.ts",
+        message: "Company wallet is not configured. Run scripts/provision-company-wallet-in-parent-org.ts",
       },
       { status: 500 }
     );
@@ -324,6 +324,18 @@ export async function POST(request: Request, context: RouteContext) {
   const publicClient = createBasePublicClient();
   const destination = targetAddressInput as Address;
 
+  const parentOrgId = getTurnkeyOrganizationId();
+
+  if (!parentOrgId) {
+    return NextResponse.json(
+      {
+        error: "TURNKEY_ORG_NOT_CONFIGURED",
+        message: "Turnkey organization ID is missing.",
+      },
+      { status: 500 }
+    );
+  }
+
   try {
     const quote = await buildWithdrawalQuote({
       publicClient,
@@ -344,10 +356,10 @@ export async function POST(request: Request, context: RouteContext) {
     }
 
     const activity: TurnkeySDKApiTypes.TSignTransactionResponse = await turnkeyClient.signTransaction({
+      organizationId: parentOrgId,
       signWith: companyWalletAddress,
       unsignedTransaction: quote.unsignedTransaction,
       type: "TRANSACTION_TYPE_ETHEREUM",
-      organizationId: companySubOrgId,
     });
 
     const signedTransaction = getSignedTransactionFromActivity(activity.activity) as Hex;
@@ -363,9 +375,10 @@ export async function POST(request: Request, context: RouteContext) {
       new UpdateCommand({
         TableName: TRANSFERS_TABLE,
         Key: {
+          recipientKey: record.recipientKey,
           transferId: record.transferId,
         },
-      UpdateExpression:
+        UpdateExpression:
           "SET #status = :withdrawn, withdrawalTxHash = :txHash, withdrawalTargetAddress = :targetAddress, withdrawnAt = :withdrawnAt, updatedAt = :updatedAt",
         ConditionExpression: "(#status = :deposited OR #status = :claimed)", // prevent double-withdrawal
         ExpressionAttributeNames: {

@@ -1,16 +1,16 @@
 /**
- * One-time script to provision the company wallet for Blue Wallet
+ * Provision company wallet directly in the parent organization
  *
- * This creates a Turnkey sub-organization with a single Ethereum wallet
- * that will be used to receive ALL deposits from senders.
+ * This creates a wallet in the parent org instead of a sub-org,
+ * avoiding the permission issues with sub-org wallets.
  *
  * Usage:
- *   npx tsx scripts/provision-company-wallet.ts
+ *   npx tsx scripts/provision-company-wallet-in-parent-org.ts
  *
- * After running, add the output values to your .env.local:
- *   COMPANY_WALLET_SUB_ORG_ID=...
- *   COMPANY_WALLET_ID=...
- *   COMPANY_WALLET_ADDRESS=...
+ * After running, update your .env.local:
+ *   COMPANY_WALLET_ID=... (new wallet ID)
+ *   COMPANY_WALLET_ADDRESS=... (new wallet address)
+ *   # Remove COMPANY_WALLET_SUB_ORG_ID - no longer needed
  */
 
 import { Turnkey, defaultEthereumAccountAtIndex } from "@turnkey/sdk-server";
@@ -28,7 +28,7 @@ async function provisionCompanyWallet() {
     process.exit(1);
   }
 
-  console.log("Creating Turnkey company wallet...\n");
+  console.log("Creating company wallet in parent organization...\n");
 
   const turnkey = new Turnkey({
     apiBaseUrl: "https://api.turnkey.com",
@@ -40,44 +40,36 @@ async function provisionCompanyWallet() {
   const client = turnkey.apiClient();
 
   try {
-    const response = await client.createSubOrganization({
+    const response = await client.createWallet({
       organizationId,
-      subOrganizationName: "Blue Wallet Company Pool",
-      rootUsers: [
-        {
-          userName: "Company Wallet Admin",
-          userEmail: "company-wallet@bluewallet.internal",
-          apiKeys: [],
-          authenticators: [],
-          oauthProviders: [],
-        },
-      ],
-      rootQuorumThreshold: 1,
-      wallet: {
-        walletName: "Company Deposit Wallet",
-        accounts: [defaultEthereumAccountAtIndex(0)],
-      },
+      walletName: "BlueWallet Company Vault",
+      accounts: [defaultEthereumAccountAtIndex(0)],
     });
 
-    const subOrgId = response.subOrganizationId;
-    const walletId = response.wallet?.walletId;
-    const walletAddress = response.wallet?.addresses?.[0];
+    const walletId = response.walletId;
+    const walletAddress = response.addresses?.[0];
 
     console.log("✅ Company wallet created successfully!\n");
-    console.log("Add these to your .env.local file:\n");
+    console.log("Update these in your .env.local file:\n");
     console.log("─".repeat(80));
-    console.log(`COMPANY_WALLET_SUB_ORG_ID=${subOrgId}`);
     console.log(`COMPANY_WALLET_ID=${walletId}`);
     console.log(`COMPANY_WALLET_ADDRESS=${walletAddress}`);
+    console.log(`NEXT_PUBLIC_COMPANY_WALLET_ADDRESS=${walletAddress}`);
     console.log("─".repeat(80));
+    console.log("\nRemove this line from .env.local:");
+    console.log("COMPANY_WALLET_SUB_ORG_ID=...");
     console.log("\nIMPORTANT: Save these values - you won't be able to retrieve them later!");
     console.log("\nNext steps:");
-    console.log("1. Add the above variables to .env.local");
+    console.log("1. Update the above variables in .env.local");
     console.log("2. Fund the wallet with ETH for gas (on Base network)");
-    console.log("3. Senders will deposit USDC to this address");
+    console.log("3. Transfer any existing USDC from the old wallet to this new one");
+    console.log("4. Restart your development server");
 
   } catch (error) {
     console.error("Failed to create company wallet:", error);
+    if (error instanceof Error) {
+      console.error("Error details:", error.message);
+    }
     process.exit(1);
   }
 }
