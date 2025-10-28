@@ -9,6 +9,7 @@ import { CheckCircle2, LogOut } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Stepper } from "@/components/ui/stepper";
 import { TurnkeyLoginForm } from "@/components/turnkey-login-form";
 import { PlaidConnectButton } from "@/components/plaid-connect-button";
 import { base } from "viem/chains";
@@ -199,6 +200,13 @@ function TurnkeyAuthContent() {
   const [claimLoading, setClaimLoading] = useState<Record<string, boolean>>({});
   const [claimErrors, setClaimErrors] = useState<Record<string, string | null>>({});
   const [claimSuccess, setClaimSuccess] = useState<Record<string, string | null>>({});
+  const [currentStep, setCurrentStep] = useState(0);
+
+  const steps = [
+    { id: "bank", title: "Link Bank", description: "Connect your bank account" },
+    { id: "transfers", title: "View Transfers", description: "See pending transfers" },
+    { id: "manage", title: "Claim & Withdraw", description: "Manage your funds" },
+  ];
   const [walletConnectError, setWalletConnectError] = useState<string | null>(null);
   const [isWalletConnecting, setIsWalletConnecting] = useState(false);
 
@@ -1075,27 +1083,23 @@ function TurnkeyAuthContent() {
 
   return (
     <>
-      <section className="space-y-5 rounded-3xl border border-slate-200/80 bg-white/70 p-10 text-slate-700 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-200">
-        <div className="space-y-3">
-          <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-            Receive
-          </h1>
+      <section className="space-y-6 rounded-3xl border border-slate-200/80 bg-white/70 p-10 text-slate-700 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-200">
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
+              Receive
+            </h1>
+            <Button variant="ghost" size="sm" onClick={handleLogout}>
+              <LogOut className="mr-2 h-4 w-4" /> Sign out
+            </Button>
+          </div>
           <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
-            You&apos;re signed in with Turnkey. Everything you need next lives below—create wallets, copy
-            addresses, and revisit the blueprint when you need a refresher.
+            Complete the steps below to link your bank account and manage transfers.
           </p>
         </div>
-        <div className="flex flex-col gap-3">
-          <Button size="lg" onClick={handleScrollToSteps}>
-            Jump to steps
-          </Button>
-          <Button variant="outline" size="lg" disabled>
-            Wallets auto-provision per transfer
-          </Button>
-          <Button variant="ghost" size="lg" onClick={handleLogout}>
-            <LogOut className="mr-2 h-4 w-4" /> Sign out
-          </Button>
-        </div>
+
+        <Stepper steps={steps} currentStep={currentStep} />
+
         {authError && (
           <p className="text-sm text-red-600 dark:text-red-400">{authError}</p>
         )}
@@ -1105,28 +1109,8 @@ function TurnkeyAuthContent() {
         ref={stepsRef}
         className="space-y-4 rounded-3xl border border-slate-200/80 bg-white/70 p-6 text-slate-700 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-200"
       >
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-          Blueprint
-        </h2>
-        <div className="grid gap-4 md:grid-cols-2">
-          <article className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
-            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Step 1 · Verify identity</h3>
-            <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-              Sign in with Turnkey via email OTP. We store the session locally so subsequent actions happen
-              without friction.
-            </p>
-          </article>
-
-          <article className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
-            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Step 2 · Wallet provisioning</h3>
-            <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-              Transfers create new managed wallets automatically. Each ACH destination receives a unique address so senders never see aggregate balances.
-            </p>
-            <div className="mt-3 flex items-center gap-2 text-xs font-medium text-emerald-600 dark:text-emerald-400">
-              <CheckCircle2 className="h-3.5 w-3.5" /> Wallets generate as transfers arrive
-            </div>
-          </article>
-
+        {/* Step 0: Link Bank Account */}
+        {currentStep === 0 && (
           <article className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
             <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Step 3 · Verify bank identity</h3>
             <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
@@ -1246,8 +1230,11 @@ function TurnkeyAuthContent() {
               </div>
             )}
           </article>
+        )}
 
-          <article className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/80 md:col-span-2">
+        {/* Steps 1 & 2: View and Manage Transfers */}
+        {(currentStep === 1 || currentStep === 2) && (
+          <article className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
             <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Step 4 · Review deposits</h3>
             <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
               Each bank transfer lands in its own managed wallet. Confirm the allocations below and use the
@@ -1568,6 +1555,26 @@ function TurnkeyAuthContent() {
               )}
             </div>
           </article>
+        )}
+
+        {/* Navigation Buttons */}
+        <div className="flex items-center justify-between pt-4">
+          <Button
+            variant="outline"
+            onClick={() => setCurrentStep((prev) => Math.max(0, prev - 1))}
+            disabled={currentStep === 0}
+          >
+            Back
+          </Button>
+          <div className="text-sm text-slate-500 dark:text-slate-400">
+            Step {currentStep + 1} of {steps.length}
+          </div>
+          <Button
+            onClick={() => setCurrentStep((prev) => Math.min(steps.length - 1, prev + 1))}
+            disabled={currentStep === steps.length - 1}
+          >
+            Next
+          </Button>
         </div>
       </section>
     </>
