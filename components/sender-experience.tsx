@@ -90,11 +90,11 @@ export function SenderExperience() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [transfer, setTransfer] = useState<TransferResponse | null>(null);
-  const [pendingTransfer, setPendingTransfer] = useState<TransferResponse | null>(null);
+  const [, setPendingTransfer] = useState<TransferResponse | null>(null);
   const [history, setHistory] = useState<Array<{ accountNumber: string; routingNumber: string }>>([]);
   const [preview, setPreview] = useState<RecipientPreview[] | null>(null);
-  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
-  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [, setIsPreviewLoading] = useState(false);
+  const [, setPreviewError] = useState<string | null>(null);
   const previewControllerRef = useRef<AbortController | null>(null);
   const [isFunding, setIsFunding] = useState(false);
   const [fundingError, setFundingError] = useState<string | null>(null);

@@ -111,7 +111,7 @@ async function prepareVaultTransfer({
     account: from,
     to: BASE_USDC_CONTRACT as Address,
     data,
-    value: 0n,
+    value: BigInt(0),
   });
 
   const { maxFeePerGas, maxPriorityFeePerGas } = await fetchFeeData(publicClient);

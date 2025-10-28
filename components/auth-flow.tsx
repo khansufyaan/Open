@@ -988,8 +988,6 @@ function TurnkeyAuthContent() {
     [ALL_ACCOUNTS_KEY, fetchTransfersForAccounts, linkedAccounts, selectedAccountKey, withdrawInputs]
   );
 
-  const userIdentifier = useMemo(() => session?.userId ?? "friend", [session]);
-
   if (!session) {
     return (
       <>

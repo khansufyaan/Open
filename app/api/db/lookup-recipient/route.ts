@@ -16,19 +16,6 @@ function sanitizeDigits(value: string | null | undefined): string {
   return typeof value === "string" ? value.replace(DIGIT_REGEX, "") : "";
 }
 
-function maskValue(raw: string): string | null {
-  if (!raw) {
-    return null;
-  }
-
-  if (raw.length <= 4) {
-    return raw;
-  }
-
-  const last4 = raw.slice(-4);
-  return `${"*".repeat(raw.length - 4)}${last4}`;
-}
-
 type PlaidAccount = {
   accountId?: string;
   accountNumber?: string;
