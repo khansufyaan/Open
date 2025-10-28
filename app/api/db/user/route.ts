@@ -15,7 +15,10 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const userId = searchParams.get("userId");
 
+  console.log("[DB] GET /api/db/user - Request received for userId:", userId);
+
   if (!userId) {
+    console.error("[DB] Missing userId in GET request");
     return NextResponse.json(
       {
         error: "MISSING_USER_ID",
@@ -26,6 +29,7 @@ export async function GET(request: Request) {
   }
 
   try {
+    console.log("[DB] Fetching user from DynamoDB");
     const command = new GetCommand({
       TableName: TABLE_NAME,
       Key: {
@@ -36,6 +40,7 @@ export async function GET(request: Request) {
     const response = await docClient.send(command);
 
     if (!response.Item) {
+      console.log("[DB] User not found in database");
       return NextResponse.json(
         {
           error: "USER_NOT_FOUND",
@@ -44,6 +49,8 @@ export async function GET(request: Request) {
         { status: 404 }
       );
     }
+
+    console.log("[DB] User found, returning data");
 
     const { plaidAccessToken: _plaidAccessToken, ...sanitizedUser } = response.Item as Record<string, unknown>;
     void _plaidAccessToken;
@@ -68,11 +75,13 @@ export async function GET(request: Request) {
 
 // POST: Create or update user data
 export async function POST(request: Request) {
+  console.log("[DB] POST /api/db/user - Request received");
   let body: unknown;
 
   try {
     body = await request.json();
-  } catch {
+  } catch (error) {
+    console.error("[DB] Failed to parse JSON:", error);
     return NextResponse.json(
       {
         error: "INVALID_JSON",
@@ -128,6 +137,7 @@ export async function POST(request: Request) {
   };
 
   if (!data.userId) {
+    console.error("[DB] Missing userId in request");
     return NextResponse.json(
       {
         error: "MISSING_USER_ID",
@@ -137,10 +147,13 @@ export async function POST(request: Request) {
     );
   }
 
+  console.log("[DB] Processing request for userId:", data.userId);
+
   try {
     const timestamp = new Date().toISOString();
 
     // Get existing user data to merge
+    console.log("[DB] Checking for existing user data");
     const getCommand = new GetCommand({
       TableName: TABLE_NAME,
       Key: {
@@ -150,6 +163,7 @@ export async function POST(request: Request) {
 
     const existingData = await docClient.send(getCommand);
     const isNewUser = !existingData.Item;
+    console.log("[DB] User exists:", !isNewUser);
 
     const userData = {
       userId: data.userId,
@@ -184,7 +198,9 @@ export async function POST(request: Request) {
       Item: userData,
     });
 
+    console.log("[DB] Writing user data to DynamoDB");
     await docClient.send(command);
+    console.log("[DB] Successfully saved user data");
 
     return NextResponse.json({
       success: true,
@@ -192,7 +208,12 @@ export async function POST(request: Request) {
       user: userData,
     });
   } catch (error) {
-    console.error("Failed to save user:", error);
+    console.error("[DB] Failed to save user:", error);
+    console.error("[DB] Error details:", {
+      name: error instanceof Error ? error.name : "Unknown",
+      message: error instanceof Error ? error.message : "Unknown error",
+      stack: error instanceof Error ? error.stack : undefined,
+    });
 
     return NextResponse.json(
       {

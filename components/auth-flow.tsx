@@ -504,12 +504,14 @@ function TurnkeyAuthContent() {
         return;
       }
 
+      console.log("[Auth] Setting session for userId:", activeSession.userId);
       setSession(activeSession);
       setAuthError(null);
       setCurrentStep(1); // Move to Step 2: Link Bank after successful login
 
+      console.log("[Auth] Creating initial user record in database");
       try {
-        await fetch("/api/db/user", {
+        const response = await fetch("/api/db/user", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -520,8 +522,11 @@ function TurnkeyAuthContent() {
             turnkeySignInCompleted: true,
           }),
         });
+        console.log("[Auth] Initial user record response status:", response.status);
+        const data = await response.json();
+        console.log("[Auth] Initial user record response:", data.success ? "Success" : "Failed", data);
       } catch (dbError) {
-        console.error("Failed to store user data:", dbError);
+        console.error("[Auth] Failed to store initial user data:", dbError);
       }
     } catch (error) {
       const message =
