@@ -9,6 +9,7 @@ import { CheckCircle2, LogOut } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Stepper } from "@/components/ui/stepper";
 import { TurnkeyLoginForm } from "@/components/turnkey-login-form";
 import { PlaidConnectButton } from "@/components/plaid-connect-button";
 import { base } from "viem/chains";
@@ -199,6 +200,18 @@ function TurnkeyAuthContent() {
   const [claimLoading, setClaimLoading] = useState<Record<string, boolean>>({});
   const [claimErrors, setClaimErrors] = useState<Record<string, string | null>>({});
   const [claimSuccess, setClaimSuccess] = useState<Record<string, string | null>>({});
+  const [currentStep, setCurrentStep] = useState(0);
+  const [userWalletInfo, setUserWalletInfo] = useState<{
+    walletId?: string;
+    walletAddress?: string;
+  } | null>(null);
+
+  const steps = [
+    { id: "verify", title: "Verify Identity", description: "Sign in with Turnkey" },
+    { id: "bank", title: "Link Bank", description: "Connect your bank account" },
+    { id: "claim", title: "Claim Funds", description: "Move to your wallet" },
+    { id: "withdraw", title: "Withdraw", description: "Send to external wallet" },
+  ];
   const [walletConnectError, setWalletConnectError] = useState<string | null>(null);
   const [isWalletConnecting, setIsWalletConnecting] = useState(false);
 
@@ -348,36 +361,75 @@ function TurnkeyAuthContent() {
 
   useEffect(() => {
     if (!session || plaidHydrated) {
+      console.log("[Plaid Hydration] Skipped:", { hasSession: !!session, plaidHydrated });
       return;
     }
 
     let cancelled = false;
 
     const hydratePlaidData = async () => {
+      console.log("[Plaid Hydration] Starting for userId:", session.userId);
       try {
         const response = await fetch(`/api/db/user?userId=${encodeURIComponent(session.userId)}`);
 
+        console.log("[Plaid Hydration] Response status:", response.status);
+
         if (!response.ok) {
+          if (response.status === 404) {
+            console.log("[Plaid Hydration] User not found (404) - will retry on next attempt");
+            // Don't set plaidHydrated to true, so we can retry later
+            return;
+          }
+          console.log("[Plaid Hydration] Response not OK");
           return;
         }
 
         const data = await response.json();
         const user = data.user as Record<string, unknown>;
 
+        console.log("[Plaid Hydration] User data:", {
+          plaidVerificationCompleted: user?.plaidVerificationCompleted,
+          plaidAchAccountsIsArray: Array.isArray(user?.plaidAchAccounts),
+          plaidAchAccountsCount: Array.isArray(user?.plaidAchAccounts) ? user.plaidAchAccounts.length : 0,
+          plaidVerifiedName: user?.plaidVerifiedName,
+          plaidVerifiedEmail: user?.plaidVerifiedEmail,
+          walletId: user?.walletId,
+          walletAddress: user?.walletAddress,
+          allKeys: Object.keys(user || {}),
+        });
+
+        // Extract wallet info if available
+        if (user?.walletId || user?.walletAddress) {
+          console.log("[Plaid Hydration] Found wallet info for user");
+          setUserWalletInfo({
+            walletId: user.walletId as string | undefined,
+            walletAddress: user.walletAddress as string | undefined,
+          });
+        }
+
         const verificationCompleted = Boolean(user?.plaidVerificationCompleted);
         const storedAccountsRaw = Array.isArray(user?.plaidAchAccounts)
           ? (user.plaidAchAccounts as PlaidAchAccount[])
           : [];
 
+        console.log("[Plaid Hydration] Verification check:", {
+          verificationCompleted,
+          storedAccountsCount: storedAccountsRaw.length,
+        });
+
         if (!verificationCompleted || storedAccountsRaw.length === 0) {
+          console.log("[Plaid Hydration] No saved Plaid data found - missing requirements");
           return;
         }
 
         const normalizedAccounts = normalizeAchAccounts(storedAccountsRaw);
 
         if (normalizedAccounts.length === 0) {
+          console.log("[Plaid Hydration] No accounts after normalization");
           return;
         }
+
+        console.log("[Plaid Hydration] Normalized accounts:", normalizedAccounts.length);
 
         const mergedAccounts = mergeAchAccounts([], normalizedAccounts);
 
@@ -414,16 +466,19 @@ function TurnkeyAuthContent() {
         };
 
         if (cancelled) {
+          console.log("[Plaid Hydration] Cancelled before setting state");
           return;
         }
 
+        console.log("[Plaid Hydration] Successfully hydrated Plaid data, setting state");
         setPlaidIdentity(fallbackIdentity);
         setLinkedAccounts(mergedAccounts);
         setSelectedAccountKey(ALL_ACCOUNTS_KEY);
       } catch (error) {
-        console.error("Failed to hydrate Plaid verification:", error);
+        console.error("[Plaid Hydration] Failed to hydrate Plaid verification:", error);
       } finally {
         if (!cancelled) {
+          console.log("[Plaid Hydration] Setting plaidHydrated to true");
           setPlaidHydrated(true);
         }
       }
@@ -470,11 +525,14 @@ function TurnkeyAuthContent() {
         return;
       }
 
+      console.log("[Auth] Setting session for userId:", activeSession.userId);
       setSession(activeSession);
       setAuthError(null);
+      setCurrentStep(1); // Move to Step 2: Link Bank after successful login
 
+      console.log("[Auth] Creating initial user record in database");
       try {
-        await fetch("/api/db/user", {
+        const response = await fetch("/api/db/user", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -485,8 +543,17 @@ function TurnkeyAuthContent() {
             turnkeySignInCompleted: true,
           }),
         });
+        console.log("[Auth] Initial user record response status:", response.status);
+        const data = await response.json();
+        console.log("[Auth] Initial user record response:", data.success ? "Success" : "Failed", data);
+
+        if (data.success) {
+          // Reset plaidHydrated to trigger hydration after user record is created
+          console.log("[Auth] Resetting plaidHydrated to allow hydration retry");
+          setPlaidHydrated(false);
+        }
       } catch (dbError) {
-        console.error("Failed to store user data:", dbError);
+        console.error("[Auth] Failed to store initial user data:", dbError);
       }
     } catch (error) {
       const message =
@@ -521,8 +588,11 @@ function TurnkeyAuthContent() {
   };
 
   const handlePlaidSuccess = async (identityData: PlaidIdentitySnapshot) => {
+    console.log("[Plaid Save] Starting Plaid success handler");
     const normalizedAccounts = normalizeAchAccounts(identityData.achAccounts);
     const mergedAccounts = mergeAchAccounts(linkedAccounts, normalizedAccounts);
+
+    console.log("[Plaid Save] Merged accounts count:", mergedAccounts.length);
 
     const nextSelectedKey =
       selectedAccountKey === ALL_ACCOUNTS_KEY
@@ -542,8 +612,9 @@ function TurnkeyAuthContent() {
     setAuthError(null);
 
     if (session) {
+      console.log("[Plaid Save] Saving to database for userId:", session.userId);
       try {
-        await fetch("/api/db/user", {
+        const response = await fetch("/api/db/user", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -567,9 +638,18 @@ function TurnkeyAuthContent() {
             plaidLastLinkedAt: new Date().toISOString(),
           }),
         });
+        console.log("[Plaid Save] Database save response status:", response.status);
+        const data = await response.json();
+        console.log("[Plaid Save] Database save response:", data.success ? "Success" : "Failed");
+
+        if (data.success) {
+          console.log("[Plaid Save] Plaid data saved successfully - will be loaded on next login");
+        }
       } catch (dbError) {
-        console.error("Failed to store Plaid data:", dbError);
+        console.error("[Plaid Save] Failed to store Plaid data:", dbError);
       }
+    } else {
+      console.log("[Plaid Save] No session found, cannot save to database");
     }
   };
 
@@ -991,74 +1071,36 @@ function TurnkeyAuthContent() {
   if (!session) {
     return (
       <>
-        <section className="flex min-h-[calc(100vh-8rem)] items-center justify-center">
-          <div className="mx-auto max-w-2xl space-y-8 text-center">
-            <div className="space-y-4">
-              <h1 className="text-4xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-5xl">
-                Blue Wallet
-              </h1>
-              <p className="text-lg leading-relaxed text-slate-600 dark:text-slate-400">
-                Identity-attested wallets for a compliant crypto world. Verify your identity, create a managed wallet, and stay compliant—all in one streamlined flow.
-              </p>
-            </div>
-            <Button
-              size="lg"
-              onClick={handleScrollToSteps}
-              className="text-base"
-            >
-              Set up or Login
-            </Button>
-            {authError && (
-              <p className="text-sm text-red-600 dark:text-red-400">{authError}</p>
-            )}
+        <section className="space-y-6 rounded-3xl border border-slate-200/80 bg-white/70 p-10 text-slate-700 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-200">
+          <div className="space-y-4">
+            <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
+              Receive
+            </h1>
+            <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
+              Complete the steps below to link your bank account and manage transfers.
+            </p>
           </div>
+
+          <Stepper steps={steps} currentStep={0} />
+
+          {authError && (
+            <p className="text-sm text-red-600 dark:text-red-400">{authError}</p>
+          )}
         </section>
 
         <section
           ref={stepsRef}
-          className="space-y-6 rounded-3xl border border-slate-200/80 bg-white/70 p-10 text-slate-700 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-200"
+          className="space-y-4 rounded-3xl border border-slate-200/80 bg-white/70 p-6 text-slate-700 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-200"
         >
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-            How it works
-          </h2>
-          <div className="space-y-6">
-            <article className="rounded-2xl border border-slate-200 bg-white/80 p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
-              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Step 1 · Verify identity</h3>
-              <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                Sign in with email OTP and let Turnkey establish a short-lived session for secure actions.
-              </p>
-              <Button className="mt-4 w-full sm:w-auto" onClick={() => setShowAuthModal(true)}>
-                Sign in with Turnkey
-              </Button>
-            </article>
-
-            <article className="rounded-2xl border border-slate-200 bg-white/80 p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
-              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Step 2 · Wallet provisioning</h3>
-              <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                When a sender submits a transfer, we generate a fresh Turnkey wallet behind the scenes and bind it to the recipient&apos;s bank coordinates.
-              </p>
-              <Button className="mt-4 w-full sm:w-auto" disabled>
-                Wallets appear automatically
-              </Button>
-            </article>
-
-            <article className="rounded-2xl border border-slate-200 bg-white/80 p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
-              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Step 3 · Verify bank identity</h3>
-              <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                Connect your bank account to verify your identity with Plaid for compliance purposes.
-              </p>
-              <Button className="mt-4 w-full sm:w-auto" disabled>
-                Sign in to verify identity
-              </Button>
-            </article>
-
-            <article className="rounded-2xl border border-slate-200 bg-white/80 p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
-              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Step 4 · Stay compliant</h3>
-              <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                Operate with policy controls, audit trails, and identity-linked addresses—all surfaced below.
-              </p>
-            </article>
-          </div>
+          <article className="rounded-2xl border border-slate-200 bg-white/80 p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Verify Identity</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
+              Sign in with email OTP and let Turnkey establish a short-lived session for secure actions.
+            </p>
+            <Button className="mt-4 w-full sm:w-auto" onClick={() => setShowAuthModal(true)}>
+              Sign in with Turnkey
+            </Button>
+          </article>
         </section>
 
         <TurnkeyLoginForm
@@ -1073,27 +1115,23 @@ function TurnkeyAuthContent() {
 
   return (
     <>
-      <section className="space-y-5 rounded-3xl border border-slate-200/80 bg-white/70 p-10 text-slate-700 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-200">
-        <div className="space-y-3">
-          <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-            Receive
-          </h1>
+      <section className="space-y-6 rounded-3xl border border-slate-200/80 bg-white/70 p-10 text-slate-700 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-200">
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
+              Receive
+            </h1>
+            <Button variant="ghost" size="sm" onClick={handleLogout}>
+              <LogOut className="mr-2 h-4 w-4" /> Sign out
+            </Button>
+          </div>
           <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
-            You&apos;re signed in with Turnkey. Everything you need next lives below—create wallets, copy
-            addresses, and revisit the blueprint when you need a refresher.
+            Complete the steps below to link your bank account and manage transfers.
           </p>
         </div>
-        <div className="flex flex-col gap-3">
-          <Button size="lg" onClick={handleScrollToSteps}>
-            Jump to steps
-          </Button>
-          <Button variant="outline" size="lg" disabled>
-            Wallets auto-provision per transfer
-          </Button>
-          <Button variant="ghost" size="lg" onClick={handleLogout}>
-            <LogOut className="mr-2 h-4 w-4" /> Sign out
-          </Button>
-        </div>
+
+        <Stepper steps={steps} currentStep={currentStep} />
+
         {authError && (
           <p className="text-sm text-red-600 dark:text-red-400">{authError}</p>
         )}
@@ -1103,102 +1141,191 @@ function TurnkeyAuthContent() {
         ref={stepsRef}
         className="space-y-4 rounded-3xl border border-slate-200/80 bg-white/70 p-6 text-slate-700 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-200"
       >
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-          Blueprint
-        </h2>
-        <div className="grid gap-4 md:grid-cols-2">
+        {/* Step 0: Identity Verified */}
+        {currentStep === 0 && (
           <article className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
-            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Step 1 · Verify identity</h3>
-            <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-              Sign in with Turnkey via email OTP. We store the session locally so subsequent actions happen
-              without friction.
-            </p>
-          </article>
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <CheckCircle2 className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Identity Verified</h3>
+                  <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+                    You're signed in with Turnkey.
+                  </p>
+                </div>
+              </div>
 
-          <article className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
-            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Step 2 · Wallet provisioning</h3>
-            <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-              Transfers create new managed wallets automatically. Each ACH destination receives a unique address so senders never see aggregate balances.
-            </p>
-            <div className="mt-3 flex items-center gap-2 text-xs font-medium text-emerald-600 dark:text-emerald-400">
-              <CheckCircle2 className="h-3.5 w-3.5" /> Wallets generate as transfers arrive
+              {/* User Information */}
+              <div className="rounded-lg border border-slate-200/70 bg-white/50 p-3 space-y-3 dark:border-slate-700/50 dark:bg-slate-800/50">
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">User ID</p>
+                  <p className="text-sm font-mono text-slate-900 dark:text-white break-all">
+                    {session.userId}
+                  </p>
+                </div>
+
+                {(userWalletInfo?.walletAddress || transferSummaries.length > 0) && (
+                  <div>
+                    <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Wallet Address</p>
+                    <p className="text-sm font-mono text-slate-900 dark:text-white break-all">
+                      {userWalletInfo?.walletAddress || transferSummaries[0]?.walletAddress || "Not provisioned yet"}
+                    </p>
+                    {(userWalletInfo?.walletAddress || transferSummaries[0]?.walletAddress) && (
+                      <a
+                        href={`https://basescan.org/address/${userWalletInfo?.walletAddress || transferSummaries[0]?.walletAddress}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-sky-500 hover:underline"
+                      >
+                        View on Basescan
+                      </a>
+                    )}
+                  </div>
+                )}
+
+                {(userWalletInfo?.walletId || transferSummaries.length > 0) && (
+                  <div>
+                    <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Wallet ID</p>
+                    <p className="text-sm font-mono text-slate-900 dark:text-white break-all">
+                      {userWalletInfo?.walletId || transferSummaries[0]?.walletId || "Not assigned yet"}
+                    </p>
+                  </div>
+                )}
+
+                {plaidIdentity && (
+                  <div>
+                    <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Bank Account Status</p>
+                    <p className="text-sm text-emerald-600 dark:text-emerald-400 flex items-center gap-2">
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      Verified and saved
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
           </article>
+        )}
 
+        {/* Step 1: Link Bank Account */}
+        {currentStep === 1 && (
           <article className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
-            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Step 3 · Verify bank identity</h3>
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Link Bank Account</h3>
             <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
               Connect your bank account to verify your identity. Plaid securely retrieves your personal information
               from your bank for compliance verification.
             </p>
             {plaidIdentity ? (
-              <div className="mt-3 space-y-3 text-xs">
-                <div className="flex items-center gap-2 font-medium text-emerald-600 dark:text-emerald-400">
-                  <CheckCircle2 className="h-3.5 w-3.5" /> Bank verified
-                </div>
-                <div className="rounded-lg border border-slate-200/70 bg-white/50 p-3 dark:border-slate-700/50 dark:bg-slate-800/50">
-                  <p className="font-medium text-slate-900 dark:text-white">
-                    {plaidIdentity.names[0] ?? "Linked account"}
-                  </p>
-                  {plaidIdentity.emails[0] && (
-                    <p className="mt-1 text-slate-600 dark:text-slate-400">
-                      {plaidIdentity.emails[0]}
-                    </p>
-                  )}
-                  {plaidIdentity.phones[0] && (
-                    <p className="mt-1 text-slate-600 dark:text-slate-400">
-                      {plaidIdentity.phones[0]}
-                    </p>
-                  )}
-                  {plaidIdentity.addresses[0] && (
-                    <p className="mt-1 text-slate-600 dark:text-slate-400">
-                      {plaidIdentity.addresses[0].street}, {plaidIdentity.addresses[0].city},{" "}
-                      {plaidIdentity.addresses[0].region} {plaidIdentity.addresses[0].postal_code}
-                    </p>
-                  )}
-                  {selectedAccount && (
-                    <div className="mt-3 grid grid-cols-1 gap-1 text-xs text-slate-500 dark:text-slate-400">
-                      <div className="flex items-center justify-between">
-                        <span className="uppercase tracking-wide">Routing</span>
-                        <span>{selectedAccount.routingNumber}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="uppercase tracking-wide">Account</span>
-                        <span>{selectedAccount.accountNumber}</span>
-                      </div>
-                    </div>
-                  )}
+              <div className="mt-3 space-y-4 text-sm">
+                <div className="flex items-center gap-2 font-semibold text-emerald-600 dark:text-emerald-400">
+                  <CheckCircle2 className="h-4 w-4" /> Bank Account Verified
                 </div>
 
-                {linkedAccounts.length > 0 && (
+                {/* Personal Information */}
+                <div className="rounded-lg border border-slate-200/70 bg-white/50 p-4 space-y-3 dark:border-slate-700/50 dark:bg-slate-800/50">
+                  <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                    Personal Information
+                  </h4>
+
                   <div className="space-y-2">
-                    <p className="text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500">
-                      Linked accounts
-                    </p>
+                    <div>
+                      <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Full Name</p>
+                      <p className="text-sm font-medium text-slate-900 dark:text-white">
+                        {plaidIdentity.names[0] ?? "Not provided"}
+                      </p>
+                    </div>
+
+                    {plaidIdentity.emails[0] && (
+                      <div>
+                        <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Email Address</p>
+                        <p className="text-sm text-slate-900 dark:text-white">
+                          {plaidIdentity.emails[0]}
+                        </p>
+                      </div>
+                    )}
+
+                    {plaidIdentity.phones[0] && (
+                      <div>
+                        <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Phone Number</p>
+                        <p className="text-sm text-slate-900 dark:text-white">
+                          {plaidIdentity.phones[0]}
+                        </p>
+                      </div>
+                    )}
+
+                    {plaidIdentity.addresses[0] && (
+                      <div>
+                        <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Address</p>
+                        <p className="text-sm text-slate-900 dark:text-white">
+                          {plaidIdentity.addresses[0].street}
+                        </p>
+                        <p className="text-sm text-slate-900 dark:text-white">
+                          {plaidIdentity.addresses[0].city}, {plaidIdentity.addresses[0].region} {plaidIdentity.addresses[0].postal_code}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Bank Account Details */}
+                {selectedAccount && (
+                  <div className="rounded-lg border border-slate-200/70 bg-white/50 p-4 space-y-3 dark:border-slate-700/50 dark:bg-slate-800/50">
+                    <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                      Bank Account Details
+                    </h4>
+
                     <div className="space-y-2">
-                      {linkedAccounts.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => setSelectedAccountKey(ALL_ACCOUNTS_KEY)}
-                          className={`w-full rounded-lg border px-3 py-2 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 ${
-                            selectedAccountKey === ALL_ACCOUNTS_KEY
-                              ? "border-sky-500 bg-sky-500/10 text-slate-900 dark:border-sky-500 dark:bg-sky-500/10 dark:text-slate-100"
-                              : "border-slate-200/70 bg-white/60 hover:border-slate-300 dark:border-slate-700/60 dark:bg-slate-800/40 dark:hover:border-slate-600"
-                          }`}
-                        >
-                          <p className="text-xs font-medium">
-                            All linked accounts
+                      {selectedAccount.name && (
+                        <div>
+                          <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Account Name</p>
+                          <p className="text-sm font-medium text-slate-900 dark:text-white">
+                            {selectedAccount.name}
                           </p>
-                          <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                            View combined deposits
-                          </p>
-                        </button>
+                        </div>
                       )}
+
+                      <div>
+                        <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Routing Number</p>
+                        <p className="text-sm font-mono text-slate-900 dark:text-white">
+                          {selectedAccount.routingNumber}
+                        </p>
+                      </div>
+
+                      <div>
+                        <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Account Number</p>
+                        <p className="text-sm font-mono text-slate-900 dark:text-white">
+                          {selectedAccount.accountNumber}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Multiple Account Selector */}
+                {linkedAccounts.length > 1 && (
+                  <div className="space-y-2">
+                    <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                      Select Account to View
+                    </h4>
+                    <div className="space-y-2">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedAccountKey(ALL_ACCOUNTS_KEY)}
+                        className={`w-full rounded-lg border px-3 py-2 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 ${
+                          selectedAccountKey === ALL_ACCOUNTS_KEY
+                            ? "border-sky-500 bg-sky-500/10 text-slate-900 dark:border-sky-500 dark:bg-sky-500/10 dark:text-slate-100"
+                            : "border-slate-200/70 bg-white/60 hover:border-slate-300 dark:border-slate-700/60 dark:bg-slate-800/40 dark:hover:border-slate-600"
+                        }`}
+                      >
+                        <p className="text-xs font-medium">
+                          All Linked Accounts
+                        </p>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                          View combined deposits
+                        </p>
+                      </button>
                       {linkedAccounts.map((account) => {
                         const key = getAccountKey(account);
-                        const isSelected =
-                          selectedAccountKey === key ||
-                          (selectedAccountKey === ALL_ACCOUNTS_KEY && linkedAccounts.length === 1);
+                        const isSelected = selectedAccountKey === key;
                         const mask = account.mask ?? account.accountNumber.slice(-4);
 
                         return (
@@ -1225,10 +1352,10 @@ function TurnkeyAuthContent() {
                   </div>
                 )}
 
-                <div>
+                <div className="pt-2">
                   <PlaidConnectButton
                     userId={session.userId}
-                    label={linkedAccounts.length > 0 ? "Link another bank account" : "Connect bank account"}
+                    label={linkedAccounts.length > 0 ? "Link Another Bank Account" : "Connect Bank Account"}
                     onSuccess={handlePlaidSuccess}
                     onError={handlePlaidError}
                   />
@@ -1244,23 +1371,27 @@ function TurnkeyAuthContent() {
               </div>
             )}
           </article>
+        )}
 
-          <article className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/80 md:col-span-2">
-            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Step 4 · Review deposits</h3>
+        {/* Step 2: Claim Funds */}
+        {currentStep === 2 && (
+          <article className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Claim Funds</h3>
             <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-              Each bank transfer lands in its own managed wallet. Confirm the allocations below and use the
-              wallet addresses for on-chain visibility.
+              Claim your transfers to move funds from the company vault into your managed Turnkey wallet.
             </p>
             <div className="mt-3 space-y-3">
               {isTransfersLoading ? (
                 <p className="text-xs text-slate-500 dark:text-slate-400">Loading deposits…</p>
-              ) : transferSummaries.length === 0 ? (
+              ) : transferSummaries.filter(s => s.status === "DEPOSITED").length === 0 ? (
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  {transferError ?? "No deposits found for the connected bank account yet."}
+                  {transferSummaries.length === 0
+                    ? (transferError ?? "No deposits found for the connected bank account yet.")
+                    : "No deposits available to claim. Check the Withdraw step for claimed transfers."}
                 </p>
               ) : (
                 <ul className="space-y-3 text-xs text-slate-600 dark:text-slate-300">
-                  {transferSummaries.map((summary) => {
+                  {transferSummaries.filter(s => s.status === "DEPOSITED").map((summary) => {
                     const destinationValue = (withdrawInputs[summary.transferId] ?? "").trim();
                     const hasValidDestination = HEX_ADDRESS_REGEX.test(destinationValue);
                     const quote = withdrawQuotes[summary.transferId];
@@ -1341,231 +1472,416 @@ function TurnkeyAuthContent() {
                             </div>
                           )}
                         </dl>
-                        {summary.status === "DEPOSITED" ? (
-                          <div className="mt-3 space-y-2">
-                            <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                              Claim this transfer to move funds from the company vault into your managed wallet.
-                            </p>
-                            {claimErrors[summary.transferId] && (
-                              <p className="text-[11px] text-red-500 dark:text-red-400">
-                                {claimErrors[summary.transferId]}
-                              </p>
-                            )}
-                            {claimSuccess[summary.transferId] && (
-                              <p className="text-[11px] text-emerald-600 dark:text-emerald-400">
-                                Claimed on-chain ·{" "}
-                                <a
-                                  href={`https://basescan.org/tx/${claimSuccess[summary.transferId]}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="underline"
-                                >
-                                  View transaction
-                                </a>
-                              </p>
-                            )}
-                            <Button
-                              type="button"
-                              size="sm"
-                              disabled={Boolean(claimLoading[summary.transferId])}
-                              onClick={() => void handleClaim(summary)}
-                            >
-                              {claimLoading[summary.transferId] ? "Claiming…" : "Claim funds"}
-                            </Button>
-                          </div>
-                        ) : summary.status === "CLAIMED" ? (
-                          <form
-                            className="mt-3 space-y-2"
-                            onSubmit={(event) => {
-                              event.preventDefault();
-                              void handleWithdraw(summary);
-                            }}
-                          >
-                            <div className="space-y-1.5">
-                              {summary.claimTxHash && (
-                                <p className="text-[11px] text-emerald-600 dark:text-emerald-400">
-                                  Claimed ·{" "}
-                                  <a
-                                    href={`https://basescan.org/tx/${summary.claimTxHash}`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="underline"
-                                  >
-                                    View claim tx
-                                  </a>
-                                </p>
-                              )}
-                              <p className="text-[11px] uppercase tracking-wide text-slate-400 dark:text-slate-500">
-                                Transfer to Base wallet
-                              </p>
-                              <Input
-                                value={withdrawInputs[summary.transferId] ?? ""}
-                                onChange={(event) =>
-                                  handleWithdrawInputChange(summary.transferId, event.target.value)
-                                }
-                                placeholder="0x destination address"
-                                className="h-9 text-xs"
-                              />
-                              {isQuotePending && (
-                                <p className="text-[11px] text-slate-400 dark:text-slate-500">
-                                  Estimating Base gas requirements…
-                                </p>
-                              )}
-                              {quoteErrors[summary.transferId] && (
-                                <p className="text-[11px] text-red-500 dark:text-red-400">
-                                  {quoteErrors[summary.transferId]}
-                                </p>
-                              )}
-                              {quote && quoteMatchesDestination && (
-                                <div className="rounded-md border border-slate-200/60 bg-slate-50/70 p-2 text-[11px] dark:border-slate-700/60 dark:bg-slate-800/40">
-                                  <p className="font-medium text-slate-600 dark:text-slate-200">
-                                    Gas estimate · {formatEth(quote.totalFeeEth)} ETH
-                                  </p>
-                                  <p className="text-slate-500 dark:text-slate-400">
-                                    Wallet balance: {formatEth(quote.walletBalanceEth)} ETH
-                                  </p>
-                                  {requiresTopUp ? (
-                                    <p className="text-red-500 dark:text-red-400">
-                                      Needs {formatEth(quote.topUpEth)} ETH top-up.
-                                    </p>
-                                  ) : (
-                                    <p className="text-emerald-600 dark:text-emerald-400">
-                                      Gas funded. Ready to withdraw.
-                                    </p>
-                                  )}
-                                </div>
-                              )}
-                              <div className="flex flex-wrap items-center gap-2">
-                                <Button type="submit" size="sm" disabled={withdrawDisabled}>
-                                  {withdrawLoading[summary.transferId] ? "Transferring…" : "Send to Base"}
-                                </Button>
-                                <span className="text-[11px] text-slate-400 dark:text-slate-500">
-                                  Network: Base (8453) · Asset: USDC
-                                </span>
-                              </div>
-                              {quote && quoteMatchesDestination && requiresTopUp && (
-                                <div className="space-y-1">
-                                  {connectedEvmWallet ? (
-                                    <div className="flex gap-2">
-                                      <Button
-                                        type="button"
-                                        size="sm"
-                                        variant="outline"
-                                        disabled={Boolean(topUpLoading[summary.transferId])}
-                                        onClick={() => void handleTopUp(summary)}
-                                      >
-                                        {topUpLoading[summary.transferId] ? "Sending top-up…" : "Top up gas from connected wallet"}
-                                      </Button>
-                                      <Button
-                                        type="button"
-                                        size="sm"
-                                        variant="destructive"
-                                        disabled={!privyReady}
-                                        onClick={() => void handleDisconnectWallet()}
-                                      >
-                                        Disconnect
-                                      </Button>
-                                    </div>
-                                  ) : (
-                                    <div className="space-y-1">
-                                      <Button
-                                        type="button"
-                                        size="sm"
-                                        variant="outline"
-                                        disabled={isWalletConnecting}
-                                        onClick={() => void handleConnectWallet()}
-                                      >
-                                        {isWalletConnecting ? "Connecting…" : "Connect wallet to top up"}
-                                      </Button>
-                                      {walletConnectError && (
-                                        <p className="text-[11px] text-red-500 dark:text-red-400">
-                                          {walletConnectError}
-                                        </p>
-                                      )}
-                                    </div>
-                                  )}
-                                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                                    Sends {formatEth(quote?.topUpEth ?? "0")} ETH to the managed wallet for gas.
-                                  </p>
-                                </div>
-                              )}
-                            </div>
-                            {withdrawErrors[summary.transferId] && (
-                              <p className="text-[11px] text-red-500 dark:text-red-400">
-                                {withdrawErrors[summary.transferId]}
-                              </p>
-                            )}
-                            {topUpErrors[summary.transferId] && (
-                              <p className="text-[11px] text-red-500 dark:text-red-400">
-                                {topUpErrors[summary.transferId]}
-                              </p>
-                            )}
-                            {topUpSuccess[summary.transferId] && (
-                              <p className="text-[11px] text-emerald-600 dark:text-emerald-400">
-                                Gas top-up sent ·{" "}
-                                <a
-                                  href={`https://basescan.org/tx/${topUpSuccess[summary.transferId]}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="underline"
-                                >
-                                  View on Basescan
-                                </a>
-                              </p>
-                            )}
-                            {withdrawSuccess[summary.transferId] && (
-                              <p className="text-[11px] text-emerald-600 dark:text-emerald-400">
-                                Withdrawal submitted ·{" "}
-                                <a
-                                  href={`https://basescan.org/tx/${withdrawSuccess[summary.transferId]}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="underline"
-                                >
-                                  View on Basescan
-                                </a>
-                              </p>
-                            )}
-                          </form>
-                        ) : summary.status === "WITHDRAWN" ? (
-                          <div className="mt-3 text-[11px] text-emerald-600 dark:text-emerald-400">
-                            Withdrawn to {summary.withdrawalTargetAddress ?? "recipient wallet"}
-                            {summary.withdrawalTxHash && (
-                              <>
-                                {" "}·{" "}
-                                <a
-                                  href={`https://basescan.org/tx/${summary.withdrawalTxHash}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="underline"
-                                >
-                                  View on Basescan
-                                </a>
-                              </>
-                            )}
-                            {summary.withdrawnAt && (
-                              <span className="text-slate-400 dark:text-slate-500">
-                                {" "}({new Date(summary.withdrawnAt).toLocaleString()})
-                              </span>
-                            )}
-                          </div>
-                        ) : (
-                          <p className="mt-3 text-[11px] text-slate-500 dark:text-slate-400">
-                            Transfer is still processing. We’ll surface the claim action once the deposit is
-                            confirmed on-chain.
+                        <div className="mt-3 space-y-2">
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                            Claim this transfer to move funds from the company vault into your managed wallet.
                           </p>
-                        )}
+                          {claimErrors[summary.transferId] && (
+                            <p className="text-[11px] text-red-500 dark:text-red-400">
+                              {claimErrors[summary.transferId]}
+                            </p>
+                          )}
+                          {claimSuccess[summary.transferId] && (
+                            <p className="text-[11px] text-emerald-600 dark:text-emerald-400">
+                              Claimed on-chain ·{" "}
+                              <a
+                                href={`https://basescan.org/tx/${claimSuccess[summary.transferId]}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="underline"
+                              >
+                                View transaction
+                              </a>
+                            </p>
+                          )}
+                          <Button
+                            type="button"
+                            size="sm"
+                            disabled={Boolean(claimLoading[summary.transferId])}
+                            onClick={() => void handleClaim(summary)}
+                          >
+                            {claimLoading[summary.transferId] ? "Claiming…" : "Claim funds"}
+                          </Button>
+                        </div>
                       </li>
                     );
                   })}
                 </ul>
               )}
+            </div>
+          </article>
+        )}
 
-              {transferError && transferSummaries.length > 0 && (
-                <p className="text-xs text-red-500 dark:text-red-400">{transferError}</p>
+        {/* Step 3: Withdraw */}
+        {currentStep === 3 && (
+          <article className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Withdraw to External Wallet</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
+              Transfer your claimed funds from your Turnkey managed wallet to any external Base wallet address.
+            </p>
+            <div className="mt-3 space-y-3">
+              {isTransfersLoading ? (
+                <p className="text-xs text-slate-500 dark:text-slate-400">Loading transfers…</p>
+              ) : transferSummaries.filter(s => s.status === "CLAIMED").length === 0 ? (
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {transferSummaries.length === 0
+                    ? (transferError ?? "No deposits found for the connected bank account yet.")
+                    : "No claimed transfers available to withdraw. Go back to the Claim Funds step to claim your deposits first."}
+                </p>
+              ) : (
+                <ul className="space-y-3 text-xs text-slate-600 dark:text-slate-300">
+                  {transferSummaries.filter(s => s.status === "CLAIMED").map((summary) => {
+                    const destinationValue = (withdrawInputs[summary.transferId] ?? "").trim();
+                    const hasValidDestination = HEX_ADDRESS_REGEX.test(destinationValue);
+                    const quote = withdrawQuotes[summary.transferId];
+                    const quoteMatchesDestination = quote
+                      ? quote.destination.toLowerCase() === destinationValue.toLowerCase()
+                      : false;
+                    const requiresTopUp = quote && quoteMatchesDestination
+                      ? BigInt(quote.topUpWei) > BigInt(0)
+                      : false;
+                    const isQuotePending = Boolean(quoteLoading[summary.transferId]);
+                    const withdrawDisabled = (() => {
+                      if (withdrawLoading[summary.transferId]) {
+                        return true;
+                      }
+
+                      if (!hasValidDestination) {
+                        return true;
+                      }
+
+                      if (!quoteMatchesDestination || requiresTopUp) {
+                        return true;
+                      }
+
+                      return false;
+                    })();
+
+                    return (
+                      <li
+                        key={summary.transferId}
+                        className="rounded-lg border border-slate-200/70 p-3 dark:border-slate-700/50"
+                      >
+                        <p className="font-medium text-slate-700 dark:text-slate-100">
+                          {summary.amount} USDC · {summary.status.toLowerCase()}
+                        </p>
+                        <p className="mt-1 text-[11px] uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                          Transfer {summary.transferId}
+                        </p>
+                        <dl className="mt-2 space-y-1 text-[11px]">
+                          <div className="flex items-start gap-2">
+                            <span className="text-slate-400 dark:text-slate-500 uppercase">Vault</span>
+                            <span className="truncate">
+                              {summary.depositAddress ?? "—"}
+                            </span>
+                          </div>
+                          <div className="flex items-start gap-2">
+                            <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 text-sky-500" />
+                            <span className="truncate">
+                              {summary.walletAddress ?? "Wallet provisioning in progress"}
+                            </span>
+                          </div>
+                          {summary.recipientWalletName && (
+                            <div className="flex items-start gap-2">
+                              <span className="text-slate-400 dark:text-slate-500">Label</span>
+                              <span className="truncate">{summary.recipientWalletName}</span>
+                            </div>
+                          )}
+                          <div className="flex items-start gap-2">
+                            <span className="text-slate-400 dark:text-slate-500">Wallet ID</span>
+                            <span className="truncate">{summary.walletId}</span>
+                          </div>
+                          <div className="flex items-start gap-2">
+                            <span className="text-slate-400 dark:text-slate-500">Recorded</span>
+                            <span>
+                              {new Date(summary.createdAt).toLocaleString(undefined, {
+                                dateStyle: "medium",
+                                timeStyle: "short",
+                              })}
+                            </span>
+                          </div>
+                          <div className="flex items-start gap-2">
+                            <span className="text-slate-400 dark:text-slate-500">Deposit</span>
+                            <span className="capitalize">{summary.depositMethod}</span>
+                          </div>
+                          {summary.fundingStatus && (
+                            <div className="flex items-start gap-2">
+                              <span className="text-slate-400 dark:text-slate-500">Funding</span>
+                              <span className="capitalize">{summary.fundingStatus.toLowerCase()}</span>
+                            </div>
+                          )}
+                        </dl>
+                        <form
+                          className="mt-3 space-y-2"
+                          onSubmit={(event) => {
+                            event.preventDefault();
+                            void handleWithdraw(summary);
+                          }}
+                        >
+                          <div className="space-y-1.5">
+                            {summary.claimTxHash && (
+                              <p className="text-[11px] text-emerald-600 dark:text-emerald-400">
+                                Claimed ·{" "}
+                                <a
+                                  href={`https://basescan.org/tx/${summary.claimTxHash}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="underline"
+                                >
+                                  View claim tx
+                                </a>
+                              </p>
+                            )}
+                            <p className="text-[11px] uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                              Transfer to Base wallet
+                            </p>
+                            <Input
+                              value={withdrawInputs[summary.transferId] ?? ""}
+                              onChange={(event) =>
+                                handleWithdrawInputChange(summary.transferId, event.target.value)
+                              }
+                              placeholder="0x destination address"
+                              className="h-9 text-xs"
+                            />
+                            {isQuotePending && (
+                              <p className="text-[11px] text-slate-400 dark:text-slate-500">
+                                Estimating Base gas requirements…
+                              </p>
+                            )}
+                            {quoteErrors[summary.transferId] && (
+                              <p className="text-[11px] text-red-500 dark:text-red-400">
+                                {quoteErrors[summary.transferId]}
+                              </p>
+                            )}
+                            {quote && quoteMatchesDestination && (
+                              <div className="rounded-md border border-slate-200/60 bg-slate-50/70 p-2 text-[11px] dark:border-slate-700/60 dark:bg-slate-800/40">
+                                <p className="font-medium text-slate-600 dark:text-slate-200">
+                                  Gas estimate · {formatEth(quote.totalFeeEth)} ETH
+                                </p>
+                                <p className="text-slate-500 dark:text-slate-400">
+                                  Wallet balance: {formatEth(quote.walletBalanceEth)} ETH
+                                </p>
+                                {requiresTopUp ? (
+                                  <p className="text-red-500 dark:text-red-400">
+                                    Needs {formatEth(quote.topUpEth)} ETH top-up.
+                                  </p>
+                                ) : (
+                                  <p className="text-emerald-600 dark:text-emerald-400">
+                                    Gas funded. Ready to withdraw.
+                                  </p>
+                                )}
+                              </div>
+                            )}
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Button type="submit" size="sm" disabled={withdrawDisabled}>
+                                {withdrawLoading[summary.transferId] ? "Transferring…" : "Send to Base"}
+                              </Button>
+                              <span className="text-[11px] text-slate-400 dark:text-slate-500">
+                                Network: Base (8453) · Asset: USDC
+                              </span>
+                            </div>
+                            {quote && quoteMatchesDestination && requiresTopUp && (
+                              <div className="space-y-1">
+                                {connectedEvmWallet ? (
+                                  <div className="flex gap-2">
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="outline"
+                                      disabled={Boolean(topUpLoading[summary.transferId])}
+                                      onClick={() => void handleTopUp(summary)}
+                                    >
+                                      {topUpLoading[summary.transferId] ? "Sending top-up…" : "Top up gas from connected wallet"}
+                                    </Button>
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="destructive"
+                                      disabled={!privyReady}
+                                      onClick={() => void handleDisconnectWallet()}
+                                    >
+                                      Disconnect
+                                    </Button>
+                                  </div>
+                                ) : (
+                                  <div className="space-y-1">
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="outline"
+                                      disabled={isWalletConnecting}
+                                      onClick={() => void handleConnectWallet()}
+                                    >
+                                      {isWalletConnecting ? "Connecting…" : "Connect wallet to top up"}
+                                    </Button>
+                                    {walletConnectError && (
+                                      <p className="text-[11px] text-red-500 dark:text-red-400">
+                                        {walletConnectError}
+                                      </p>
+                                    )}
+                                  </div>
+                                )}
+                                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                                  Sends {formatEth(quote?.topUpEth ?? "0")} ETH to the managed wallet for gas.
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                          {withdrawErrors[summary.transferId] && (
+                            <p className="text-[11px] text-red-500 dark:text-red-400">
+                              {withdrawErrors[summary.transferId]}
+                            </p>
+                          )}
+                          {topUpErrors[summary.transferId] && (
+                            <p className="text-[11px] text-red-500 dark:text-red-400">
+                              {topUpErrors[summary.transferId]}
+                            </p>
+                          )}
+                          {topUpSuccess[summary.transferId] && (
+                            <p className="text-[11px] text-emerald-600 dark:text-emerald-400">
+                              Gas top-up sent ·{" "}
+                              <a
+                                href={`https://basescan.org/tx/${topUpSuccess[summary.transferId]}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="underline"
+                              >
+                                View on Basescan
+                              </a>
+                            </p>
+                          )}
+                          {withdrawSuccess[summary.transferId] && (
+                            <p className="text-[11px] text-emerald-600 dark:text-emerald-400">
+                              Withdrawal submitted ·{" "}
+                              <a
+                                href={`https://basescan.org/tx/${withdrawSuccess[summary.transferId]}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="underline"
+                              >
+                                View on Basescan
+                              </a>
+                            </p>
+                          )}
+                        </form>
+                      </li>
+                    );
+                  })}
+                </ul>
               )}
             </div>
           </article>
+        )}
+
+        {/* Past Transfers Section - shown on any step after claiming */}
+        {currentStep >= 2 && transferSummaries.filter(s => s.status === "WITHDRAWN").length > 0 && (
+          <article className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
+            <h4 className="text-lg font-semibold text-slate-900 dark:text-white">Past Transfers</h4>
+            <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
+              Completed withdrawals to external wallets.
+            </p>
+            <div className="mt-3">
+              <ul className="space-y-3 text-xs text-slate-600 dark:text-slate-300">
+                {transferSummaries.filter(s => s.status === "WITHDRAWN").map((summary) => (
+                  <li
+                    key={summary.transferId}
+                    className="rounded-lg border border-slate-200/70 p-3 dark:border-slate-700/50"
+                  >
+                    <p className="font-medium text-slate-700 dark:text-slate-100">
+                      {summary.amount} USDC · {summary.status.toLowerCase()}
+                    </p>
+                    <p className="mt-1 text-[11px] uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                      Transfer {summary.transferId}
+                    </p>
+                    <dl className="mt-2 space-y-1 text-[11px]">
+                      <div className="flex items-start gap-2">
+                        <span className="text-slate-400 dark:text-slate-500 uppercase">Vault</span>
+                        <span className="truncate">
+                          {summary.depositAddress ?? "—"}
+                        </span>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 text-sky-500" />
+                        <span className="truncate">
+                          {summary.walletAddress ?? "Wallet provisioning in progress"}
+                        </span>
+                      </div>
+                      {summary.recipientWalletName && (
+                        <div className="flex items-start gap-2">
+                          <span className="text-slate-400 dark:text-slate-500">Label</span>
+                          <span className="truncate">{summary.recipientWalletName}</span>
+                        </div>
+                      )}
+                      <div className="flex items-start gap-2">
+                        <span className="text-slate-400 dark:text-slate-500">Wallet ID</span>
+                        <span className="truncate">{summary.walletId}</span>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <span className="text-slate-400 dark:text-slate-500">Recorded</span>
+                        <span>
+                          {new Date(summary.createdAt).toLocaleString(undefined, {
+                            dateStyle: "medium",
+                            timeStyle: "short",
+                          })}
+                        </span>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <span className="text-slate-400 dark:text-slate-500">Deposit</span>
+                        <span className="capitalize">{summary.depositMethod}</span>
+                      </div>
+                      {summary.fundingStatus && (
+                        <div className="flex items-start gap-2">
+                          <span className="text-slate-400 dark:text-slate-500">Funding</span>
+                          <span className="capitalize">{summary.fundingStatus.toLowerCase()}</span>
+                        </div>
+                      )}
+                    </dl>
+                    <div className="mt-3 text-[11px] text-emerald-600 dark:text-emerald-400">
+                      Withdrawn to {summary.withdrawalTargetAddress ?? "recipient wallet"}
+                      {summary.withdrawalTxHash && (
+                        <>
+                          {" "}·{" "}
+                          <a
+                            href={`https://basescan.org/tx/${summary.withdrawalTxHash}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="underline"
+                          >
+                            View on Basescan
+                          </a>
+                        </>
+                      )}
+                      {summary.withdrawnAt && (
+                        <span className="text-slate-400 dark:text-slate-500">
+                          {" "}({new Date(summary.withdrawnAt).toLocaleString()})
+                        </span>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </article>
+        )}
+
+        {/* Navigation Buttons */}
+        <div className="flex items-center justify-between pt-4">
+          <Button
+            variant="outline"
+            onClick={() => setCurrentStep((prev) => Math.max(0, prev - 1))}
+            disabled={currentStep === 0}
+          >
+            Back
+          </Button>
+          <div className="text-sm text-slate-500 dark:text-slate-400">
+            Step {currentStep + 1} of {steps.length}
+          </div>
+          <Button
+            onClick={() => setCurrentStep((prev) => Math.min(steps.length - 1, prev + 1))}
+            disabled={currentStep === steps.length - 1}
+          >
+            Next
+          </Button>
         </div>
       </section>
     </>

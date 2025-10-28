@@ -3,6 +3,7 @@
 import Link from "next/link";
 
 import { ThemeToggle } from "@/components/theme-toggle";
+import { WalletButton } from "@/components/wallet-button";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -18,16 +19,17 @@ export function Navbar({ className }: { className?: string }) {
         </Link>
         <div className="flex items-center justify-center gap-3">
           <Button variant="secondary" size="sm" asChild>
-            <Link href="/">Send</Link>
+            <Link href="/">Sender</Link>
           </Button>
           <Button variant="secondary" size="sm" asChild>
-            <Link href="/recipient">Recipient portal</Link>
+            <Link href="/recipient">Receiver</Link>
           </Button>
         </div>
         <div className="flex items-center justify-end gap-3">
           <Button variant="ghost" size="sm" asChild>
             <Link href="/contact">Contact</Link>
           </Button>
+          <WalletButton />
           <ThemeToggle />
         </div>
       </nav>
