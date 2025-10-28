@@ -378,9 +378,12 @@ function TurnkeyAuthContent() {
         const user = data.user as Record<string, unknown>;
 
         console.log("[Plaid Hydration] User data:", {
-          hasPlaidVerificationCompleted: !!user?.plaidVerificationCompleted,
+          plaidVerificationCompleted: user?.plaidVerificationCompleted,
+          plaidAchAccountsIsArray: Array.isArray(user?.plaidAchAccounts),
           plaidAchAccountsCount: Array.isArray(user?.plaidAchAccounts) ? user.plaidAchAccounts.length : 0,
           plaidVerifiedName: user?.plaidVerifiedName,
+          plaidVerifiedEmail: user?.plaidVerifiedEmail,
+          allKeys: Object.keys(user || {}),
         });
 
         const verificationCompleted = Boolean(user?.plaidVerificationCompleted);
@@ -388,8 +391,13 @@ function TurnkeyAuthContent() {
           ? (user.plaidAchAccounts as PlaidAchAccount[])
           : [];
 
+        console.log("[Plaid Hydration] Verification check:", {
+          verificationCompleted,
+          storedAccountsCount: storedAccountsRaw.length,
+        });
+
         if (!verificationCompleted || storedAccountsRaw.length === 0) {
-          console.log("[Plaid Hydration] No saved Plaid data found");
+          console.log("[Plaid Hydration] No saved Plaid data found - missing requirements");
           return;
         }
 
@@ -1102,13 +1110,34 @@ function TurnkeyAuthContent() {
         {/* Step 0: Identity Verified */}
         {currentStep === 0 && (
           <article className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
-            <div className="flex items-center gap-3">
-              <CheckCircle2 className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
-              <div>
-                <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Identity Verified</h3>
-                <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-                  You're signed in with Turnkey.
-                </p>
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <CheckCircle2 className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Identity Verified</h3>
+                  <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+                    You're signed in with Turnkey.
+                  </p>
+                </div>
+              </div>
+
+              {/* User Information */}
+              <div className="rounded-lg border border-slate-200/70 bg-white/50 p-3 space-y-2 dark:border-slate-700/50 dark:bg-slate-800/50">
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">User ID</p>
+                  <p className="text-sm font-mono text-slate-900 dark:text-white break-all">
+                    {session.userId}
+                  </p>
+                </div>
+                {plaidIdentity && (
+                  <div>
+                    <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Bank Account Status</p>
+                    <p className="text-sm text-emerald-600 dark:text-emerald-400 flex items-center gap-2">
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      Verified and saved
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           </article>
@@ -1123,73 +1152,126 @@ function TurnkeyAuthContent() {
               from your bank for compliance verification.
             </p>
             {plaidIdentity ? (
-              <div className="mt-3 space-y-3 text-xs">
-                <div className="flex items-center gap-2 font-medium text-emerald-600 dark:text-emerald-400">
-                  <CheckCircle2 className="h-3.5 w-3.5" /> Bank verified
-                </div>
-                <div className="rounded-lg border border-slate-200/70 bg-white/50 p-3 dark:border-slate-700/50 dark:bg-slate-800/50">
-                  <p className="font-medium text-slate-900 dark:text-white">
-                    {plaidIdentity.names[0] ?? "Linked account"}
-                  </p>
-                  {plaidIdentity.emails[0] && (
-                    <p className="mt-1 text-slate-600 dark:text-slate-400">
-                      {plaidIdentity.emails[0]}
-                    </p>
-                  )}
-                  {plaidIdentity.phones[0] && (
-                    <p className="mt-1 text-slate-600 dark:text-slate-400">
-                      {plaidIdentity.phones[0]}
-                    </p>
-                  )}
-                  {plaidIdentity.addresses[0] && (
-                    <p className="mt-1 text-slate-600 dark:text-slate-400">
-                      {plaidIdentity.addresses[0].street}, {plaidIdentity.addresses[0].city},{" "}
-                      {plaidIdentity.addresses[0].region} {plaidIdentity.addresses[0].postal_code}
-                    </p>
-                  )}
-                  {selectedAccount && (
-                    <div className="mt-3 grid grid-cols-1 gap-1 text-xs text-slate-500 dark:text-slate-400">
-                      <div className="flex items-center justify-between">
-                        <span className="uppercase tracking-wide">Routing</span>
-                        <span>{selectedAccount.routingNumber}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="uppercase tracking-wide">Account</span>
-                        <span>{selectedAccount.accountNumber}</span>
-                      </div>
-                    </div>
-                  )}
+              <div className="mt-3 space-y-4 text-sm">
+                <div className="flex items-center gap-2 font-semibold text-emerald-600 dark:text-emerald-400">
+                  <CheckCircle2 className="h-4 w-4" /> Bank Account Verified
                 </div>
 
-                {linkedAccounts.length > 0 && (
+                {/* Personal Information */}
+                <div className="rounded-lg border border-slate-200/70 bg-white/50 p-4 space-y-3 dark:border-slate-700/50 dark:bg-slate-800/50">
+                  <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                    Personal Information
+                  </h4>
+
                   <div className="space-y-2">
-                    <p className="text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500">
-                      Linked accounts
-                    </p>
+                    <div>
+                      <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Full Name</p>
+                      <p className="text-sm font-medium text-slate-900 dark:text-white">
+                        {plaidIdentity.names[0] ?? "Not provided"}
+                      </p>
+                    </div>
+
+                    {plaidIdentity.emails[0] && (
+                      <div>
+                        <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Email Address</p>
+                        <p className="text-sm text-slate-900 dark:text-white">
+                          {plaidIdentity.emails[0]}
+                        </p>
+                      </div>
+                    )}
+
+                    {plaidIdentity.phones[0] && (
+                      <div>
+                        <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Phone Number</p>
+                        <p className="text-sm text-slate-900 dark:text-white">
+                          {plaidIdentity.phones[0]}
+                        </p>
+                      </div>
+                    )}
+
+                    {plaidIdentity.addresses[0] && (
+                      <div>
+                        <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Address</p>
+                        <p className="text-sm text-slate-900 dark:text-white">
+                          {plaidIdentity.addresses[0].street}
+                        </p>
+                        <p className="text-sm text-slate-900 dark:text-white">
+                          {plaidIdentity.addresses[0].city}, {plaidIdentity.addresses[0].region} {plaidIdentity.addresses[0].postal_code}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Bank Account Details */}
+                {selectedAccount && (
+                  <div className="rounded-lg border border-slate-200/70 bg-white/50 p-4 space-y-3 dark:border-slate-700/50 dark:bg-slate-800/50">
+                    <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                      Bank Account Details
+                    </h4>
+
                     <div className="space-y-2">
-                      {linkedAccounts.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => setSelectedAccountKey(ALL_ACCOUNTS_KEY)}
-                          className={`w-full rounded-lg border px-3 py-2 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 ${
-                            selectedAccountKey === ALL_ACCOUNTS_KEY
-                              ? "border-sky-500 bg-sky-500/10 text-slate-900 dark:border-sky-500 dark:bg-sky-500/10 dark:text-slate-100"
-                              : "border-slate-200/70 bg-white/60 hover:border-slate-300 dark:border-slate-700/60 dark:bg-slate-800/40 dark:hover:border-slate-600"
-                          }`}
-                        >
-                          <p className="text-xs font-medium">
-                            All linked accounts
+                      {selectedAccount.name && (
+                        <div>
+                          <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Account Name</p>
+                          <p className="text-sm font-medium text-slate-900 dark:text-white">
+                            {selectedAccount.name}
                           </p>
-                          <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                            View combined deposits
-                          </p>
-                        </button>
+                        </div>
                       )}
+
+                      <div>
+                        <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Routing Number</p>
+                        <p className="text-sm font-mono text-slate-900 dark:text-white">
+                          {selectedAccount.routingNumber}
+                        </p>
+                      </div>
+
+                      <div>
+                        <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Account Number</p>
+                        <p className="text-sm font-mono text-slate-900 dark:text-white">
+                          {selectedAccount.accountNumber}
+                        </p>
+                      </div>
+
+                      {selectedAccount.mask && (
+                        <div>
+                          <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Last 4 Digits</p>
+                          <p className="text-sm font-mono text-slate-900 dark:text-white">
+                            ••••{selectedAccount.mask}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Multiple Account Selector */}
+                {linkedAccounts.length > 1 && (
+                  <div className="space-y-2">
+                    <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                      Select Account to View
+                    </h4>
+                    <div className="space-y-2">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedAccountKey(ALL_ACCOUNTS_KEY)}
+                        className={`w-full rounded-lg border px-3 py-2 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 ${
+                          selectedAccountKey === ALL_ACCOUNTS_KEY
+                            ? "border-sky-500 bg-sky-500/10 text-slate-900 dark:border-sky-500 dark:bg-sky-500/10 dark:text-slate-100"
+                            : "border-slate-200/70 bg-white/60 hover:border-slate-300 dark:border-slate-700/60 dark:bg-slate-800/40 dark:hover:border-slate-600"
+                        }`}
+                      >
+                        <p className="text-xs font-medium">
+                          All Linked Accounts
+                        </p>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                          View combined deposits
+                        </p>
+                      </button>
                       {linkedAccounts.map((account) => {
                         const key = getAccountKey(account);
-                        const isSelected =
-                          selectedAccountKey === key ||
-                          (selectedAccountKey === ALL_ACCOUNTS_KEY && linkedAccounts.length === 1);
+                        const isSelected = selectedAccountKey === key;
                         const mask = account.mask ?? account.accountNumber.slice(-4);
 
                         return (
@@ -1216,10 +1298,10 @@ function TurnkeyAuthContent() {
                   </div>
                 )}
 
-                <div>
+                <div className="pt-2">
                   <PlaidConnectButton
                     userId={session.userId}
-                    label={linkedAccounts.length > 0 ? "Link another bank account" : "Connect bank account"}
+                    label={linkedAccounts.length > 0 ? "Link Another Bank Account" : "Connect Bank Account"}
                     onSuccess={handlePlaidSuccess}
                     onError={handlePlaidError}
                   />
@@ -1245,7 +1327,7 @@ function TurnkeyAuthContent() {
               Each bank transfer lands in its own managed wallet. Confirm the allocations below and use the
               wallet addresses for on-chain visibility.
             </p>
-            <div className="mt-3 space-y-3">
+            <div className="mt-3 space-y-6">
               {isTransfersLoading ? (
                 <p className="text-xs text-slate-500 dark:text-slate-400">Loading deposits…</p>
               ) : transferSummaries.length === 0 ? (
@@ -1253,8 +1335,13 @@ function TurnkeyAuthContent() {
                   {transferError ?? "No deposits found for the connected bank account yet."}
                 </p>
               ) : (
-                <ul className="space-y-3 text-xs text-slate-600 dark:text-slate-300">
-                  {transferSummaries.map((summary) => {
+                <>
+                  {/* Active Transfers */}
+                  {transferSummaries.filter(s => s.status === "DEPOSITED" || s.status === "CLAIMED").length > 0 && (
+                    <div className="space-y-3">
+                      <h4 className="text-sm font-semibold text-slate-900 dark:text-white">Active Transfers</h4>
+                      <ul className="space-y-3 text-xs text-slate-600 dark:text-slate-300">
+                        {transferSummaries.filter(s => s.status === "DEPOSITED" || s.status === "CLAIMED").map((summary) => {
                     const destinationValue = (withdrawInputs[summary.transferId] ?? "").trim();
                     const hasValidDestination = HEX_ADDRESS_REGEX.test(destinationValue);
                     const quote = withdrawQuotes[summary.transferId];
@@ -1521,28 +1608,6 @@ function TurnkeyAuthContent() {
                               </p>
                             )}
                           </form>
-                        ) : summary.status === "WITHDRAWN" ? (
-                          <div className="mt-3 text-[11px] text-emerald-600 dark:text-emerald-400">
-                            Withdrawn to {summary.withdrawalTargetAddress ?? "recipient wallet"}
-                            {summary.withdrawalTxHash && (
-                              <>
-                                {" "}·{" "}
-                                <a
-                                  href={`https://basescan.org/tx/${summary.withdrawalTxHash}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="underline"
-                                >
-                                  View on Basescan
-                                </a>
-                              </>
-                            )}
-                            {summary.withdrawnAt && (
-                              <span className="text-slate-400 dark:text-slate-500">
-                                {" "}({new Date(summary.withdrawnAt).toLocaleString()})
-                              </span>
-                            )}
-                          </div>
                         ) : (
                           <p className="mt-3 text-[11px] text-slate-500 dark:text-slate-400">
                             Transfer is still processing. We’ll surface the claim action once the deposit is
@@ -1552,7 +1617,96 @@ function TurnkeyAuthContent() {
                       </li>
                     );
                   })}
-                </ul>
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Past Transfers */}
+                  {transferSummaries.filter(s => s.status === "WITHDRAWN").length > 0 && (
+                    <div className="space-y-3">
+                      <h4 className="text-sm font-semibold text-slate-900 dark:text-white">Past Transfers</h4>
+                      <ul className="space-y-3 text-xs text-slate-600 dark:text-slate-300">
+                        {transferSummaries.filter(s => s.status === "WITHDRAWN").map((summary) => (
+                          <li
+                            key={summary.transferId}
+                            className="rounded-lg border border-slate-200/70 p-3 dark:border-slate-700/50"
+                          >
+                            <p className="font-medium text-slate-700 dark:text-slate-100">
+                              {summary.amount} USDC · {summary.status.toLowerCase()}
+                            </p>
+                            <p className="mt-1 text-[11px] uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                              Transfer {summary.transferId}
+                            </p>
+                            <dl className="mt-2 space-y-1 text-[11px]">
+                              <div className="flex items-start gap-2">
+                                <span className="text-slate-400 dark:text-slate-500 uppercase">Vault</span>
+                                <span className="truncate">
+                                  {summary.depositAddress ?? "—"}
+                                </span>
+                              </div>
+                              <div className="flex items-start gap-2">
+                                <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 text-sky-500" />
+                                <span className="truncate">
+                                  {summary.walletAddress ?? "Wallet provisioning in progress"}
+                                </span>
+                              </div>
+                              {summary.recipientWalletName && (
+                                <div className="flex items-start gap-2">
+                                  <span className="text-slate-400 dark:text-slate-500">Label</span>
+                                  <span className="truncate">{summary.recipientWalletName}</span>
+                                </div>
+                              )}
+                              <div className="flex items-start gap-2">
+                                <span className="text-slate-400 dark:text-slate-500">Wallet ID</span>
+                                <span className="truncate">{summary.walletId}</span>
+                              </div>
+                              <div className="flex items-start gap-2">
+                                <span className="text-slate-400 dark:text-slate-500">Recorded</span>
+                                <span>
+                                  {new Date(summary.createdAt).toLocaleString(undefined, {
+                                    dateStyle: "medium",
+                                    timeStyle: "short",
+                                  })}
+                                </span>
+                              </div>
+                              <div className="flex items-start gap-2">
+                                <span className="text-slate-400 dark:text-slate-500">Deposit</span>
+                                <span className="capitalize">{summary.depositMethod}</span>
+                              </div>
+                              {summary.fundingStatus && (
+                                <div className="flex items-start gap-2">
+                                  <span className="text-slate-400 dark:text-slate-500">Funding</span>
+                                  <span className="capitalize">{summary.fundingStatus.toLowerCase()}</span>
+                                </div>
+                              )}
+                            </dl>
+                            <div className="mt-3 text-[11px] text-emerald-600 dark:text-emerald-400">
+                              Withdrawn to {summary.withdrawalTargetAddress ?? "recipient wallet"}
+                              {summary.withdrawalTxHash && (
+                                <>
+                                  {" "}·{" "}
+                                  <a
+                                    href={`https://basescan.org/tx/${summary.withdrawalTxHash}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="underline"
+                                  >
+                                    View on Basescan
+                                  </a>
+                                </>
+                              )}
+                              {summary.withdrawnAt && (
+                                <span className="text-slate-400 dark:text-slate-500">
+                                  {" "}({new Date(summary.withdrawnAt).toLocaleString()})
+                                </span>
+                              )}
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </>
               )}
 
               {transferError && transferSummaries.length > 0 && (
