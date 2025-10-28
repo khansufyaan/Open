@@ -18,7 +18,7 @@ export function WalletButton() {
   const { wallets } = useWallets();
   const [copied, setCopied] = useState(false);
 
-  const evmWallet = wallets.find((wallet) => wallet.walletClientType === "privy" || wallet.type === "ethereum");
+  const evmWallet = wallets.find((wallet) => wallet.type === "ethereum");
   const address = evmWallet?.address;
 
   const handleCopy = async () => {
