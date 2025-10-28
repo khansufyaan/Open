@@ -370,6 +370,11 @@ function TurnkeyAuthContent() {
         console.log("[Plaid Hydration] Response status:", response.status);
 
         if (!response.ok) {
+          if (response.status === 404) {
+            console.log("[Plaid Hydration] User not found (404) - will retry on next attempt");
+            // Don't set plaidHydrated to true, so we can retry later
+            return;
+          }
           console.log("[Plaid Hydration] Response not OK");
           return;
         }
@@ -525,6 +530,12 @@ function TurnkeyAuthContent() {
         console.log("[Auth] Initial user record response status:", response.status);
         const data = await response.json();
         console.log("[Auth] Initial user record response:", data.success ? "Success" : "Failed", data);
+
+        if (data.success) {
+          // Reset plaidHydrated to trigger hydration after user record is created
+          console.log("[Auth] Resetting plaidHydrated to allow hydration retry");
+          setPlaidHydrated(false);
+        }
       } catch (dbError) {
         console.error("[Auth] Failed to store initial user data:", dbError);
       }
@@ -614,6 +625,10 @@ function TurnkeyAuthContent() {
         console.log("[Plaid Save] Database save response status:", response.status);
         const data = await response.json();
         console.log("[Plaid Save] Database save response:", data.success ? "Success" : "Failed");
+
+        if (data.success) {
+          console.log("[Plaid Save] Plaid data saved successfully - will be loaded on next login");
+        }
       } catch (dbError) {
         console.error("[Plaid Save] Failed to store Plaid data:", dbError);
       }
