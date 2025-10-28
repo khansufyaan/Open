@@ -17,18 +17,13 @@ export function Footer({ className }: { className?: string }) {
             <h3 className="text-sm font-semibold">Product</h3>
             <ul className="space-y-2 text-sm text-muted-foreground">
               <li>
-                <Link href="/" className="hover:text-foreground transition-colors">
-                  Home
-                </Link>
-              </li>
-              <li>
                 <Link href="/send" className="hover:text-foreground transition-colors">
-                  Send
+                  Sender
                 </Link>
               </li>
               <li>
                 <Link href="/receive" className="hover:text-foreground transition-colors">
-                  Receive
+                  Receiver
                 </Link>
               </li>
             </ul>
@@ -38,12 +33,12 @@ export function Footer({ className }: { className?: string }) {
             <h3 className="text-sm font-semibold">Legal</h3>
             <ul className="space-y-2 text-sm text-muted-foreground">
               <li>
-                <Link href="#" className="hover:text-foreground transition-colors">
+                <Link href="/privacy" className="hover:text-foreground transition-colors">
                   Privacy Policy
                 </Link>
               </li>
               <li>
-                <Link href="#" className="hover:text-foreground transition-colors">
+                <Link href="/terms" className="hover:text-foreground transition-colors">
                   Terms of Service
                 </Link>
               </li>
@@ -54,7 +49,7 @@ export function Footer({ className }: { className?: string }) {
             <h3 className="text-sm font-semibold">Support</h3>
             <ul className="space-y-2 text-sm text-muted-foreground">
               <li>
-                <Link href="#" className="hover:text-foreground transition-colors">
+                <Link href="/contact" className="hover:text-foreground transition-colors">
                   Contact Us
                 </Link>
               </li>

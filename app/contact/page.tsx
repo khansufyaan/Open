@@ -1,130 +1,143 @@
 import Link from "next/link";
-
-import { Instagram, Mail, MessageCircle, Phone, Send } from "lucide-react";
-
 import { Button } from "@/components/ui/button";
-
-export const metadata = {
-  title: "Contact | Blue Wallet",
-  description: "Reach out to the Blue Wallet team.",
-};
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 export default function ContactPage() {
   return (
-    <div className="relative isolate min-h-screen overflow-hidden bg-gradient-to-b from-sky-50 via-white to-white text-slate-900 dark:from-slate-950 dark:via-slate-950 dark:to-slate-900">
-      <div className="absolute inset-x-0 top-[-15rem] -z-10 transform-gpu blur-3xl" aria-hidden>
-        <div className="mx-auto h-[28rem] w-[40rem] rounded-full bg-sky-200/40 dark:bg-sky-500/10" />
-      </div>
-      <div className="mx-auto flex min-h-screen max-w-3xl flex-col px-6 pb-24 pt-16 sm:px-10 lg:px-12">
-        <Link
-          href="/"
-          className="text-sm font-semibold uppercase tracking-[0.4em] text-sky-500 transition hover:text-sky-600 dark:text-sky-400"
-        >
-          Blue Wallet
-        </Link>
-        <main className="mt-10 flex flex-1 flex-col justify-center gap-16">
-          <section className="space-y-6">
-            <h1 className="text-4xl font-semibold leading-tight text-slate-900 dark:text-white sm:text-5xl">
-              Let’s talk wallets and identity.
-            </h1>
-            <p className="text-lg leading-8 text-slate-600 dark:text-slate-300">
-              Drop us a line with your use case, timeline, or compliance checklist. We’ll answer
-              within two business days with the context you need.
-            </p>
-          </section>
+    <main className="flex-1 px-6 py-12">
+      <div className="mx-auto max-w-2xl space-y-8">
+        <div className="space-y-4">
+          <Link href="/">
+            <Button variant="ghost" size="sm">
+              ← Back to Home
+            </Button>
+          </Link>
+          <h1 className="text-4xl font-bold tracking-tight">Contact Us</h1>
+          <p className="text-muted-foreground">
+            Have questions or need help? Get in touch with our team.
+          </p>
+        </div>
 
-          <section className="rounded-3xl border border-slate-200/80 bg-white/80 p-8 text-slate-600 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-200">
-            <form
-              action="mailto:hello@bluewallet.xyz"
-              method="post"
-              encType="text/plain"
-              className="space-y-6"
-            >
-              <div className="grid gap-2">
-                <label htmlFor="name" className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                  Name
-                </label>
-                <input
-                  id="name"
-                  name="name"
-                  required
-                  placeholder="Satoshi Nakamoto"
-                  className="h-11 rounded-lg border border-slate-200 bg-white px-4 text-base text-slate-900 outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-sky-500 dark:focus:ring-sky-500/40"
-                />
+        <div className="grid gap-8 md:grid-cols-2">
+          <div className="space-y-6">
+            <div className="rounded-lg border bg-card p-6 space-y-4">
+              <h2 className="text-xl font-semibold">Get in Touch</h2>
+              <div className="space-y-3">
+                <div>
+                  <h3 className="text-sm font-medium mb-1">Email</h3>
+                  <a href="mailto:support@bluewallet.com" className="text-sm text-sky-500 hover:underline">
+                    support@bluewallet.com
+                  </a>
+                </div>
+                <div>
+                  <h3 className="text-sm font-medium mb-1">Response Time</h3>
+                  <p className="text-sm text-muted-foreground">
+                    We typically respond within 24 hours
+                  </p>
+                </div>
+                <div>
+                  <h3 className="text-sm font-medium mb-1">Support Hours</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Monday - Friday: 9AM - 6PM EST
+                  </p>
+                </div>
               </div>
-              <div className="grid gap-2">
-                <label htmlFor="email" className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                  Email
-                </label>
-                <input
-                  id="email"
-                  name="email"
-                  type="email"
-                  required
-                  placeholder="you@company.com"
-                  className="h-11 rounded-lg border border-slate-200 bg-white px-4 text-base text-slate-900 outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-sky-500 dark:focus:ring-sky-500/40"
-                />
+            </div>
+
+            <div className="rounded-lg border bg-card p-6 space-y-4">
+              <h2 className="text-xl font-semibold">Other Ways to Reach Us</h2>
+              <div className="space-y-3">
+                <div>
+                  <h3 className="text-sm font-medium mb-1">Security Issues</h3>
+                  <a href="mailto:security@bluewallet.com" className="text-sm text-sky-500 hover:underline">
+                    security@bluewallet.com
+                  </a>
+                </div>
+                <div>
+                  <h3 className="text-sm font-medium mb-1">Business Inquiries</h3>
+                  <a href="mailto:partnerships@bluewallet.com" className="text-sm text-sky-500 hover:underline">
+                    partnerships@bluewallet.com
+                  </a>
+                </div>
+                <div>
+                  <h3 className="text-sm font-medium mb-1">Press</h3>
+                  <a href="mailto:press@bluewallet.com" className="text-sm text-sky-500 hover:underline">
+                    press@bluewallet.com
+                  </a>
+                </div>
               </div>
-              <div className="grid gap-2">
-                <label htmlFor="message" className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                  How can we help?
-                </label>
+            </div>
+          </div>
+
+          <div className="rounded-lg border bg-card p-6">
+            <form className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="name">Name</Label>
+                <Input id="name" placeholder="Your name" required />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="email">Email</Label>
+                <Input id="email" type="email" placeholder="your@email.com" required />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="subject">Subject</Label>
+                <Input id="subject" placeholder="How can we help?" required />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="message">Message</Label>
                 <textarea
                   id="message"
-                  name="message"
-                  rows={5}
+                  className="flex min-h-[120px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  placeholder="Tell us more about your inquiry..."
                   required
-                  placeholder="Tell us about your integration plans, compliance needs, or policy ideas."
-                  className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-base text-slate-900 outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-sky-500 dark:focus:ring-sky-500/40"
                 />
               </div>
-              <div className="flex flex-wrap items-center gap-3">
-                <Button type="submit">Open email draft</Button>
-                <Button variant="ghost" asChild>
-                  <Link href="mailto:hello@bluewallet.xyz">Email us directly</Link>
-                </Button>
-              </div>
-            </form>
-          </section>
 
-          <section className="space-y-6 rounded-3xl border border-slate-200/80 bg-white/70 p-6 text-slate-600 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-200">
-            <h2 className="text-base font-semibold text-slate-900 dark:text-white">Reach us directly</h2>
-            <ul className="space-y-4 text-sm">
-              <li className="flex items-center gap-3">
-                <Mail className="h-4 w-4 text-sky-500" aria-hidden />
-                <a href="mailto:ezulqarni2@gmail.com" className="hover:underline">
-                  ezulqarni2@gmail.com
-                </a>
-              </li>
-              <li className="flex items-center gap-3">
-                <Phone className="h-4 w-4 text-sky-500" aria-hidden />
-                <a href="tel:+16303634339" className="hover:underline">
-                  +1 (630) 363-4339
-                </a>
-              </li>
-              <li className="flex items-center gap-3">
-                <Instagram className="h-4 w-4 text-sky-500" aria-hidden />
-                <a href="https://www.instagram.com/ebrahim575" target="_blank" rel="noopener noreferrer" className="hover:underline">
-                  @ebrahim575
-                </a>
-              </li>
-              <li className="flex items-center gap-3">
-                <Send className="h-4 w-4 text-sky-500" aria-hidden />
-                <a href="https://t.me/thomasShelby0B3" target="_blank" rel="noopener noreferrer" className="hover:underline">
-                  Telegram: @thomasShelby0B3
-                </a>
-              </li>
-              <li className="flex items-center gap-3">
-                <MessageCircle className="h-4 w-4 text-sky-500" aria-hidden />
-                <span>Discord: iliyavidic</span>
-              </li>
-            </ul>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Prefer a call or live chat? Mention it in your message and we’ll coordinate a time.
-            </p>
-          </section>
-        </main>
+              <Button type="submit" className="w-full">
+                Send Message
+              </Button>
+
+              <p className="text-xs text-muted-foreground text-center">
+                By submitting this form, you agree to our Privacy Policy
+              </p>
+            </form>
+          </div>
+        </div>
+
+        <div className="rounded-lg border bg-muted/50 p-6 space-y-3">
+          <h2 className="text-lg font-semibold">Frequently Asked Questions</h2>
+          <div className="space-y-2">
+            <details className="group">
+              <summary className="cursor-pointer text-sm font-medium hover:text-sky-500">
+                How long do transfers take?
+              </summary>
+              <p className="mt-2 text-sm text-muted-foreground pl-4">
+                Most transfers complete within 1-3 business days, depending on your bank's processing time.
+              </p>
+            </details>
+            <details className="group">
+              <summary className="cursor-pointer text-sm font-medium hover:text-sky-500">
+                What are your fees?
+              </summary>
+              <p className="mt-2 text-sm text-muted-foreground pl-4">
+                We charge a 5% surcharge on transfers to cover operational costs and blockchain gas fees.
+              </p>
+            </details>
+            <details className="group">
+              <summary className="cursor-pointer text-sm font-medium hover:text-sky-500">
+                Is my data secure?
+              </summary>
+              <p className="mt-2 text-sm text-muted-foreground pl-4">
+                Yes, we use industry-leading encryption and secure infrastructure through Turnkey and AWS.
+              </p>
+            </details>
+          </div>
+        </div>
       </div>
-    </div>
+    </main>
   );
 }
