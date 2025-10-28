@@ -225,10 +225,6 @@ function TurnkeyAuthContent() {
     [connectedWallets]
   );
 
-  const handleScrollToSteps = useCallback(() => {
-    stepsRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, []);
-
   useEffect(() => {
     const initTable = async () => {
       try {
@@ -1150,7 +1146,7 @@ function TurnkeyAuthContent() {
                 <div>
                   <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Identity Verified</h3>
                   <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-                    You're signed in with Turnkey.
+                    You&apos;re signed in with Turnkey.
                   </p>
                 </div>
               </div>

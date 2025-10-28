@@ -351,25 +351,6 @@ export function SenderExperience() {
     }
   }, [privyReady, authenticated, login, connectWallet, senderAddress]);
 
-  const handleDisconnectWallet = useCallback(async () => {
-    setError(null);
-
-    if (!privyReady) {
-      setError("Wallet system is not ready. Please try again in a moment.");
-      return;
-    }
-
-    try {
-      await logout();
-    } catch (disconnectError) {
-      const message =
-        disconnectError instanceof Error
-          ? disconnectError.message
-          : "Failed to disconnect wallet.";
-      setError(message);
-    }
-  }, [privyReady, logout]);
-
   const isFormDisabled = useMemo(
     () => !senderAddress || isSubmitting || isFunding,
     [senderAddress, isSubmitting, isFunding]
