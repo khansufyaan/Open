@@ -87,12 +87,15 @@ export async function POST(request: Request) {
     // Search all sub-orgs for a user with this email
     for (const subOrgId of subOrgIds) {
       try {
+        console.log(`[Turnkey Create User] Checking sub-org ${subOrgId} for user ${email}`);
         const usersResponse = await turnkeyClient.getUsers({ organizationId: subOrgId });
         const users = usersResponse.users ?? [];
+        console.log(`[Turnkey Create User] Sub-org ${subOrgId} has ${users.length} users`);
 
         for (const user of users) {
+          console.log(`[Turnkey Create User] Checking user: ${user.email} vs ${email}`);
           if (user.email?.toLowerCase() === email.toLowerCase()) {
-            console.log(`[Turnkey Create User] ✅ Found existing user in sub-org: ${subOrgId}`);
+            console.log(`[Turnkey Create User] ✅ MATCH! Found existing user in sub-org: ${subOrgId}`);
             console.log(`[Turnkey Create User] User email: ${user.email}, userName: ${user.userName}`);
             return NextResponse.json({
               created: false,
@@ -101,8 +104,9 @@ export async function POST(request: Request) {
             });
           }
         }
+        console.log(`[Turnkey Create User] No match found in sub-org ${subOrgId}`);
       } catch (err) {
-        console.log(`[Turnkey Create User] Could not check users in sub-org ${subOrgId}:`, err);
+        console.error(`[Turnkey Create User] ERROR checking users in sub-org ${subOrgId}:`, err);
       }
     }
 
