@@ -7,7 +7,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Blue Wallet",
-  description: "Secure wallet infrastructure powered by Turnkey",
+  description: "Secure wallet infrastructure for verified identities",
 };
 
 export default function RootLayout({

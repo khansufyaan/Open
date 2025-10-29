@@ -152,16 +152,80 @@ function mergeAchAccounts(
   return Array.from(merged.values());
 }
 
+const PLAID_STORAGE_PREFIX = "bluewallet:plaid:v1";
+
+type StoredPlaidSnapshot = {
+  identity: PlaidIdentitySnapshot;
+  selectedAccountKey?: string;
+  updatedAt: string;
+};
+
+function getPlaidStorageKey(userId: string): string {
+  return `${PLAID_STORAGE_PREFIX}:${userId}`;
+}
+
+function loadStoredPlaidSnapshot(userId: string): StoredPlaidSnapshot | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(getPlaidStorageKey(userId));
+
+    if (!raw) {
+      return null;
+    }
+
+    const parsed = JSON.parse(raw) as Partial<StoredPlaidSnapshot> | null;
+
+    if (!parsed || typeof parsed !== "object" || !parsed.identity) {
+      return null;
+    }
+
+    const identity = parsed.identity as Partial<PlaidIdentitySnapshot>;
+
+    const normalizedIdentity: PlaidIdentitySnapshot = {
+      names: Array.isArray(identity.names) ? identity.names : [],
+      emails: Array.isArray(identity.emails) ? identity.emails : [],
+      phones: Array.isArray(identity.phones) ? identity.phones : [],
+      addresses: Array.isArray(identity.addresses) ? identity.addresses : [],
+      achAccounts: Array.isArray(identity.achAccounts) ? identity.achAccounts : [],
+    };
+
+    return {
+      identity: normalizedIdentity,
+      selectedAccountKey:
+        typeof parsed.selectedAccountKey === "string" ? parsed.selectedAccountKey : undefined,
+      updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : new Date().toISOString(),
+    };
+  } catch (error) {
+    console.warn("[Plaid Storage] Failed to load persisted Plaid data", error);
+    return null;
+  }
+}
+
+function saveStoredPlaidSnapshot(userId: string, snapshot: StoredPlaidSnapshot): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(getPlaidStorageKey(userId), JSON.stringify(snapshot));
+  } catch (error) {
+    console.warn("[Plaid Storage] Failed to persist Plaid data", error);
+  }
+}
+
 export function AuthFlow() {
   if (!TURNKEY_READY) {
     return (
       <section className="rounded-3xl border border-slate-200/80 bg-white/70 p-8 text-slate-600 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-300">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-          Turnkey setup required
+          Setup required
         </h2>
         <p className="mt-4 max-w-xl text-lg leading-7">
           Set `NEXT_PUBLIC_TURNKEY_API_BASE_URL` and `NEXT_PUBLIC_TURNKEY_ORGANIZATION_ID` in your
-          `.env.local` file to enable the Turnkey login experience.
+          `.env.local` file to enable the login experience.
         </p>
       </section>
     );
@@ -207,7 +271,7 @@ function TurnkeyAuthContent() {
   } | null>(null);
 
   const steps = [
-    { id: "verify", title: "Verify Identity", description: "Sign in with Turnkey" },
+    { id: "verify", title: "Verify Identity", description: "Sign in securely" },
     { id: "bank", title: "Link Bank", description: "Connect your bank account" },
     { id: "claim", title: "Claim Funds", description: "Move to your wallet" },
     { id: "withdraw", title: "Withdraw", description: "Send to external wallet" },
@@ -362,9 +426,52 @@ function TurnkeyAuthContent() {
     }
 
     let cancelled = false;
+    let preferredSelectedKey = ALL_ACCOUNTS_KEY;
+
+    const attemptLocalHydration = () => {
+      const stored = loadStoredPlaidSnapshot(session.userId);
+
+      if (!stored) {
+        return;
+      }
+
+      const normalizedAccounts = normalizeAchAccounts(stored.identity.achAccounts);
+
+      if (normalizedAccounts.length === 0) {
+        console.log("[Plaid Hydration] Stored Plaid snapshot had no valid accounts");
+        return;
+      }
+
+      const mergedAccounts = mergeAchAccounts([], normalizedAccounts);
+
+      const candidateSelectedKey =
+        stored.selectedAccountKey &&
+        (stored.selectedAccountKey === ALL_ACCOUNTS_KEY ||
+          mergedAccounts.some((account) => getAccountKey(account) === stored.selectedAccountKey))
+          ? stored.selectedAccountKey
+          : ALL_ACCOUNTS_KEY;
+
+      preferredSelectedKey = candidateSelectedKey;
+
+      if (cancelled) {
+        return;
+      }
+
+      console.log("[Plaid Hydration] Applied Plaid data from local storage");
+      setPlaidIdentity({
+        ...stored.identity,
+        achAccounts: mergedAccounts,
+      });
+      setLinkedAccounts(mergedAccounts);
+      setSelectedAccountKey(candidateSelectedKey);
+    };
+
+    attemptLocalHydration();
 
     const hydratePlaidData = async () => {
       console.log("[Plaid Hydration] Starting for userId:", session.userId);
+      let shouldMarkHydrated = true;
+
       try {
         const response = await fetch(`/api/db/user?userId=${encodeURIComponent(session.userId)}`);
 
@@ -373,9 +480,10 @@ function TurnkeyAuthContent() {
         if (!response.ok) {
           if (response.status === 404) {
             console.log("[Plaid Hydration] User not found (404) - will retry on next attempt");
-            // Don't set plaidHydrated to true, so we can retry later
+            shouldMarkHydrated = false;
             return;
           }
+
           console.log("[Plaid Hydration] Response not OK");
           return;
         }
@@ -466,16 +574,26 @@ function TurnkeyAuthContent() {
           return;
         }
 
-        console.log("[Plaid Hydration] Successfully hydrated Plaid data, setting state");
+        const candidateSelectedKey =
+          preferredSelectedKey === ALL_ACCOUNTS_KEY ||
+          mergedAccounts.some((account) => getAccountKey(account) === preferredSelectedKey)
+            ? preferredSelectedKey
+            : ALL_ACCOUNTS_KEY;
+
+        preferredSelectedKey = candidateSelectedKey;
+
+        console.log("[Plaid Hydration] Successfully hydrated Plaid data from API, setting state");
         setPlaidIdentity(fallbackIdentity);
         setLinkedAccounts(mergedAccounts);
-        setSelectedAccountKey(ALL_ACCOUNTS_KEY);
+        setSelectedAccountKey(candidateSelectedKey);
       } catch (error) {
         console.error("[Plaid Hydration] Failed to hydrate Plaid verification:", error);
       } finally {
-        if (!cancelled) {
+        if (!cancelled && shouldMarkHydrated) {
           console.log("[Plaid Hydration] Setting plaidHydrated to true");
           setPlaidHydrated(true);
+        } else if (!cancelled && !shouldMarkHydrated) {
+          console.log("[Plaid Hydration] Skipping plaidHydrated flag to allow retry");
         }
       }
     };
@@ -505,6 +623,33 @@ function TurnkeyAuthContent() {
 
     void fetchTransfersForAccounts(accountsToFetch);
   }, [selectedAccountKey, linkedAccounts, fetchTransfersForAccounts, ALL_ACCOUNTS_KEY]);
+
+  useEffect(() => {
+    if (!session?.userId || !plaidIdentity) {
+      return;
+    }
+
+    const normalizedAccounts = normalizeAchAccounts(linkedAccounts);
+
+    if (normalizedAccounts.length === 0) {
+      return;
+    }
+
+    const persistedSelectedKey =
+      selectedAccountKey === ALL_ACCOUNTS_KEY ||
+      normalizedAccounts.some((account) => getAccountKey(account) === selectedAccountKey)
+        ? selectedAccountKey
+        : ALL_ACCOUNTS_KEY;
+
+    saveStoredPlaidSnapshot(session.userId, {
+      identity: {
+        ...plaidIdentity,
+        achAccounts: normalizedAccounts,
+      },
+      selectedAccountKey: persistedSelectedKey,
+      updatedAt: new Date().toISOString(),
+    });
+  }, [session?.userId, plaidIdentity, linkedAccounts, selectedAccountKey, ALL_ACCOUNTS_KEY]);
 
   const handleAuthSuccess = async (email: string) => {
     if (!turnkey) {
@@ -599,15 +744,25 @@ function TurnkeyAuthContent() {
         ? getAccountKey(mergedAccounts[0])
         : ALL_ACCOUNTS_KEY;
 
-    setLinkedAccounts(mergedAccounts);
-    setSelectedAccountKey(nextSelectedKey);
-    setPlaidIdentity({
+    const nextIdentity: PlaidIdentitySnapshot = {
       ...identityData,
       achAccounts: mergedAccounts,
-    });
+    };
+
+    setLinkedAccounts(mergedAccounts);
+    setSelectedAccountKey(nextSelectedKey);
+    setPlaidIdentity(nextIdentity);
     setAuthError(null);
 
     if (session) {
+      const snapshotTimestamp = new Date().toISOString();
+
+      saveStoredPlaidSnapshot(session.userId, {
+        identity: nextIdentity,
+        selectedAccountKey: nextSelectedKey,
+        updatedAt: snapshotTimestamp,
+      });
+
       console.log("[Plaid Save] Saving to database for userId:", session.userId);
       try {
         const response = await fetch("/api/db/user", {
@@ -631,7 +786,7 @@ function TurnkeyAuthContent() {
               phones: identityData.phones,
               addresses: identityData.addresses,
             },
-            plaidLastLinkedAt: new Date().toISOString(),
+            plaidLastLinkedAt: snapshotTimestamp,
           }),
         });
         console.log("[Plaid Save] Database save response status:", response.status);
@@ -1070,7 +1225,7 @@ function TurnkeyAuthContent() {
         <section className="space-y-6 rounded-3xl border border-slate-200/80 bg-white/70 p-10 text-slate-700 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-200">
           <div className="space-y-4">
             <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-              Receive
+              Dashboard
             </h1>
             <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
               Complete the steps below to link your bank account and manage transfers.
@@ -1091,10 +1246,10 @@ function TurnkeyAuthContent() {
           <article className="rounded-2xl border border-slate-200 bg-white/80 p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
             <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Verify Identity</h3>
             <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-              Sign in with email OTP and let Turnkey establish a short-lived session for secure actions.
+              Sign in with email OTP to establish a short-lived session for secure actions.
             </p>
             <Button className="mt-4 w-full sm:w-auto" onClick={() => setShowAuthModal(true)}>
-              Sign in with Turnkey
+              Sign in
             </Button>
           </article>
         </section>
@@ -1115,7 +1270,7 @@ function TurnkeyAuthContent() {
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-              Receive
+              Dashboard
             </h1>
             <Button variant="ghost" size="sm" onClick={handleLogout}>
               <LogOut className="mr-2 h-4 w-4" /> Sign out
@@ -1146,7 +1301,7 @@ function TurnkeyAuthContent() {
                 <div>
                   <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Identity Verified</h3>
                   <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-                    You&apos;re signed in with Turnkey.
+                    You&apos;re signed in securely.
                   </p>
                 </div>
               </div>
@@ -1374,7 +1529,7 @@ function TurnkeyAuthContent() {
           <article className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
             <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Claim Funds</h3>
             <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-              Claim your transfers to move funds from the company vault into your managed Turnkey wallet.
+              Claim your transfers to move funds from the company vault into your managed wallet.
             </p>
             <div className="mt-3 space-y-3">
               {isTransfersLoading ? (
@@ -1513,7 +1668,7 @@ function TurnkeyAuthContent() {
           <article className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
             <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Withdraw to External Wallet</h3>
             <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-              Transfer your claimed funds from your Turnkey managed wallet to any external Base wallet address.
+              Transfer your claimed funds from your managed wallet to any external Base wallet address.
             </p>
             <div className="mt-3 space-y-3">
               {isTransfersLoading ? (

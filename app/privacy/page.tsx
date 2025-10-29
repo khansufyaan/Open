@@ -50,7 +50,7 @@ export default function PrivacyPolicyPage() {
             </p>
             <ul className="list-disc pl-6 space-y-2 text-muted-foreground">
               <li>End-to-end encryption for all sensitive data</li>
-              <li>Secure key management through Turnkey infrastructure</li>
+              <li>Secure key management through enterprise infrastructure</li>
               <li>Multi-factor authentication requirements</li>
               <li>Regular security audits and penetration testing</li>
               <li>Compliance with SOC 2 Type II standards</li>
@@ -63,7 +63,7 @@ export default function PrivacyPolicyPage() {
               We work with trusted third-party providers to deliver our services:
             </p>
             <ul className="list-disc pl-6 space-y-2 text-muted-foreground">
-              <li><strong>Turnkey:</strong> Secure wallet infrastructure and key management</li>
+              <li><strong>Wallet Infrastructure:</strong> Secure wallet infrastructure and key management</li>
               <li><strong>Plaid:</strong> Bank account verification and linking</li>
               <li><strong>AWS:</strong> Cloud infrastructure and data storage</li>
               <li><strong>Base Network:</strong> Blockchain transaction processing</li>
