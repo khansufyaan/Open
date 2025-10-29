@@ -106,13 +106,15 @@ export async function POST(request: Request) {
         }
         console.log(`[Turnkey Create User] No match found in sub-org ${subOrgId}`);
       } catch (err) {
-        console.error(`[Turnkey Create User] ERROR checking users in sub-org ${subOrgId}:`, err);
+        console.log(`[Turnkey Create User] ❌ ERROR checking users in sub-org ${subOrgId}:`, err);
+        console.log(`[Turnkey Create User] Error details:`, JSON.stringify(err, null, 2));
       }
     }
 
     console.log(`[Turnkey Create User] No existing user found, creating new sub-organization`);
   } catch (searchError) {
-    console.error(`[Turnkey Create User] Error searching for existing user:`, searchError);
+    console.log(`[Turnkey Create User] ❌ FATAL ERROR searching for existing user:`, searchError);
+    console.log(`[Turnkey Create User] Search error details:`, JSON.stringify(searchError, null, 2));
     // Continue with creation if search fails
   }
 
