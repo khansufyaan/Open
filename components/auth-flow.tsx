@@ -666,11 +666,6 @@ function TurnkeyAuthContent() {
         return;
       }
 
-      console.log("[Auth] Setting session for userId:", activeSession.userId);
-      setSession(activeSession);
-      setAuthError(null);
-      setCurrentStep(1); // Move to Step 2: Link Bank after successful login
-
       console.log("[Auth] Creating initial user record in database");
       try {
         const response = await fetch("/api/db/user", {
@@ -688,14 +683,23 @@ function TurnkeyAuthContent() {
         const data = await response.json();
         console.log("[Auth] Initial user record response:", data.success ? "Success" : "Failed", data);
 
-        if (data.success) {
-          // Reset plaidHydrated to trigger hydration after user record is created
-          console.log("[Auth] Resetting plaidHydrated to allow hydration retry");
-          setPlaidHydrated(false);
+        if (!data.success) {
+          console.error("[Auth] Failed to create user record:", data);
+          setAuthError("Failed to create user record. Please try again.");
+          return;
         }
       } catch (dbError) {
         console.error("[Auth] Failed to store initial user data:", dbError);
+        setAuthError("Failed to create user record. Please try again.");
+        return;
       }
+
+      // Only set session AFTER user record is created in database
+      console.log("[Auth] User record created, setting session for userId:", activeSession.userId);
+      setSession(activeSession);
+      setAuthError(null);
+      setCurrentStep(1); // Move to Step 2: Link Bank after successful login
+      setPlaidHydrated(false); // Trigger hydration now that user exists in DB
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Unable to fetch the active Turnkey session.";
