@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Stepper } from "@/components/ui/stepper";
 import { TurnkeyLoginForm } from "@/components/turnkey-login-form";
 import { PlaidConnectButton } from "@/components/plaid-connect-button";
+import { SendMoneyModal } from "@/components/send-money-modal";
 import { base } from "viem/chains";
 
 const TURNKEY_READY = Boolean(
@@ -1223,6 +1224,71 @@ function TurnkeyAuthContent() {
     [ALL_ACCOUNTS_KEY, fetchTransfersForAccounts, linkedAccounts, selectedAccountKey, withdrawInputs]
   );
 
+  // Simplified send handler for SendMoneyModal
+  const handleSendMoney = useCallback(
+    async (transferId: string, destination: string, _amount: string) => {
+      // Note: amount parameter is ignored - the API withdraws the full transfer amount
+      setWithdrawLoading((previous) => ({
+        ...previous,
+        [transferId]: true,
+      }));
+      setWithdrawErrors((previous) => ({
+        ...previous,
+        [transferId]: null,
+      }));
+      setWithdrawSuccess((previous) => ({
+        ...previous,
+        [transferId]: null,
+      }));
+
+      try {
+        const response = await fetch(`/api/transfers/${transferId}/withdraw`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            targetAddress: destination,
+          }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.message ?? data.error ?? "Withdrawal failed.");
+        }
+
+        setWithdrawSuccess((previous) => ({
+          ...previous,
+          [transferId]: data.txHash as string,
+        }));
+
+        // Refresh transfers
+        const accountsToRefetch =
+          selectedAccountKey === ALL_ACCOUNTS_KEY
+            ? linkedAccounts
+            : linkedAccounts.filter((account) => getAccountKey(account) === selectedAccountKey);
+
+        if (accountsToRefetch.length > 0) {
+          await fetchTransfersForAccounts(accountsToRefetch);
+        }
+      } catch (error) {
+        setWithdrawErrors((previous) => ({
+          ...previous,
+          [transferId]:
+            error instanceof Error ? error.message : "Failed to send transaction. Please try again.",
+        }));
+        throw error; // Re-throw so modal can handle it
+      } finally {
+        setWithdrawLoading((previous) => ({
+          ...previous,
+          [transferId]: false,
+        }));
+      }
+    },
+    [ALL_ACCOUNTS_KEY, fetchTransfersForAccounts, linkedAccounts, selectedAccountKey]
+  );
+
   if (!session) {
     return (
       <>
@@ -1684,241 +1750,49 @@ function TurnkeyAuthContent() {
                     : "No claimed transfers available to withdraw. Go back to the Claim Funds step to claim your deposits first."}
                 </p>
               ) : (
-                <ul className="space-y-3 text-xs text-slate-600 dark:text-slate-300">
+                <ul className="space-y-4">
                   {transferSummaries.filter(s => s.status === "CLAIMED").map((summary) => {
-                    const destinationValue = (withdrawInputs[summary.transferId] ?? "").trim();
-                    const hasValidDestination = HEX_ADDRESS_REGEX.test(destinationValue);
-                    const quote = withdrawQuotes[summary.transferId];
-                    const quoteMatchesDestination = quote
-                      ? quote.destination.toLowerCase() === destinationValue.toLowerCase()
-                      : false;
-                    const requiresTopUp = quote && quoteMatchesDestination
-                      ? BigInt(quote.topUpWei) > BigInt(0)
-                      : false;
-                    const isQuotePending = Boolean(quoteLoading[summary.transferId]);
-                    const withdrawDisabled = (() => {
-                      if (withdrawLoading[summary.transferId]) {
-                        return true;
-                      }
-
-                      if (!hasValidDestination) {
-                        return true;
-                      }
-
-                      if (!quoteMatchesDestination || requiresTopUp) {
-                        return true;
-                      }
-
-                      return false;
-                    })();
-
                     return (
                       <li
                         key={summary.transferId}
                         className="rounded-lg border border-slate-200/70 p-3 dark:border-slate-700/50"
                       >
-                        <p className="font-medium text-slate-700 dark:text-slate-100">
-                          {summary.amount} USDC · {summary.status.toLowerCase()}
-                        </p>
-                        <p className="mt-1 text-[11px] uppercase tracking-wide text-slate-400 dark:text-slate-500">
-                          Transfer {summary.transferId}
-                        </p>
-                        <dl className="mt-2 space-y-1 text-[11px]">
-                          <div className="flex items-start gap-2">
-                            <span className="text-slate-400 dark:text-slate-500 uppercase">Vault</span>
-                            <span className="truncate">
-                              {summary.depositAddress ?? "—"}
-                            </span>
-                          </div>
-                          <div className="flex items-start gap-2">
-                            <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 text-sky-500" />
-                            <span className="truncate">
-                              {summary.walletAddress ?? "Wallet provisioning in progress"}
-                            </span>
-                          </div>
-                          {summary.recipientWalletName && (
-                            <div className="flex items-start gap-2">
-                              <span className="text-slate-400 dark:text-slate-500">Label</span>
-                              <span className="truncate">{summary.recipientWalletName}</span>
-                            </div>
-                          )}
-                          <div className="flex items-start gap-2">
-                            <span className="text-slate-400 dark:text-slate-500">Wallet ID</span>
-                            <span className="truncate">{summary.walletId}</span>
-                          </div>
-                          <div className="flex items-start gap-2">
-                            <span className="text-slate-400 dark:text-slate-500">Recorded</span>
-                            <span>
-                              {new Date(summary.createdAt).toLocaleString(undefined, {
-                                dateStyle: "medium",
-                                timeStyle: "short",
-                              })}
-                            </span>
-                          </div>
-                          <div className="flex items-start gap-2">
-                            <span className="text-slate-400 dark:text-slate-500">Deposit</span>
-                            <span className="capitalize">{summary.depositMethod}</span>
-                          </div>
-                          {summary.fundingStatus && (
-                            <div className="flex items-start gap-2">
-                              <span className="text-slate-400 dark:text-slate-500">Funding</span>
-                              <span className="capitalize">{summary.fundingStatus.toLowerCase()}</span>
-                            </div>
-                          )}
-                        </dl>
-                        <form
-                          className="mt-3 space-y-2"
-                          onSubmit={(event) => {
-                            event.preventDefault();
-                            void handleWithdraw(summary);
-                          }}
-                        >
-                          <div className="space-y-1.5">
-                            {summary.claimTxHash && (
-                              <p className="text-[11px] text-emerald-600 dark:text-emerald-400">
-                                Claimed ·{" "}
-                                <a
-                                  href={`https://basescan.org/tx/${summary.claimTxHash}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="underline"
-                                >
-                                  View claim tx
-                                </a>
-                              </p>
-                            )}
-                            <p className="text-[11px] uppercase tracking-wide text-slate-400 dark:text-slate-500">
-                              Transfer to Base wallet
+                        {!withdrawSuccess[summary.transferId] ? (
+                          <SendMoneyModal
+                            transferId={summary.transferId}
+                            walletAddress={summary.walletAddress ?? ""}
+                            usdcBalance={summary.amount}
+                            onSend={async (destination, amount) => {
+                              await handleSendMoney(summary.transferId, destination, amount);
+                            }}
+                            isLoading={withdrawLoading[summary.transferId]}
+                          />
+                        ) : (
+                          <div className="rounded-lg bg-emerald-50 p-4 dark:bg-emerald-900/20">
+                            <p className="text-sm font-semibold text-emerald-900 dark:text-emerald-100">
+                              ✓ Transfer Complete
                             </p>
-                            <Input
-                              value={withdrawInputs[summary.transferId] ?? ""}
-                              onChange={(event) =>
-                                handleWithdrawInputChange(summary.transferId, event.target.value)
-                              }
-                              placeholder="0x destination address"
-                              className="h-9 text-xs"
-                            />
-                            {isQuotePending && (
-                              <p className="text-[11px] text-slate-400 dark:text-slate-500">
-                                Estimating Base gas requirements…
-                              </p>
-                            )}
-                            {quoteErrors[summary.transferId] && (
-                              <p className="text-[11px] text-red-500 dark:text-red-400">
-                                {quoteErrors[summary.transferId]}
-                              </p>
-                            )}
-                            {quote && quoteMatchesDestination && (
-                              <div className="rounded-md border border-slate-200/60 bg-slate-50/70 p-2 text-[11px] dark:border-slate-700/60 dark:bg-slate-800/40">
-                                <p className="font-medium text-slate-600 dark:text-slate-200">
-                                  Gas estimate · {formatEth(quote.totalFeeEth)} ETH
-                                </p>
-                                <p className="text-slate-500 dark:text-slate-400">
-                                  Wallet balance: {formatEth(quote.walletBalanceEth)} ETH
-                                </p>
-                                {requiresTopUp ? (
-                                  <p className="text-red-500 dark:text-red-400">
-                                    Needs {formatEth(quote.topUpEth)} ETH top-up.
-                                  </p>
-                                ) : (
-                                  <p className="text-emerald-600 dark:text-emerald-400">
-                                    Gas funded. Ready to withdraw.
-                                  </p>
-                                )}
-                              </div>
-                            )}
-                            <div className="flex flex-wrap items-center gap-2">
-                              <Button type="submit" size="sm" disabled={withdrawDisabled}>
-                                {withdrawLoading[summary.transferId] ? "Transferring…" : "Send to Base"}
-                              </Button>
-                              <span className="text-[11px] text-slate-400 dark:text-slate-500">
-                                Network: Base (8453) · Asset: USDC
-                              </span>
-                            </div>
-                            {quote && quoteMatchesDestination && requiresTopUp && (
-                              <div className="space-y-1">
-                                {connectedEvmWallet ? (
-                                  <div className="flex gap-2">
-                                    <Button
-                                      type="button"
-                                      size="sm"
-                                      variant="outline"
-                                      disabled={Boolean(topUpLoading[summary.transferId])}
-                                      onClick={() => void handleTopUp(summary)}
-                                    >
-                                      {topUpLoading[summary.transferId] ? "Sending top-up…" : "Top up gas from connected wallet"}
-                                    </Button>
-                                    <Button
-                                      type="button"
-                                      size="sm"
-                                      variant="destructive"
-                                      disabled={!privyReady}
-                                      onClick={() => void handleDisconnectWallet()}
-                                    >
-                                      Disconnect
-                                    </Button>
-                                  </div>
-                                ) : (
-                                  <div className="space-y-1">
-                                    <Button
-                                      type="button"
-                                      size="sm"
-                                      variant="outline"
-                                      disabled={isWalletConnecting}
-                                      onClick={() => void handleConnectWallet()}
-                                    >
-                                      {isWalletConnecting ? "Connecting…" : "Connect wallet to top up"}
-                                    </Button>
-                                    {walletConnectError && (
-                                      <p className="text-[11px] text-red-500 dark:text-red-400">
-                                        {walletConnectError}
-                                      </p>
-                                    )}
-                                  </div>
-                                )}
-                                <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                                  Sends {formatEth(quote?.topUpEth ?? "0")} ETH to the managed wallet for gas.
-                                </p>
-                              </div>
-                            )}
+                            <p className="mt-1 text-xs text-emerald-700 dark:text-emerald-300">
+                              {summary.amount} USDC sent successfully
+                            </p>
+                            <a
+                              href={`https://basescan.org/tx/${withdrawSuccess[summary.transferId]}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="mt-2 inline-block text-xs text-emerald-600 hover:underline dark:text-emerald-400"
+                            >
+                              View on Basescan →
+                            </a>
                           </div>
-                          {withdrawErrors[summary.transferId] && (
-                            <p className="text-[11px] text-red-500 dark:text-red-400">
+                        )}
+
+                        {withdrawErrors[summary.transferId] && (
+                          <div className="mt-3 rounded-lg bg-red-50 p-3 dark:bg-red-900/20">
+                            <p className="text-sm text-red-600 dark:text-red-400">
                               {withdrawErrors[summary.transferId]}
                             </p>
-                          )}
-                          {topUpErrors[summary.transferId] && (
-                            <p className="text-[11px] text-red-500 dark:text-red-400">
-                              {topUpErrors[summary.transferId]}
-                            </p>
-                          )}
-                          {topUpSuccess[summary.transferId] && (
-                            <p className="text-[11px] text-emerald-600 dark:text-emerald-400">
-                              Gas top-up sent ·{" "}
-                              <a
-                                href={`https://basescan.org/tx/${topUpSuccess[summary.transferId]}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="underline"
-                              >
-                                View on Basescan
-                              </a>
-                            </p>
-                          )}
-                          {withdrawSuccess[summary.transferId] && (
-                            <p className="text-[11px] text-emerald-600 dark:text-emerald-400">
-                              Withdrawal submitted ·{" "}
-                              <a
-                                href={`https://basescan.org/tx/${withdrawSuccess[summary.transferId]}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="underline"
-                              >
-                                View on Basescan
-                              </a>
-                            </p>
-                          )}
-                        </form>
+                          </div>
+                        )}
                       </li>
                     );
                   })}
