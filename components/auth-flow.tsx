@@ -1113,6 +1113,9 @@ function TurnkeyAuthContent() {
         if (linkedAccounts.length > 0) {
           await fetchTransfersForAccounts(linkedAccounts);
         }
+
+        // Auto-advance to Step 3 (Withdraw) after successful claim
+        setCurrentStep(3);
       } catch (error) {
         console.error("Claim transfer failed", error);
         setClaimErrors((previous) => ({
