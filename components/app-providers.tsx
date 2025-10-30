@@ -27,7 +27,7 @@ export function AppProviders({ children }: AppProvidersProps) {
 
   if (!apiBaseUrl || !orgId) {
     console.warn(
-      "Missing Turnkey configuration. Set NEXT_PUBLIC_TURNKEY_API_BASE_URL and NEXT_PUBLIC_TURNKEY_ORGANIZATION_ID to enable login."
+      "Missing authentication configuration. Set NEXT_PUBLIC_TURNKEY_API_BASE_URL and NEXT_PUBLIC_TURNKEY_ORGANIZATION_ID to enable login."
     );
 
     if (!privyAppId) {

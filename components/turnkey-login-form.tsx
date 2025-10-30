@@ -59,7 +59,7 @@ export function TurnkeyLoginForm({
 
         console.error("[Auth] Failed to create/verify user:", data);
 
-        const errorMessage = data?.message ?? data?.error ?? "Unable to prepare Turnkey user.";
+        const errorMessage = data?.message ?? data?.error ?? "Unable to prepare user account.";
         throw new Error(errorMessage);
       }
 
@@ -81,7 +81,7 @@ export function TurnkeyLoginForm({
       setSubOrgId(userSubOrgId);
 
       if (!turnkey) {
-        throw new Error("Turnkey client not available");
+        throw new Error("Authentication client not available");
       }
 
       console.log(`[Auth] Initiating email OTP for: ${trimmedEmail}`);
@@ -120,7 +120,7 @@ export function TurnkeyLoginForm({
 
     try {
       if (!turnkey || !indexedDbClient) {
-        throw new Error("Turnkey clients not available");
+        throw new Error("Authentication clients not available");
       }
 
       console.log(`[Auth] Verifying OTP code with parent org ID`);
@@ -155,7 +155,7 @@ export function TurnkeyLoginForm({
       const sessionToken = loginResponse?.session;
 
       if (!sessionToken) {
-        throw new Error("Turnkey did not return a session token.");
+        throw new Error("Authentication service did not return a session token.");
       }
 
       await indexedDbClient.loginWithSession(sessionToken);

@@ -653,7 +653,7 @@ function TurnkeyAuthContent() {
 
   const handleAuthSuccess = async (email: string) => {
     if (!turnkey) {
-      setAuthError("Turnkey client is not ready. Check your configuration and try again.");
+      setAuthError("Authentication client is not ready. Check your configuration and try again.");
       return;
     }
 
@@ -702,7 +702,7 @@ function TurnkeyAuthContent() {
       setPlaidHydrated(false); // Trigger hydration now that user exists in DB
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : "Unable to fetch the active Turnkey session.";
+        error instanceof Error ? error.message : "Unable to fetch the active session.";
       setAuthError(message);
     }
   };
