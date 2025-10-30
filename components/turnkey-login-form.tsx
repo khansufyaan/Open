@@ -132,6 +132,11 @@ export function TurnkeyLoginForm({
 
       console.log(`[Auth] OTP verified successfully`);
 
+      // Clear IndexedDB to get a fresh credential for each login
+      // This prevents the "credential already exists" error
+      console.log(`[Auth] Clearing IndexedDB to generate fresh credential`);
+      await indexedDbClient.clear();
+
       await indexedDbClient.init();
       const publicKey = await indexedDbClient.getPublicKey();
 
