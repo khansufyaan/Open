@@ -9,7 +9,6 @@ import { CheckCircle2, LogOut } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Stepper } from "@/components/ui/stepper";
 import { TurnkeyLoginForm } from "@/components/turnkey-login-form";
 import { PlaidConnectButton } from "@/components/plaid-connect-button";
 import { SendMoneyModal } from "@/components/send-money-modal";
@@ -265,18 +264,10 @@ function TurnkeyAuthContent() {
   const [claimLoading, setClaimLoading] = useState<Record<string, boolean>>({});
   const [claimErrors, setClaimErrors] = useState<Record<string, string | null>>({});
   const [claimSuccess, setClaimSuccess] = useState<Record<string, string | null>>({});
-  const [currentStep, setCurrentStep] = useState(0);
   const [userWalletInfo, setUserWalletInfo] = useState<{
     walletId?: string;
     walletAddress?: string;
   } | null>(null);
-
-  const steps = [
-    { id: "verify", title: "Verify Identity", description: "Sign in securely" },
-    { id: "bank", title: "Link Bank", description: "Connect your bank account" },
-    { id: "claim", title: "Claim Funds", description: "Move to your wallet" },
-    { id: "withdraw", title: "Withdraw", description: "Send to external wallet" },
-  ];
   const [walletConnectError, setWalletConnectError] = useState<string | null>(null);
   const [isWalletConnecting, setIsWalletConnecting] = useState(false);
 
@@ -699,7 +690,6 @@ function TurnkeyAuthContent() {
       console.log("[Auth] User record created, setting session for userId:", activeSession.userId);
       setSession(activeSession);
       setAuthError(null);
-      setCurrentStep(1); // Move to Step 2: Link Bank after successful login
       setPlaidHydrated(false); // Trigger hydration now that user exists in DB
     } catch (error) {
       const message =
@@ -1113,9 +1103,6 @@ function TurnkeyAuthContent() {
         if (linkedAccounts.length > 0) {
           await fetchTransfersForAccounts(linkedAccounts);
         }
-
-        // Auto-advance to Step 3 (Withdraw) after successful claim
-        setCurrentStep(3);
       } catch (error) {
         console.error("Claim transfer failed", error);
         setClaimErrors((previous) => ({
@@ -1292,39 +1279,37 @@ function TurnkeyAuthContent() {
     [ALL_ACCOUNTS_KEY, fetchTransfersForAccounts, linkedAccounts, selectedAccountKey]
   );
 
+  // Auto-open auth modal when not logged in
+  useEffect(() => {
+    if (!session) {
+      setShowAuthModal(true);
+    }
+  }, [session]);
+
   if (!session) {
     return (
       <>
         <section className="space-y-6 rounded-3xl border border-slate-200/80 bg-white/70 p-10 text-slate-700 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-200">
-          <div className="space-y-4">
+          <div className="space-y-4 text-center">
             <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-              Dashboard
+              Receive
             </h1>
             <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
-              Complete the steps below to link your bank account and manage transfers.
+              Sign in to view and manage your transfers.
             </p>
           </div>
 
-          <Stepper steps={steps} currentStep={0} />
-
           {authError && (
-            <p className="text-sm text-red-600 dark:text-red-400">{authError}</p>
+            <p className="text-sm text-red-600 dark:text-red-400 text-center">{authError}</p>
           )}
-        </section>
 
-        <section
-          ref={stepsRef}
-          className="space-y-4 rounded-3xl border border-slate-200/80 bg-white/70 p-6 text-slate-700 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-200"
-        >
-          <article className="rounded-2xl border border-slate-200 bg-white/80 p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
-            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Verify Identity</h3>
-            <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-              Sign in with email OTP to establish a short-lived session for secure actions.
-            </p>
-            <Button className="mt-4 w-full sm:w-auto" onClick={() => setShowAuthModal(true)}>
-              Sign in
-            </Button>
-          </article>
+          {!showAuthModal && (
+            <div className="text-center">
+              <Button onClick={() => setShowAuthModal(true)}>
+                Sign in
+              </Button>
+            </div>
+          )}
         </section>
 
         <TurnkeyLoginForm
@@ -1343,18 +1328,16 @@ function TurnkeyAuthContent() {
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-              Dashboard
+              Receive
             </h1>
             <Button variant="ghost" size="sm" onClick={handleLogout}>
               <LogOut className="mr-2 h-4 w-4" /> Sign out
             </Button>
           </div>
           <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
-            Complete the steps below to link your bank account and manage transfers.
+            Manage your bank account and transfers.
           </p>
         </div>
-
-        <Stepper steps={steps} currentStep={currentStep} />
 
         {authError && (
           <p className="text-sm text-red-600 dark:text-red-400">{authError}</p>
@@ -1365,73 +1348,71 @@ function TurnkeyAuthContent() {
         ref={stepsRef}
         className="space-y-4 rounded-3xl border border-slate-200/80 bg-white/70 p-6 text-slate-700 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-200"
       >
-        {/* Step 0: Identity Verified */}
-        {currentStep === 0 && (
-          <article className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
-            <div className="space-y-3">
-              <div className="flex items-center gap-3">
-                <CheckCircle2 className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
-                <div>
-                  <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Identity Verified</h3>
-                  <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-                    You&apos;re signed in securely.
-                  </p>
-                </div>
-              </div>
-
-              {/* User Information */}
-              <div className="rounded-lg border border-slate-200/70 bg-white/50 p-3 space-y-3 dark:border-slate-700/50 dark:bg-slate-800/50">
-                <div>
-                  <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">User ID</p>
-                  <p className="text-sm font-mono text-slate-900 dark:text-white break-all">
-                    {session.userId}
-                  </p>
-                </div>
-
-                {(userWalletInfo?.walletAddress || transferSummaries.length > 0) && (
-                  <div>
-                    <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Wallet Address</p>
-                    <p className="text-sm font-mono text-slate-900 dark:text-white break-all">
-                      {userWalletInfo?.walletAddress || transferSummaries[0]?.walletAddress || "Not provisioned yet"}
-                    </p>
-                    {(userWalletInfo?.walletAddress || transferSummaries[0]?.walletAddress) && (
-                      <a
-                        href={`https://basescan.org/address/${userWalletInfo?.walletAddress || transferSummaries[0]?.walletAddress}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs text-sky-500 hover:underline"
-                      >
-                        View on Basescan
-                      </a>
-                    )}
-                  </div>
-                )}
-
-                {(userWalletInfo?.walletId || transferSummaries.length > 0) && (
-                  <div>
-                    <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Wallet ID</p>
-                    <p className="text-sm font-mono text-slate-900 dark:text-white break-all">
-                      {userWalletInfo?.walletId || transferSummaries[0]?.walletId || "Not assigned yet"}
-                    </p>
-                  </div>
-                )}
-
-                {plaidIdentity && (
-                  <div>
-                    <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Bank Account Status</p>
-                    <p className="text-sm text-emerald-600 dark:text-emerald-400 flex items-center gap-2">
-                      <CheckCircle2 className="h-3.5 w-3.5" />
-                      Verified and saved
-                    </p>
-                  </div>
-                )}
+        {/* Identity Verified Widget */}
+        <article className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
+          <div className="space-y-3">
+            <div className="flex items-center gap-3">
+              <CheckCircle2 className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Identity Verified</h3>
+                <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+                  You&apos;re signed in securely.
+                </p>
               </div>
             </div>
-          </article>
-        )}
 
-        {/* Step 1: Link Bank Account */}
-        {currentStep === 1 && (
+            {/* User Information */}
+            <div className="rounded-lg border border-slate-200/70 bg-white/50 p-3 space-y-3 dark:border-slate-700/50 dark:bg-slate-800/50">
+              <div>
+                <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">User ID</p>
+                <p className="text-sm font-mono text-slate-900 dark:text-white break-all">
+                  {session.userId}
+                </p>
+              </div>
+
+              {(userWalletInfo?.walletAddress || transferSummaries.length > 0) && (
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Wallet Address</p>
+                  <p className="text-sm font-mono text-slate-900 dark:text-white break-all">
+                    {userWalletInfo?.walletAddress || transferSummaries[0]?.walletAddress || "Not provisioned yet"}
+                  </p>
+                  {(userWalletInfo?.walletAddress || transferSummaries[0]?.walletAddress) && (
+                    <a
+                      href={`https://basescan.org/address/${userWalletInfo?.walletAddress || transferSummaries[0]?.walletAddress}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-sky-500 hover:underline"
+                    >
+                      View on Basescan
+                    </a>
+                  )}
+                </div>
+              )}
+
+              {(userWalletInfo?.walletId || transferSummaries.length > 0) && (
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Wallet ID</p>
+                  <p className="text-sm font-mono text-slate-900 dark:text-white break-all">
+                    {userWalletInfo?.walletId || transferSummaries[0]?.walletId || "Not assigned yet"}
+                  </p>
+                </div>
+              )}
+
+              {plaidIdentity && (
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Bank Account Status</p>
+                  <p className="text-sm text-emerald-600 dark:text-emerald-400 flex items-center gap-2">
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    Verified and saved
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </article>
+
+        {/* Link Bank Account Widget */}
+        {(
           <article className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
             <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Link Bank Account</h3>
             <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
@@ -1597,8 +1578,8 @@ function TurnkeyAuthContent() {
           </article>
         )}
 
-        {/* Step 2: Claim Funds */}
-        {currentStep === 2 && (
+        {/* Claim Funds Widget */}
+        {transferSummaries.filter(s => s.status === "DEPOSITED").length > 0 && (
           <article className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
             <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Claim Funds</h3>
             <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
@@ -1736,8 +1717,8 @@ function TurnkeyAuthContent() {
           </article>
         )}
 
-        {/* Step 3: Withdraw */}
-        {currentStep === 3 && (
+        {/* Withdraw Widget */}
+        {transferSummaries.filter(s => s.status === "CLAIMED").length > 0 && (
           <article className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
             <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Withdraw to External Wallet</h3>
             <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
@@ -1805,8 +1786,8 @@ function TurnkeyAuthContent() {
           </article>
         )}
 
-        {/* Past Transfers Section - shown on any step after claiming */}
-        {currentStep >= 2 && transferSummaries.filter(s => s.status === "WITHDRAWN").length > 0 && (
+        {/* Past Transfers Widget */}
+        {transferSummaries.filter(s => s.status === "WITHDRAWN").length > 0 && (
           <article className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
             <h4 className="text-lg font-semibold text-slate-900 dark:text-white">Past Transfers</h4>
             <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
@@ -1896,25 +1877,6 @@ function TurnkeyAuthContent() {
           </article>
         )}
 
-        {/* Navigation Buttons */}
-        <div className="flex items-center justify-between pt-4">
-          <Button
-            variant="outline"
-            onClick={() => setCurrentStep((prev) => Math.max(0, prev - 1))}
-            disabled={currentStep === 0}
-          >
-            Back
-          </Button>
-          <div className="text-sm text-slate-500 dark:text-slate-400">
-            Step {currentStep + 1} of {steps.length}
-          </div>
-          <Button
-            onClick={() => setCurrentStep((prev) => Math.min(steps.length - 1, prev + 1))}
-            disabled={currentStep === steps.length - 1}
-          >
-            Next
-          </Button>
-        </div>
       </section>
     </>
   );

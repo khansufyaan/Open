@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 import { ThemeToggle } from "@/components/theme-toggle";
 import { WalletButton } from "@/components/wallet-button";
@@ -8,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 export function Navbar({ className }: { className?: string }) {
+  const pathname = usePathname();
   return (
     <div className={cn("flex justify-center px-6 pt-6", className)}>
       <nav className="grid w-full max-w-5xl grid-cols-3 items-center gap-4 rounded-full border border-slate-200/70 bg-white/85 px-6 py-3 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/85">
@@ -19,17 +21,17 @@ export function Navbar({ className }: { className?: string }) {
         </Link>
         <div className="flex items-center justify-center gap-3">
           <Button variant="secondary" size="sm" asChild>
-            <Link href="/">Sender</Link>
+            <Link href="/">Send</Link>
           </Button>
           <Button variant="secondary" size="sm" asChild>
-            <Link href="/recipient">Receiver</Link>
+            <Link href="/recipient">Receive</Link>
           </Button>
         </div>
         <div className="flex items-center justify-end gap-3">
           <Button variant="ghost" size="sm" asChild>
             <Link href="/contact">Contact</Link>
           </Button>
-          <WalletButton />
+          {pathname !== "/recipient" && <WalletButton />}
           <ThemeToggle />
         </div>
       </nav>
