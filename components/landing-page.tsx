@@ -37,8 +37,8 @@ export function LandingPage() {
               </Button>
             </div>
 
-            {/* Flow Diagram */}
-            <div className="flex items-center justify-center gap-4 py-6 sm:gap-8">
+            {/* Flow Diagram - Moved below CTA buttons */}
+            <div className="flex items-center justify-center gap-4 pt-2 sm:gap-8">
               {/* Wallet 1 */}
               <div className="flex flex-col items-center gap-2">
                 <div className="rounded-lg bg-slate-100 p-3 dark:bg-slate-800">
@@ -77,7 +77,7 @@ export function LandingPage() {
             </div>
 
             {/* Features Grid - Compact */}
-            <div className="grid gap-4 pt-6 sm:grid-cols-3">
+            <div className="grid gap-4 pt-4 sm:grid-cols-3">
               <div className="rounded-xl border border-slate-200/80 bg-white/60 p-4 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/60">
                 <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
                   Non-Custodial
