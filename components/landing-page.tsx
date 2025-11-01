@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { ArrowRight } from "lucide-react";
 
@@ -12,19 +11,6 @@ export function LandingPage() {
         {/* Hero Section */}
         <section className="rounded-3xl border border-slate-200/80 bg-white/70 p-8 text-center shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70">
           <div className="mx-auto max-w-4xl space-y-6">
-            {/* Logo */}
-            <div className="flex justify-center">
-              <div className="relative h-20 w-20">
-                <Image
-                  src="/blue2.jpg"
-                  alt="BLUE"
-                  fill
-                  className="object-contain"
-                  priority
-                />
-              </div>
-            </div>
-
             {/* Main Heading */}
             <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-3xl md:text-4xl">
               Non-custodial, KYC-compliant private wallet for bank customers
