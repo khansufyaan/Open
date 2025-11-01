@@ -21,7 +21,7 @@ export function Navbar({ className }: { className?: string }) {
         </Link>
         <div className="flex items-center justify-center gap-3">
           <Button variant="secondary" size="sm" asChild>
-            <Link href="/">Send</Link>
+            <Link href="/send">Send</Link>
           </Button>
           <Button variant="secondary" size="sm" asChild>
             <Link href="/recipient">Receive</Link>
@@ -31,7 +31,7 @@ export function Navbar({ className }: { className?: string }) {
           <Button variant="ghost" size="sm" asChild>
             <Link href="/contact">Contact</Link>
           </Button>
-          {pathname !== "/recipient" && <WalletButton />}
+          {pathname !== "/" && pathname !== "/recipient" && <WalletButton />}
           <ThemeToggle />
         </div>
       </nav>
