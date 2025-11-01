@@ -171,16 +171,33 @@ export function TurnkeyLoginForm({
   };
   const renderRequestStep = () => (
     <>
-      <CardHeader className="text-center">
-        <CardTitle className="text-2xl">Sign in with Email</CardTitle>
-        <CardDescription>
-          We&apos;ll send a one-time code to confirm it&apos;s you.
-        </CardDescription>
+      <CardHeader className="space-y-6 text-center pb-8">
+        <div className="flex justify-center">
+          <div className="h-20 w-20 rounded-2xl bg-blue-600 flex items-center justify-center">
+            <span className="text-4xl font-bold text-white">B</span>
+          </div>
+        </div>
+        <div className="space-y-2">
+          <CardTitle className="text-3xl font-bold">Blue Wallets</CardTitle>
+          <CardDescription className="text-base text-slate-500">
+            Receive USDC Instantly
+          </CardDescription>
+        </div>
+        <div className="space-y-2 pt-4">
+          <h2 className="text-2xl font-semibold text-slate-900 dark:text-white">
+            Sign in with your email
+          </h2>
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            We&apos;ll send you a code to verify your identity
+          </p>
+        </div>
       </CardHeader>
-      <CardContent>
-        <form onSubmit={handleEmailAuth} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
+      <CardContent className="px-8 pb-8">
+        <form onSubmit={handleEmailAuth} className="space-y-6">
+          <div className="space-y-3">
+            <Label htmlFor="email" className="text-base font-medium text-slate-700 dark:text-slate-300">
+              Email Address
+            </Label>
             <Input
               id="email"
               type="email"
@@ -188,10 +205,16 @@ export function TurnkeyLoginForm({
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
+              className="h-12 text-base"
             />
           </div>
-          <Button type="submit" disabled={isRequesting || !email.trim()} className="w-full">
-            {isRequesting ? "Sending code..." : "Send login code"}
+          <Button
+            type="submit"
+            disabled={isRequesting || !email.trim()}
+            className="w-full h-12 text-base font-semibold bg-blue-600 hover:bg-blue-700"
+            size="lg"
+          >
+            {isRequesting ? "Sending code..." : "Send Verification Code"}
           </Button>
         </form>
       </CardContent>
@@ -200,16 +223,33 @@ export function TurnkeyLoginForm({
 
   const renderVerifyStep = () => (
     <>
-      <CardHeader className="text-center">
-        <CardTitle className="text-2xl">Enter verification code</CardTitle>
-        <CardDescription>
-          Enter the 6-digit code sent to {email}
-        </CardDescription>
+      <CardHeader className="space-y-6 text-center pb-8">
+        <div className="flex justify-center">
+          <div className="h-20 w-20 rounded-2xl bg-blue-600 flex items-center justify-center">
+            <span className="text-4xl font-bold text-white">B</span>
+          </div>
+        </div>
+        <div className="space-y-2">
+          <CardTitle className="text-3xl font-bold">Blue Wallets</CardTitle>
+          <CardDescription className="text-base text-slate-500">
+            Receive USDC Instantly
+          </CardDescription>
+        </div>
+        <div className="space-y-2 pt-4">
+          <h2 className="text-2xl font-semibold text-slate-900 dark:text-white">
+            Enter verification code
+          </h2>
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            Enter the 6-digit code sent to {email}
+          </p>
+        </div>
       </CardHeader>
-      <CardContent>
-        <form onSubmit={handleVerifyOtp} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="otp">Verification code</Label>
+      <CardContent className="px-8 pb-8">
+        <form onSubmit={handleVerifyOtp} className="space-y-6">
+          <div className="space-y-3">
+            <Label htmlFor="otp" className="text-base font-medium text-slate-700 dark:text-slate-300">
+              Verification Code
+            </Label>
             <Input
               id="otp"
               inputMode="text"
@@ -225,15 +265,17 @@ export function TurnkeyLoginForm({
               }}
               maxLength={6}
               required
+              className="h-12 text-base text-center text-2xl tracking-widest"
             />
           </div>
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-3">
             <Button
               type="submit"
               disabled={isVerifying || otpCode.length !== 6}
-              className="w-full"
+              className="w-full h-12 text-base font-semibold bg-blue-600 hover:bg-blue-700"
+              size="lg"
             >
-              {isVerifying ? "Verifying..." : "Verify and sign in"}
+              {isVerifying ? "Verifying..." : "Verify and Sign In"}
             </Button>
             <Button
               type="button"
@@ -244,6 +286,7 @@ export function TurnkeyLoginForm({
                 setOtpId(null);
               }}
               disabled={isVerifying}
+              className="h-10 text-sm"
             >
               Resend code
             </Button>
@@ -255,7 +298,7 @@ export function TurnkeyLoginForm({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md p-0">
+      <DialogContent className="sm:max-w-lg p-0">
         <DialogTitle className="sr-only">Sign in to Blue Wallet</DialogTitle>
         <Card className="border-0 shadow-none">
           {step === "request" ? renderRequestStep() : renderVerifyStep()}
