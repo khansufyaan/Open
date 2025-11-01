@@ -1402,38 +1402,38 @@ function TurnkeyAuthContent() {
 
   if (!session) {
     return (
-      <section className="space-y-6 rounded-3xl border border-slate-200/80 bg-white/70 p-10 text-slate-700 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-200">
+      <section className="max-w-md mx-auto rounded-2xl border border-slate-200/80 bg-white/70 p-6 text-slate-700 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-200">
         <Card className="border-0 shadow-none bg-transparent">
           {step === "request" ? (
             <>
-              <CardHeader className="space-y-6 text-center pb-8">
+              <CardHeader className="space-y-3 text-center pb-3">
                 <div className="flex justify-center">
-                  <div className="h-20 w-20 rounded-2xl bg-blue-600 flex items-center justify-center">
-                    <span className="text-4xl font-bold text-white">B</span>
+                  <div className="h-12 w-12 rounded-xl bg-blue-600 flex items-center justify-center">
+                    <span className="text-xl font-bold text-white">B</span>
                   </div>
                 </div>
-                <div className="space-y-2">
-                  <CardTitle className="text-3xl font-bold">Blue Wallets</CardTitle>
-                  <CardDescription className="text-base text-slate-500">
+                <div>
+                  <CardTitle className="text-lg font-bold">Blue Wallets</CardTitle>
+                  <CardDescription className="text-xs text-slate-500 mt-1">
                     Receive USDC Instantly
                   </CardDescription>
                 </div>
-                <div className="space-y-2 pt-4">
-                  <h2 className="text-2xl font-semibold text-slate-900 dark:text-white">
+                <div className="pt-1">
+                  <h2 className="text-base font-semibold text-slate-900 dark:text-white">
                     Sign in with your email
                   </h2>
-                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                     We&apos;ll send you a code to verify your identity
                   </p>
                 </div>
               </CardHeader>
-              <CardContent className="px-8 pb-8">
+              <CardContent className="px-4 pb-4">
                 {authError && (
-                  <p className="mb-4 text-sm text-red-600 dark:text-red-400 text-center">{authError}</p>
+                  <p className="mb-3 text-xs text-red-600 dark:text-red-400 text-center">{authError}</p>
                 )}
-                <form onSubmit={handleEmailAuth} className="space-y-6">
-                  <div className="space-y-3">
-                    <Label htmlFor="email" className="text-base font-medium text-slate-700 dark:text-slate-300">
+                <form onSubmit={handleEmailAuth} className="space-y-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="email" className="text-sm font-medium text-slate-700 dark:text-slate-300">
                       Email Address
                     </Label>
                     <Input
@@ -1443,14 +1443,13 @@ function TurnkeyAuthContent() {
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       required
-                      className="h-12 text-base"
+                      className="h-9 text-sm"
                     />
                   </div>
                   <Button
                     type="submit"
                     disabled={isRequesting || !email.trim()}
-                    className="w-full h-12 text-base font-semibold bg-blue-600 hover:bg-blue-700"
-                    size="lg"
+                    className="w-full h-9 text-sm font-semibold bg-blue-600 hover:bg-blue-700"
                   >
                     {isRequesting ? "Sending code..." : "Send Verification Code"}
                   </Button>
@@ -1459,34 +1458,34 @@ function TurnkeyAuthContent() {
             </>
           ) : (
             <>
-              <CardHeader className="space-y-6 text-center pb-8">
+              <CardHeader className="space-y-3 text-center pb-3">
                 <div className="flex justify-center">
-                  <div className="h-20 w-20 rounded-2xl bg-blue-600 flex items-center justify-center">
-                    <span className="text-4xl font-bold text-white">B</span>
+                  <div className="h-12 w-12 rounded-xl bg-blue-600 flex items-center justify-center">
+                    <span className="text-xl font-bold text-white">B</span>
                   </div>
                 </div>
-                <div className="space-y-2">
-                  <CardTitle className="text-3xl font-bold">Blue Wallets</CardTitle>
-                  <CardDescription className="text-base text-slate-500">
+                <div>
+                  <CardTitle className="text-lg font-bold">Blue Wallets</CardTitle>
+                  <CardDescription className="text-xs text-slate-500 mt-1">
                     Receive USDC Instantly
                   </CardDescription>
                 </div>
-                <div className="space-y-2 pt-4">
-                  <h2 className="text-2xl font-semibold text-slate-900 dark:text-white">
+                <div className="pt-1">
+                  <h2 className="text-base font-semibold text-slate-900 dark:text-white">
                     Enter verification code
                   </h2>
-                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                     Enter the 6-digit code sent to {email}
                   </p>
                 </div>
               </CardHeader>
-              <CardContent className="px-8 pb-8">
+              <CardContent className="px-4 pb-4">
                 {authError && (
-                  <p className="mb-4 text-sm text-red-600 dark:text-red-400 text-center">{authError}</p>
+                  <p className="mb-3 text-xs text-red-600 dark:text-red-400 text-center">{authError}</p>
                 )}
-                <form onSubmit={handleVerifyOtp} className="space-y-6">
-                  <div className="space-y-3">
-                    <Label htmlFor="otp" className="text-base font-medium text-slate-700 dark:text-slate-300">
+                <form onSubmit={handleVerifyOtp} className="space-y-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="otp" className="text-sm font-medium text-slate-700 dark:text-slate-300">
                       Verification Code
                     </Label>
                     <Input
@@ -1504,15 +1503,14 @@ function TurnkeyAuthContent() {
                       }}
                       maxLength={6}
                       required
-                      className="h-12 text-base text-center text-2xl tracking-widest"
+                      className="h-9 text-sm text-center text-lg tracking-widest"
                     />
                   </div>
-                  <div className="flex flex-col gap-3">
+                  <div className="flex flex-col gap-2">
                     <Button
                       type="submit"
                       disabled={isVerifying || otpCode.length !== 6}
-                      className="w-full h-12 text-base font-semibold bg-blue-600 hover:bg-blue-700"
-                      size="lg"
+                      className="w-full h-9 text-sm font-semibold bg-blue-600 hover:bg-blue-700"
                     >
                       {isVerifying ? "Verifying..." : "Verify and Sign In"}
                     </Button>
@@ -1526,7 +1524,7 @@ function TurnkeyAuthContent() {
                         setAuthError(null);
                       }}
                       disabled={isVerifying}
-                      className="h-10 text-sm"
+                      className="h-7 text-xs"
                     >
                       Resend code
                     </Button>
