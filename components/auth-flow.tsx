@@ -9,58 +9,17 @@ import { CheckCircle2, LogOut } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { TurnkeyLoginForm } from "@/components/turnkey-login-form";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { PlaidConnectButton } from "@/components/plaid-connect-button";
 import { SendMoneyModal } from "@/components/send-money-modal";
+import { ReceiverFlowModal } from "@/components/receiver-flow-modal";
+import type { PlaidAchAccount, PlaidIdentitySnapshot, TransferSummary } from "@/types/receiver";
 import { base } from "viem/chains";
 
 const TURNKEY_READY = Boolean(
   process.env.NEXT_PUBLIC_TURNKEY_API_BASE_URL && process.env.NEXT_PUBLIC_TURNKEY_ORGANIZATION_ID
 );
-
-type PlaidAchAccount = {
-  accountId: string;
-  accountNumber: string;
-  routingNumber: string;
-  wireRoutingNumber?: string | null;
-  mask?: string | null;
-  name?: string | null;
-};
-
-type PlaidIdentitySnapshot = {
-  names: string[];
-  emails: string[];
-  phones: string[];
-  addresses: Array<{
-    street: string;
-    city: string;
-    region: string;
-    postal_code: string;
-    country: string;
-  }>;
-  achAccounts: PlaidAchAccount[];
-};
-
-type TransferSummary = {
-  transferId: string;
-  walletId: string;
-  walletAddress: string | null;
-  depositAddress?: string | null;
-  amount: string;
-  status: string;
-  depositMethod: string;
-  createdAt: string;
-  fundingStatus?: string | null;
-  fundingTxHash?: string | null;
-  recipientWalletAddress?: string | null;
-  recipientWalletId?: string | null;
-  recipientWalletName?: string | null;
-  claimTxHash?: string | null;
-  claimedAt?: string | null;
-  withdrawalTxHash?: string | null;
-  withdrawalTargetAddress?: string | null;
-  withdrawnAt?: string | null;
-};
 
 type WithdrawalQuote = {
   gasLimit: string;
@@ -239,10 +198,20 @@ function TurnkeyAuthContent() {
   const { wallets: connectedWallets } = useWallets();
   const turnkeyContext = useTurnkey();
   const turnkey = turnkeyContext.turnkey;
+  const indexedDbClient = turnkeyContext.indexedDbClient;
   const ALL_ACCOUNTS_KEY = "__ALL__";
   const [authError, setAuthError] = useState<string | null>(null);
   const [session, setSession] = useState<Session | null>(null);
-  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showFlowModal, setShowFlowModal] = useState(false);
+
+  // OTP login state
+  const [email, setEmail] = useState("");
+  const [otpId, setOtpId] = useState<string | null>(null);
+  const [otpCode, setOtpCode] = useState("");
+  const [step, setStep] = useState<"request" | "verify">("request");
+  const [subOrgId, setSubOrgId] = useState<string | null>(null);
+  const [isRequesting, setIsRequesting] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
   const [plaidIdentity, setPlaidIdentity] = useState<PlaidIdentitySnapshot | null>(null);
   const [linkedAccounts, setLinkedAccounts] = useState<PlaidAchAccount[]>([]);
   const [selectedAccountKey, setSelectedAccountKey] = useState<string>(ALL_ACCOUNTS_KEY);
@@ -702,6 +671,143 @@ function TurnkeyAuthContent() {
     setAuthError(message || "Something went wrong while signing in.");
   };
 
+  const handleEmailAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmedEmail = email.trim();
+
+    if (!trimmedEmail) {
+      setAuthError("Please enter a valid email address.");
+      return;
+    }
+
+    setIsRequesting(true);
+    setAuthError(null);
+    try {
+      console.log(`[Auth] Creating/verifying Turnkey user for: ${trimmedEmail}`);
+
+      const ensureUserResponse = await fetch("/api/turnkey/create-user", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email: trimmedEmail }),
+      });
+
+      if (!ensureUserResponse.ok) {
+        const data = (await ensureUserResponse.json().catch(() => null)) as
+          | { message?: string; error?: string; details?: unknown }
+          | null;
+
+        console.error("[Auth] Failed to create/verify user:", data);
+
+        const errorMessage = data?.message ?? data?.error ?? "Unable to prepare user account.";
+        throw new Error(errorMessage);
+      }
+
+      const userData = await ensureUserResponse.json() as {
+        created: boolean;
+        subOrganizationId?: string;
+        subOrgExists?: boolean;
+      };
+      console.log(`[Auth] User registration result:`, userData);
+
+      const userSubOrgId = userData.subOrganizationId;
+      console.log(`[Auth] Sub-organization ID: ${userSubOrgId ?? 'not returned'}`);
+
+      if (!userSubOrgId) {
+        throw new Error("Sub-organization ID not returned - cannot proceed with OTP login");
+      }
+
+      setSubOrgId(userSubOrgId);
+
+      if (!turnkey) {
+        throw new Error("Authentication client not available");
+      }
+
+      console.log(`[Auth] Initiating email OTP for: ${trimmedEmail}`);
+      console.log(`[Auth] Using PARENT org ID for initOtp: ${process.env.NEXT_PUBLIC_TURNKEY_ORGANIZATION_ID}`);
+
+      const response = await turnkey.serverSign("initOtp", [{
+        otpType: "OTP_TYPE_EMAIL",
+        contact: trimmedEmail,
+        organizationId: process.env.NEXT_PUBLIC_TURNKEY_ORGANIZATION_ID!,
+        otpLength: 6,
+        alphanumeric: false,
+        expirationSeconds: "300",
+      }]) as { otpId: string };
+
+      console.log(`[Auth] OTP initiated successfully with ID: ${response.otpId}`);
+
+      setOtpId(response.otpId);
+      setStep("verify");
+    } catch (error) {
+      console.error("[Auth] Email auth flow failed:", error);
+      const message = error instanceof Error ? error.message : "Failed to send email OTP";
+      setAuthError(message);
+    } finally {
+      setIsRequesting(false);
+    }
+  };
+
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!otpCode.trim() || !otpId) {
+      setAuthError("Please enter the verification code");
+      return;
+    }
+
+    setIsVerifying(true);
+    setAuthError(null);
+
+    try {
+      if (!turnkey || !indexedDbClient) {
+        throw new Error("Authentication clients not available");
+      }
+
+      console.log(`[Auth] Verifying OTP code with parent org ID`);
+      const verifyResponse = await turnkey.serverSign("verifyOtp", [{
+        otpId: otpId,
+        otpCode: otpCode.trim(),
+        organizationId: process.env.NEXT_PUBLIC_TURNKEY_ORGANIZATION_ID!
+      }]) as { verificationToken: string };
+
+      console.log(`[Auth] OTP verified successfully`);
+
+      console.log(`[Auth] Clearing IndexedDB to generate fresh credential`);
+      await indexedDbClient.clear();
+
+      await indexedDbClient.init();
+      const publicKey = await indexedDbClient.getPublicKey();
+
+      if (!subOrgId) {
+        throw new Error("Sub-organization ID not available - cannot complete login");
+      }
+
+      console.log(`[Auth] Logging in with SUB-ORG ID: ${subOrgId}`);
+      const loginResponse = await turnkey.serverSign("otpLogin", [{
+        publicKey: publicKey,
+        verificationToken: verifyResponse.verificationToken,
+        organizationId: subOrgId,
+        expirationSeconds: "900"
+      }]) as { session?: string };
+
+      const sessionToken = loginResponse?.session;
+
+      if (!sessionToken) {
+        throw new Error("Authentication service did not return a session token.");
+      }
+
+      await indexedDbClient.loginWithSession(sessionToken);
+
+      await handleAuthSuccess(email.trim());
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Verification failed";
+      setAuthError(message);
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
   const handleLogout = async () => {
     try {
       await turnkey?.logout();
@@ -720,6 +826,14 @@ function TurnkeyAuthContent() {
       setWithdrawLoading({});
       setWithdrawErrors({});
       setWithdrawSuccess({});
+      // Reset OTP state
+      setEmail("");
+      setOtpId(null);
+      setOtpCode("");
+      setStep("request");
+      setSubOrgId(null);
+      setIsRequesting(false);
+      setIsVerifying(false);
     }
   };
 
@@ -1279,74 +1393,215 @@ function TurnkeyAuthContent() {
     [ALL_ACCOUNTS_KEY, fetchTransfersForAccounts, linkedAccounts, selectedAccountKey]
   );
 
-  // Auto-open auth modal when not logged in
+  // Auto-open flow modal when logged in
   useEffect(() => {
-    if (!session) {
-      setShowAuthModal(true);
+    if (session) {
+      setShowFlowModal(true);
     }
   }, [session]);
 
   if (!session) {
     return (
-      <>
-        <section className="space-y-6 rounded-3xl border border-slate-200/80 bg-white/70 p-10 text-slate-700 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-200">
-          <div className="space-y-4 text-center">
-            <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-              Receive
-            </h1>
-            <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
-              Sign in to view and manage your transfers.
-            </p>
-          </div>
-
-          {authError && (
-            <p className="text-sm text-red-600 dark:text-red-400 text-center">{authError}</p>
+      <section className="max-w-md mx-auto rounded-2xl border border-slate-200/80 bg-white/70 p-6 text-slate-700 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-200">
+        <Card className="border-0 shadow-none bg-transparent">
+          {step === "request" ? (
+            <>
+              <CardHeader className="space-y-3 text-center pb-3">
+                <div className="flex justify-center">
+                  <div className="h-12 w-12 rounded-xl bg-blue-600 flex items-center justify-center">
+                    <span className="text-xl font-bold text-white">B</span>
+                  </div>
+                </div>
+                <div>
+                  <CardTitle className="text-lg font-bold">Blue Wallets</CardTitle>
+                  <CardDescription className="text-xs text-slate-500 mt-1">
+                    Receive USDC Instantly
+                  </CardDescription>
+                </div>
+                <div className="pt-1">
+                  <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+                    Sign in with your email
+                  </h2>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                    We&apos;ll send you a code to verify your identity
+                  </p>
+                </div>
+              </CardHeader>
+              <CardContent className="px-4 pb-4">
+                {authError && (
+                  <p className="mb-3 text-xs text-red-600 dark:text-red-400 text-center">{authError}</p>
+                )}
+                <form onSubmit={handleEmailAuth} className="space-y-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="email" className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                      Email Address
+                    </Label>
+                    <Input
+                      id="email"
+                      type="email"
+                      placeholder="you@example.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      required
+                      className="h-9 text-sm"
+                    />
+                  </div>
+                  <Button
+                    type="submit"
+                    disabled={isRequesting || !email.trim()}
+                    className="w-full h-9 text-sm font-semibold bg-blue-600 hover:bg-blue-700"
+                  >
+                    {isRequesting ? "Sending code..." : "Send Verification Code"}
+                  </Button>
+                </form>
+              </CardContent>
+            </>
+          ) : (
+            <>
+              <CardHeader className="space-y-3 text-center pb-3">
+                <div className="flex justify-center">
+                  <div className="h-12 w-12 rounded-xl bg-blue-600 flex items-center justify-center">
+                    <span className="text-xl font-bold text-white">B</span>
+                  </div>
+                </div>
+                <div>
+                  <CardTitle className="text-lg font-bold">Blue Wallets</CardTitle>
+                  <CardDescription className="text-xs text-slate-500 mt-1">
+                    Receive USDC Instantly
+                  </CardDescription>
+                </div>
+                <div className="pt-1">
+                  <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+                    Enter verification code
+                  </h2>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                    Enter the 6-digit code sent to {email}
+                  </p>
+                </div>
+              </CardHeader>
+              <CardContent className="px-4 pb-4">
+                {authError && (
+                  <p className="mb-3 text-xs text-red-600 dark:text-red-400 text-center">{authError}</p>
+                )}
+                <form onSubmit={handleVerifyOtp} className="space-y-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="otp" className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                      Verification Code
+                    </Label>
+                    <Input
+                      id="otp"
+                      inputMode="text"
+                      autoComplete="one-time-code"
+                      placeholder="123456"
+                      value={otpCode}
+                      onChange={(e) => {
+                        const cleaned = e.target.value
+                          .toUpperCase()
+                          .replace(/[^A-Z0-9]/g, "")
+                          .slice(0, 6);
+                        setOtpCode(cleaned);
+                      }}
+                      maxLength={6}
+                      required
+                      className="h-9 text-sm text-center text-lg tracking-widest"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <Button
+                      type="submit"
+                      disabled={isVerifying || otpCode.length !== 6}
+                      className="w-full h-9 text-sm font-semibold bg-blue-600 hover:bg-blue-700"
+                    >
+                      {isVerifying ? "Verifying..." : "Verify and Sign In"}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => {
+                        setStep("request");
+                        setOtpCode("");
+                        setOtpId(null);
+                        setAuthError(null);
+                      }}
+                      disabled={isVerifying}
+                      className="h-7 text-xs"
+                    >
+                      Resend code
+                    </Button>
+                  </div>
+                </form>
+              </CardContent>
+            </>
           )}
-
-          {!showAuthModal && (
-            <div className="text-center">
-              <Button onClick={() => setShowAuthModal(true)}>
-                Sign in
-              </Button>
-            </div>
-          )}
-        </section>
-
-        <TurnkeyLoginForm
-          open={showAuthModal}
-          onOpenChange={setShowAuthModal}
-          onAuthSuccess={handleAuthSuccess}
-          onAuthError={handleAuthError}
-        />
-      </>
+        </Card>
+      </section>
     );
   }
 
   return (
     <>
-      <section className="space-y-6 rounded-3xl border border-slate-200/80 bg-white/70 p-10 text-slate-700 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-200">
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-              Receive
+      <section className="space-y-6 rounded-3xl border border-slate-200/80 bg-white/70 p-10 text-center text-slate-700 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-200">
+        <div className="mx-auto max-w-2xl space-y-6">
+          <div className="flex justify-center">
+            <div className="h-20 w-20 rounded-2xl bg-blue-600 flex items-center justify-center">
+              <span className="text-4xl font-bold text-white">B</span>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
+              Welcome Back
             </h1>
-            <Button variant="ghost" size="sm" onClick={handleLogout}>
+            <p className="text-base text-slate-600 dark:text-slate-300">
+              You&apos;re signed in. Manage your bank account and transfers.
+            </p>
+          </div>
+
+          {authError && (
+            <p className="text-sm text-red-600 dark:text-red-400">{authError}</p>
+          )}
+
+          <div className="flex flex-col items-center gap-3 pt-4">
+            <Button
+              size="lg"
+              onClick={() => setShowFlowModal(true)}
+              className="min-w-[240px] h-12 text-base font-semibold bg-blue-600 hover:bg-blue-700"
+            >
+              Manage Transfers
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleLogout}
+              className="text-slate-500"
+            >
               <LogOut className="mr-2 h-4 w-4" /> Sign out
             </Button>
           </div>
-          <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
-            Manage your bank account and transfers.
-          </p>
         </div>
-
-        {authError && (
-          <p className="text-sm text-red-600 dark:text-red-400">{authError}</p>
-        )}
       </section>
+
+      <ReceiverFlowModal
+        open={showFlowModal}
+        onOpenChange={setShowFlowModal}
+        session={session}
+        plaidIdentity={plaidIdentity}
+        transferSummaries={transferSummaries}
+        isTransfersLoading={isTransfersLoading}
+        userWalletInfo={userWalletInfo}
+        onPlaidSuccess={handlePlaidSuccess}
+        onPlaidError={handlePlaidError}
+        onClaim={handleClaim}
+        onWithdraw={handleWithdraw}
+        claimLoading={claimLoading}
+        claimErrors={claimErrors}
+        claimSuccess={claimSuccess}
+        linkedAccounts={linkedAccounts}
+        selectedAccount={selectedAccount}
+      />
 
       <section
         ref={stepsRef}
-        className="space-y-4 rounded-3xl border border-slate-200/80 bg-white/70 p-6 text-slate-700 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-200"
+        className="hidden space-y-4 rounded-3xl border border-slate-200/80 bg-white/70 p-6 text-slate-700 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-200"
       >
         {/* Identity Verified Widget */}
         <article className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
