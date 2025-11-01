@@ -15,7 +15,7 @@ export function LandingPage() {
           <div className="flex justify-center">
             <div className="relative h-32 w-32">
               <Image
-                src="/blue-logo.svg"
+                src="/blue2.jpg"
                 alt="BLUE"
                 fill
                 className="object-contain"
