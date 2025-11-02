@@ -14,6 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { PlaidConnectButton } from "@/components/plaid-connect-button";
 import { SendMoneyModal } from "@/components/send-money-modal";
 import { ReceiverFlowModal } from "@/components/receiver-flow-modal";
+import { ReceiverDashboard } from "@/components/receiver-dashboard";
 import type { PlaidAchAccount, PlaidIdentitySnapshot, TransferSummary } from "@/types/receiver";
 import { base } from "viem/chains";
 
@@ -1540,64 +1541,48 @@ function TurnkeyAuthContent() {
 
   return (
     <>
-      <section className="space-y-6 rounded-3xl border border-slate-200/80 bg-white/70 p-10 text-center text-slate-700 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-200">
-        <div className="mx-auto max-w-2xl space-y-6">
-          <div className="flex justify-center">
-            <div className="h-20 w-20 rounded-2xl bg-blue-600 flex items-center justify-center">
-              <span className="text-4xl font-bold text-white">B</span>
-            </div>
-          </div>
-          <div className="space-y-2">
-            <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
-              Welcome Back
-            </h1>
-            <p className="text-base text-slate-600 dark:text-slate-300">
-              You&apos;re signed in. Manage your bank account and transfers.
-            </p>
-          </div>
-
-          {authError && (
-            <p className="text-sm text-red-600 dark:text-red-400">{authError}</p>
-          )}
-
-          <div className="flex flex-col items-center gap-3 pt-4">
-            <Button
-              size="lg"
-              onClick={() => setShowFlowModal(true)}
-              className="min-w-[240px] h-12 text-base font-semibold bg-blue-600 hover:bg-blue-700"
-            >
-              Manage Transfers
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleLogout}
-              className="text-slate-500"
-            >
-              <LogOut className="mr-2 h-4 w-4" /> Sign out
-            </Button>
-          </div>
+      <div className="space-y-4">
+        {/* Logout Button */}
+        <div className="flex justify-end">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleLogout}
+            className="text-slate-500"
+          >
+            <LogOut className="mr-2 h-4 w-4" /> Sign out
+          </Button>
         </div>
-      </section>
 
-      <ReceiverFlowModal
-        open={showFlowModal}
-        onOpenChange={setShowFlowModal}
-        session={session}
-        plaidIdentity={plaidIdentity}
-        transferSummaries={transferSummaries}
-        isTransfersLoading={isTransfersLoading}
-        userWalletInfo={userWalletInfo}
-        onPlaidSuccess={handlePlaidSuccess}
-        onPlaidError={handlePlaidError}
-        onClaim={handleClaim}
-        onWithdraw={handleWithdraw}
-        claimLoading={claimLoading}
-        claimErrors={claimErrors}
-        claimSuccess={claimSuccess}
-        linkedAccounts={linkedAccounts}
-        selectedAccount={selectedAccount}
-      />
+        {/* Receiver Dashboard */}
+        {!plaidIdentity ? (
+          <section className="mx-auto max-w-md rounded-3xl border border-slate-200/80 bg-white/70 p-8 text-center text-slate-700 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-200">
+            <h2 className="text-2xl font-bold tracking-tight">Connect Your Bank</h2>
+            <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+              Link your bank account to start receiving funds
+            </p>
+            <div className="mt-6">
+              <PlaidConnectButton
+                userId={session.userId}
+                onSuccess={handlePlaidSuccess}
+                onError={handlePlaidError}
+              />
+            </div>
+          </section>
+        ) : (
+          <ReceiverDashboard
+            session={session}
+            linkedAccounts={linkedAccounts}
+            transferSummaries={transferSummaries}
+            isTransfersLoading={isTransfersLoading}
+            onClaim={handleClaim}
+            claimLoading={claimLoading}
+            claimErrors={claimErrors}
+            claimSuccess={claimSuccess}
+            onRefreshTransfers={fetchTransfersForAccounts.bind(null, linkedAccounts)}
+          />
+        )}
+      </div>
 
       <section
         ref={stepsRef}
