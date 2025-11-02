@@ -495,7 +495,7 @@ export function SenderExperience() {
   }, [recipientAccountNumber, recipientRoutingNumber]);
 
   return (
-    <div className="mx-auto w-full max-w-md space-y-6">
+    <div className="mx-auto w-full space-y-6" style={{ maxWidth: transfer ? '1200px' : '28rem' }}>
       <section>
         <div className="rounded-3xl border border-slate-200/80 bg-white/70 p-6 text-slate-700 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-200">
         <div className="space-y-4">
@@ -511,6 +511,7 @@ export function SenderExperience() {
             </div>
           ) : (
             <>
+              <div className={transfer ? "grid grid-cols-1 lg:grid-cols-2 gap-6" : ""}>
               <form className="space-y-4" onSubmit={handleSubmit}>
                 <div className="space-y-2">
                   <Label htmlFor="accountNumber">Account number</Label>
@@ -648,67 +649,34 @@ export function SenderExperience() {
                 {fundingError && (
                   <p className="text-sm text-red-600 dark:text-red-400 text-center">{fundingError}</p>
                 )}
+              </form>
 
-                {transfer && (
-                  <div className="rounded-3xl border border-emerald-200/70 bg-emerald-50/70 p-5 text-left text-emerald-800 shadow-sm dark:border-emerald-800/60 dark:bg-emerald-900/60 dark:text-emerald-100">
-                    <p className="text-sm font-semibold">Deposit confirmed</p>
-                    <p className="mt-1 text-xs text-emerald-900/80 dark:text-emerald-100/80">
-                      {transfer.amount} USDC is now in the BlueWallet company vault. The recipient’s dedicated warehouse wallet was provisioned and will receive the vault funds once they claim.
-                    </p>
+              {transfer && (
+                <div className="rounded-3xl border border-emerald-200/70 bg-emerald-50/70 p-5 text-left text-emerald-800 shadow-sm dark:border-emerald-800/60 dark:bg-emerald-900/60 dark:text-emerald-100 self-start">
+                  <p className="text-sm font-semibold">Deposit confirmed</p>
+                  <p className="mt-1 text-xs text-emerald-900/80 dark:text-emerald-100/80">
+                    The recipient&apos;s wallet will receive the vault funds once they claim it.
+                  </p>
+                  {transfer.fundingTxHash && (
                     <dl className="mt-3 space-y-2 text-[11px]">
                       <div>
-                        <dt className="uppercase tracking-wide text-emerald-900/70 dark:text-emerald-100/70">Vault address</dt>
-                        <dd className="break-all text-emerald-950 dark:text-emerald-50">{transfer.depositAddress}</dd>
+                        <dt className="uppercase tracking-wide text-emerald-900/70 dark:text-emerald-100/70">Funding tx</dt>
+                        <dd className="break-all text-emerald-950 dark:text-emerald-50">
+                          <a
+                            href={`https://basescan.org/tx/${transfer.fundingTxHash}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="underline hover:no-underline"
+                          >
+                            {transfer.fundingTxHash}
+                          </a>
+                        </dd>
                       </div>
-                      {(transfer.recipientWalletAddress || transfer.walletAddress) && (
-                        <div>
-                          <dt className="uppercase tracking-wide text-emerald-900/70 dark:text-emerald-100/70">Recipient wallet</dt>
-                          <dd className="break-all text-emerald-950 dark:text-emerald-50">
-                            {transfer.recipientWalletAddress ?? transfer.walletAddress}
-                          </dd>
-                        </div>
-                      )}
-                      {transfer.recipientWalletName && (
-                        <div>
-                          <dt className="uppercase tracking-wide text-emerald-900/70 dark:text-emerald-100/70">Wallet name</dt>
-                          <dd className="break-all text-emerald-950 dark:text-emerald-50">
-                            {transfer.recipientWalletName}
-                          </dd>
-                        </div>
-                      )}
-                      {transfer.recipientWalletId && (
-                        <div>
-                          <dt className="uppercase tracking-wide text-emerald-900/70 dark:text-emerald-100/70">Recipient wallet ID</dt>
-                          <dd className="break-all text-emerald-950 dark:text-emerald-50">
-                            {transfer.recipientWalletId}
-                          </dd>
-                        </div>
-                      )}
-                      {transfer.transferId && (
-                        <div>
-                          <dt className="uppercase tracking-wide text-emerald-900/70 dark:text-emerald-100/70">Transfer ID</dt>
-                          <dd className="break-all text-emerald-950 dark:text-emerald-50">{transfer.transferId}</dd>
-                        </div>
-                      )}
-                      {transfer.fundingTxHash && (
-                        <div>
-                          <dt className="uppercase tracking-wide text-emerald-900/70 dark:text-emerald-100/70">Funding tx</dt>
-                          <dd className="break-all text-emerald-950 dark:text-emerald-50">
-                            <a
-                              href={`https://basescan.org/tx/${transfer.fundingTxHash}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="underline"
-                            >
-                              {transfer.fundingTxHash}
-                            </a>
-                          </dd>
-                        </div>
-                      )}
                     </dl>
-                  </div>
-                )}
-              </form>
+                  )}
+                </div>
+              )}
+              </div>
             </>
           )}
         </div>
