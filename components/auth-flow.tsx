@@ -1580,6 +1580,12 @@ function TurnkeyAuthContent() {
             claimErrors={claimErrors}
             claimSuccess={claimSuccess}
             onRefreshTransfers={fetchTransfersForAccounts.bind(null, linkedAccounts)}
+            onWithdraw={handleWithdraw}
+            withdrawInputs={withdrawInputs}
+            onWithdrawInputChange={handleWithdrawInputChange}
+            withdrawLoading={withdrawLoading}
+            withdrawErrors={withdrawErrors}
+            withdrawSuccess={withdrawSuccess}
           />
         )}
       </div>
