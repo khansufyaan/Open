@@ -86,8 +86,10 @@ export function ReceiverDashboard({
   // Get claimed transfers ready for withdrawal
   const claimedTransfers = transferSummaries.filter((t) => t.status === "CLAIMED");
 
-  // Get withdrawn transfers for history
-  const withdrawnTransfers = transferSummaries.filter((t) => t.status === "WITHDRAWN");
+  // Get all completed transfers for history (claimed + withdrawn)
+  const completedTransfers = transferSummaries.filter(
+    (t) => t.status === "CLAIMED" || t.status === "WITHDRAWN"
+  );
 
   const connectedBank = linkedAccounts[0];
 
@@ -153,18 +155,18 @@ export function ReceiverDashboard({
                 return (
                   <div
                     key={transfer.transferId}
-                    className="rounded-2xl border border-slate-200/80 bg-white/70 p-4 dark:border-slate-800/60 dark:bg-slate-900/70"
+                    className="rounded-2xl border border-slate-200/80 bg-white/70 p-4 shadow-sm dark:border-slate-800/60 dark:bg-slate-900/70"
                   >
                     <div className="flex items-start gap-4">
                       {/* Avatar */}
-                      <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-400 to-blue-600 text-base font-bold text-white">
+                      <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-400 to-blue-600 text-lg font-bold text-white">
                         {initials}
                       </div>
 
                       {/* Info and Withdraw Form */}
                       <div className="flex-1 min-w-0 space-y-3">
                         <div>
-                          <p className="text-xl font-bold text-slate-900 dark:text-white">
+                          <p className="text-2xl font-bold text-slate-900 dark:text-white">
                             ${parseFloat(transfer.amount).toFixed(2)}
                           </p>
                           <p className="text-sm text-slate-600 dark:text-slate-300">
@@ -195,7 +197,7 @@ export function ReceiverDashboard({
                                 withdrawLoading[transfer.transferId] ||
                                 !withdrawInputs[transfer.transferId]?.trim()
                               }
-                              className="bg-blue-600 hover:bg-blue-700"
+                              className="h-10 bg-blue-600 hover:bg-blue-700 font-semibold px-6"
                             >
                               {withdrawLoading[transfer.transferId] ? "Withdrawing..." : "Withdraw"}
                             </Button>
@@ -324,59 +326,82 @@ export function ReceiverDashboard({
       {showHistory && (
         <div className="space-y-4">
           <h3 className="text-2xl font-bold text-slate-900 dark:text-white">
-            Withdrawal History
+            Transfer History
           </h3>
-          {withdrawnTransfers.length === 0 ? (
+          {completedTransfers.length === 0 ? (
             <div className="rounded-2xl border border-slate-200/80 bg-white/70 p-8 text-center text-slate-500 dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-400">
-              No withdrawn transfers
+              No transfer history
             </div>
           ) : (
             <div className="space-y-3">
-              {withdrawnTransfers.map((transfer) => {
+              {completedTransfers.map((transfer) => {
                 const senderName = transfer.recipientWalletName || "Unknown Sender";
                 const initials = getInitials(senderName);
 
                 return (
                   <div
                     key={transfer.transferId}
-                    className="flex items-center gap-4 rounded-2xl border border-slate-200/80 bg-white/70 p-4 dark:border-slate-800/60 dark:bg-slate-900/70"
+                    className="flex items-center gap-4 rounded-2xl border border-slate-200/80 bg-white/70 p-4 shadow-sm dark:border-slate-800/60 dark:bg-slate-900/70"
                   >
                     {/* Avatar */}
-                    <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-slate-400 to-slate-600 text-base font-bold text-white">
+                    <div className={`flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-lg font-bold text-white ${
+                      transfer.status === "WITHDRAWN"
+                        ? "from-slate-400 to-slate-600"
+                        : "from-blue-400 to-blue-600"
+                    }`}>
                       {initials}
                     </div>
 
                     {/* Info */}
                     <div className="flex-1 min-w-0">
-                      <p className="text-xl font-bold text-slate-900 dark:text-white">
-                        ${parseFloat(transfer.amount).toFixed(2)}
+                      <div className="flex items-center gap-2">
+                        <p className="text-2xl font-bold text-slate-900 dark:text-white">
+                          ${parseFloat(transfer.amount).toFixed(2)}
+                        </p>
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
+                          transfer.status === "WITHDRAWN"
+                            ? "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                            : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400"
+                        }`}>
+                          {transfer.status === "WITHDRAWN" ? "Withdrawn" : "Claimed"}
+                        </span>
+                      </div>
+                      <p className="text-sm text-slate-600 dark:text-slate-300 mt-1">
+                        From: {senderName}
                       </p>
-                      <p className="text-sm text-slate-600 dark:text-slate-300">
-                        {senderName}
-                      </p>
-                      <p className="text-xs text-slate-400 dark:text-slate-500">
-                        Withdrawn {formatTimeAgo(transfer.withdrawnAt || transfer.createdAt)}
-                      </p>
-                      {transfer.claimTxHash && (
-                        <a
-                          href={`https://basescan.org/tx/${transfer.claimTxHash}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-xs text-blue-600 hover:underline dark:text-blue-400 block truncate mt-1"
-                        >
-                          Claim tx: {transfer.claimTxHash}
-                        </a>
+                      {transfer.withdrawalTargetAddress && (
+                        <p className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                          To: {transfer.withdrawalTargetAddress}
+                        </p>
                       )}
-                      {transfer.withdrawalTxHash && (
-                        <a
-                          href={`https://basescan.org/tx/${transfer.withdrawalTxHash}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-xs text-blue-600 hover:underline dark:text-blue-400 block truncate mt-1"
-                        >
-                          Withdraw tx: {transfer.withdrawalTxHash}
-                        </a>
-                      )}
+                      <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
+                        {transfer.status === "WITHDRAWN"
+                          ? `Withdrawn ${formatTimeAgo(transfer.withdrawnAt || transfer.createdAt)}`
+                          : `Claimed ${formatTimeAgo(transfer.claimedAt || transfer.createdAt)}`
+                        }
+                      </p>
+                      <div className="mt-2 space-y-1">
+                        {transfer.claimTxHash && (
+                          <a
+                            href={`https://basescan.org/tx/${transfer.claimTxHash}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-blue-600 hover:underline dark:text-blue-400 block truncate"
+                          >
+                            📥 Claim: {transfer.claimTxHash}
+                          </a>
+                        )}
+                        {transfer.withdrawalTxHash && (
+                          <a
+                            href={`https://basescan.org/tx/${transfer.withdrawalTxHash}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-blue-600 hover:underline dark:text-blue-400 block truncate"
+                          >
+                            📤 Withdraw: {transfer.withdrawalTxHash}
+                          </a>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );
