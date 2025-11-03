@@ -3,6 +3,7 @@
 import { useCallback, useState } from "react";
 import type { Session } from "@turnkey/sdk-types";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import type { PlaidAchAccount, TransferSummary } from "@/types/receiver";
 import { CheckCircle2 } from "lucide-react";
 
@@ -61,6 +62,7 @@ export function ReceiverDashboard({
   onRefreshTransfers,
 }: ReceiverDashboardProps) {
   const [showHistory, setShowHistory] = useState(false);
+  const [showTransferOut, setShowTransferOut] = useState(false);
 
   // Calculate total balance from claimed transfers
   const balance = transferSummaries
@@ -98,6 +100,7 @@ export function ReceiverDashboard({
             variant="secondary"
             className="bg-white/20 hover:bg-white/30 text-white border-0"
             disabled={!connectedBank || balance === 0}
+            onClick={() => setShowTransferOut(true)}
           >
             Transfer Out
           </Button>
@@ -168,9 +171,19 @@ export function ReceiverDashboard({
                         </p>
                       )}
                       {claimSuccess[transfer.transferId] && (
-                        <p className="mt-1 text-xs text-emerald-600 dark:text-emerald-400">
-                          Claimed successfully!
-                        </p>
+                        <div className="mt-1 space-y-1">
+                          <p className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold">
+                            Claimed successfully!
+                          </p>
+                          <a
+                            href={`https://basescan.org/tx/${claimSuccess[transfer.transferId]}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-blue-600 hover:underline dark:text-blue-400 block truncate"
+                          >
+                            View tx: {claimSuccess[transfer.transferId]}
+                          </a>
+                        </div>
                       )}
                     </div>
 
@@ -202,36 +215,66 @@ export function ReceiverDashboard({
             </div>
           ) : (
             <div className="space-y-3">
-              {completedTransfers.map((transfer) => (
-                <div
-                  key={transfer.transferId}
-                  className="rounded-2xl border border-slate-200/80 bg-white/70 p-4 dark:border-slate-800/60 dark:bg-slate-900/70"
-                >
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <p className="text-lg font-bold text-slate-900 dark:text-white">
+              {completedTransfers.map((transfer) => {
+                const senderName = transfer.recipientWalletName || "Unknown Sender";
+                const initials = getInitials(senderName);
+
+                return (
+                  <div
+                    key={transfer.transferId}
+                    className="flex items-center gap-4 rounded-2xl border border-slate-200/80 bg-white/70 p-4 dark:border-slate-800/60 dark:bg-slate-900/70"
+                  >
+                    {/* Avatar */}
+                    <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-slate-400 to-slate-600 text-base font-bold text-white">
+                      {initials}
+                    </div>
+
+                    {/* Info */}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xl font-bold text-slate-900 dark:text-white">
                         ${parseFloat(transfer.amount).toFixed(2)}
                       </p>
                       <p className="text-sm text-slate-600 dark:text-slate-300">
-                        {transfer.status}
+                        {senderName}
                       </p>
                       <p className="text-xs text-slate-400 dark:text-slate-500">
                         {formatTimeAgo(transfer.createdAt)}
+                        {transfer.status === "CLAIMED" && " • Claimed"}
+                        {transfer.status === "WITHDRAWN" && " • Withdrawn"}
                       </p>
+                      {transfer.claimTxHash && (
+                        <a
+                          href={`https://basescan.org/tx/${transfer.claimTxHash}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-blue-600 hover:underline dark:text-blue-400 block truncate mt-1"
+                        >
+                          Claim tx: {transfer.claimTxHash}
+                        </a>
+                      )}
+                      {transfer.withdrawalTxHash && (
+                        <a
+                          href={`https://basescan.org/tx/${transfer.withdrawalTxHash}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-blue-600 hover:underline dark:text-blue-400 block truncate mt-1"
+                        >
+                          Withdraw tx: {transfer.withdrawalTxHash}
+                        </a>
+                      )}
                     </div>
-                    {transfer.claimTxHash && (
-                      <a
-                        href={`https://basescan.org/tx/${transfer.claimTxHash}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs text-blue-600 hover:underline dark:text-blue-400"
-                      >
-                        View tx
-                      </a>
-                    )}
+
+                    {/* Status Badge */}
+                    <div className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                      transfer.status === "CLAIMED"
+                        ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400"
+                        : "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400"
+                    }`}>
+                      {transfer.status}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -264,6 +307,72 @@ export function ReceiverDashboard({
           </div>
         </div>
       )}
+
+      {/* Transfer Out Modal */}
+      <Dialog open={showTransferOut} onOpenChange={setShowTransferOut}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold">Transfer Out</DialogTitle>
+            <DialogDescription>
+              Withdraw your Blue Wallet balance to your connected bank account
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-6 py-4">
+            {/* Balance Display */}
+            <div className="rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 p-6 text-white">
+              <p className="text-sm opacity-90">Available Balance</p>
+              <p className="mt-1 text-4xl font-bold">${balance.toFixed(2)}</p>
+            </div>
+
+            {/* Bank Account Info */}
+            {connectedBank && (
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-2">
+                  Transfer To
+                </p>
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-white dark:bg-slate-700">
+                    <span className="text-xl">🏦</span>
+                  </div>
+                  <div>
+                    <p className="font-semibold text-slate-900 dark:text-white">
+                      {connectedBank.name || "Bank Account"}
+                    </p>
+                    <p className="text-sm text-slate-600 dark:text-slate-300">
+                      Checking ••••{connectedBank.mask || connectedBank.accountNumber.slice(-4)}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Info Message */}
+            <div className="rounded-lg bg-blue-50 p-4 text-sm text-blue-900 dark:bg-blue-900/20 dark:text-blue-200">
+              <p className="font-semibold mb-1">Coming Soon</p>
+              <p>
+                Bank withdrawals are currently being implemented. You&apos;ll be able to transfer your balance directly to your bank account once this feature is ready.
+              </p>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex gap-3">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => setShowTransferOut(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                className="flex-1 bg-blue-600 hover:bg-blue-700"
+                disabled
+              >
+                Withdraw ${balance.toFixed(2)}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
