@@ -24,7 +24,7 @@ export function LandingPage() {
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </Link>
               </Button>
-              <Button size="default" variant="outline" asChild className="min-w-[180px]">
+              <Button size="default" asChild className="min-w-[180px]">
                 <Link href="/recipient">
                   Receive Money
                   <ArrowRight className="ml-2 h-4 w-4" />
