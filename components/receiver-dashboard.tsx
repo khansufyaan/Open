@@ -22,6 +22,7 @@ interface ReceiverDashboardProps {
   withdrawLoading: Record<string, boolean>;
   withdrawErrors: Record<string, string | null>;
   withdrawSuccess: Record<string, string | null>;
+  onDisconnectPlaid?: () => Promise<void>;
 }
 
 function getInitials(name?: string): string {
@@ -71,9 +72,11 @@ export function ReceiverDashboard({
   withdrawLoading,
   withdrawErrors,
   withdrawSuccess,
+  onDisconnectPlaid,
 }: ReceiverDashboardProps) {
   const [showHistory, setShowHistory] = useState(false);
   const [showTransferOut, setShowTransferOut] = useState(false);
+  const [isDisconnecting, setIsDisconnecting] = useState(false);
 
   // Calculate total balance from claimed transfers
   const balance = transferSummaries
@@ -100,6 +103,19 @@ export function ReceiverDashboard({
     },
     [onClaim, onRefreshTransfers]
   );
+
+  const handleDisconnectPlaid = useCallback(async () => {
+    if (!onDisconnectPlaid) return;
+
+    setIsDisconnecting(true);
+    try {
+      await onDisconnectPlaid();
+    } catch (error) {
+      console.error("Failed to disconnect Plaid:", error);
+    } finally {
+      setIsDisconnecting(false);
+    }
+  }, [onDisconnectPlaid]);
 
   return (
     <div className="mx-auto w-full max-w-3xl space-y-6">
@@ -427,7 +443,7 @@ export function ReceiverDashboard({
             <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800">
               <span className="text-2xl">🏦</span>
             </div>
-            <div>
+            <div className="flex-1">
               <p className="font-semibold text-slate-900 dark:text-white">
                 {connectedBank.name || "Bank Account"}
               </p>
@@ -435,6 +451,17 @@ export function ReceiverDashboard({
                 Checking ••••{connectedBank.mask || connectedBank.accountNumber.slice(-4)}
               </p>
             </div>
+            {onDisconnectPlaid && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleDisconnectPlaid}
+                disabled={isDisconnecting}
+                className="text-red-600 border-red-300 hover:bg-red-50 dark:text-red-400 dark:border-red-800 dark:hover:bg-red-950"
+              >
+                {isDisconnecting ? "Disconnecting..." : "Disconnect"}
+              </Button>
+            )}
           </div>
         </div>
       )}

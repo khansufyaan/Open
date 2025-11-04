@@ -920,6 +920,32 @@ function TurnkeyAuthContent() {
     setTransferError(error);
   };
 
+  const handleDisconnectPlaid = useCallback(async () => {
+    if (!session) return;
+
+    try {
+      // Clear local storage
+      if (typeof window !== "undefined") {
+        window.localStorage.removeItem(getPlaidStorageKey(session.userId));
+      }
+
+      // Clear state
+      setLinkedAccounts([]);
+      setPlaidIdentity(null);
+      setSelectedAccountKey(ALL_ACCOUNTS_KEY);
+      setTransferSummaries([]);
+      setPlaidHydrated(false);
+
+      // Optionally call API to disconnect Plaid (if we have an endpoint for that)
+      // await fetch(`/api/plaid/disconnect`, { method: 'POST', body: JSON.stringify({ userId: session.userId }) });
+
+      console.log("[Plaid Disconnect] Successfully disconnected Plaid");
+    } catch (error) {
+      console.error("[Plaid Disconnect] Failed to disconnect:", error);
+      throw error;
+    }
+  }, [session]);
+
   const fetchWithdrawalQuote = useCallback(
     async (transferId: string, targetAddress: string) => {
       setQuoteLoading((previous) => ({
@@ -1586,6 +1612,7 @@ function TurnkeyAuthContent() {
             withdrawLoading={withdrawLoading}
             withdrawErrors={withdrawErrors}
             withdrawSuccess={withdrawSuccess}
+            onDisconnectPlaid={handleDisconnectPlaid}
           />
         )}
       </div>

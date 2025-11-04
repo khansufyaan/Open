@@ -495,7 +495,7 @@ export function SenderExperience() {
   }, [recipientAccountNumber, recipientRoutingNumber]);
 
   return (
-    <div className="mx-auto w-full space-y-6" style={{ maxWidth: transfer ? '1200px' : '28rem' }}>
+    <div className="mx-auto w-full space-y-6" style={{ maxWidth: '28rem' }}>
       <section>
         <div className="rounded-3xl border border-slate-200/80 bg-white/70 p-6 text-slate-700 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-200">
         <div className="space-y-4">
@@ -511,7 +511,6 @@ export function SenderExperience() {
             </div>
           ) : (
             <>
-              <div className={transfer ? "grid grid-cols-1 lg:grid-cols-2 gap-6" : ""}>
               <form className="space-y-4" onSubmit={handleSubmit}>
                 <div className="space-y-2">
                   <Label htmlFor="accountNumber">Account number</Label>
@@ -652,7 +651,7 @@ export function SenderExperience() {
               </form>
 
               {transfer && (
-                <div className="rounded-3xl border border-emerald-200/70 bg-emerald-50/70 p-5 text-left text-emerald-800 shadow-sm dark:border-emerald-800/60 dark:bg-emerald-900/60 dark:text-emerald-100 self-start">
+                <div className="mt-6 rounded-3xl border border-emerald-200/70 bg-emerald-50/70 p-5 text-left text-emerald-800 shadow-sm dark:border-emerald-800/60 dark:bg-emerald-900/60 dark:text-emerald-100">
                   <p className="text-sm font-semibold">Deposit confirmed</p>
                   <p className="mt-1 text-xs text-emerald-900/80 dark:text-emerald-100/80">
                     The recipient&apos;s wallet will receive the vault funds once they claim it.
@@ -676,7 +675,6 @@ export function SenderExperience() {
                   )}
                 </div>
               )}
-              </div>
             </>
           )}
         </div>
