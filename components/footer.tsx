@@ -9,7 +9,7 @@ export function Footer({ className }: { className?: string }) {
           <div className="space-y-3">
             <h3 className="text-sm font-semibold">Blue Wallet</h3>
             <p className="text-sm text-muted-foreground">
-              Identity-attested wallets for a compliant crypto world.
+              Non-custodial, KYC-compliant private wallet for bank customers.
             </p>
           </div>
 
