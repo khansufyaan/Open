@@ -13,13 +13,8 @@ export function LandingPage() {
           <div className="mx-auto max-w-4xl space-y-6">
             {/* Main Heading */}
             <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-3xl md:text-4xl">
-              Non-custodial, KYC-compliant private wallet for bank customers
+              Move stablecoins using bank accounts — without exposing your wallet
             </h1>
-
-            {/* Sub-heading */}
-            <p className="text-base leading-7 text-slate-600 dark:text-slate-300 sm:text-lg">
-              Move stablecoins using bank accounts — without exposing your wallet.
-            </p>
 
             {/* CTA Buttons */}
             <div className="flex flex-col items-center justify-center gap-3 pt-4 sm:flex-row">
