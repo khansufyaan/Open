@@ -595,21 +595,6 @@ export function SenderExperience() {
                         </div>
                       )}
 
-                      {preview[0].phone && (
-                        <div>
-                          <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Phone</p>
-                          <p className="text-sm text-slate-700 dark:text-slate-200">{preview[0].phone}</p>
-                        </div>
-                      )}
-
-                      {preview[0].address && (
-                        <div>
-                          <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Address</p>
-                          <p className="text-sm text-slate-700 dark:text-slate-200">
-                            {preview[0].address.street}, {preview[0].address.city}, {preview[0].address.region} {preview[0].address.postal_code}
-                          </p>
-                        </div>
-                      )}
 
                       <div className="grid grid-cols-2 gap-3">
                         {preview[0].accountMask && (
