@@ -101,7 +101,7 @@ export default function PrivacyPolicyPage() {
               If you have questions about this Privacy Policy or how we handle your data, please contact us at:
             </p>
             <p className="text-muted-foreground">
-              Email: <a href="mailto:privacy@bluewallet.com" className="text-sky-500 hover:underline">privacy@bluewallet.com</a>
+              Email: <a href="mailto:admin@bluewaas.com" className="text-sky-500 hover:underline">admin@bluewaas.com</a>
             </p>
           </section>
         </div>

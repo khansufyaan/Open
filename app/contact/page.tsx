@@ -13,10 +13,10 @@ export default function ContactPage() {
           <div>
             <h3 className="text-sm font-semibold text-muted-foreground mb-2">Email</h3>
             <a
-              href="mailto:team@bluewallets.io"
+              href="mailto:admin@bluewaas.com"
               className="text-xl font-medium text-sky-500 hover:underline"
             >
-              team@bluewallets.io
+              admin@bluewaas.com
             </a>
           </div>
           <p className="text-sm text-muted-foreground">

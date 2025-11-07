@@ -140,7 +140,7 @@ export default function TermsOfServicePage() {
               For questions about these Terms of Service, contact us at:
             </p>
             <p className="text-muted-foreground">
-              Email: <a href="mailto:legal@bluewallet.com" className="text-sky-500 hover:underline">legal@bluewallet.com</a>
+              Email: <a href="mailto:admin@bluewaas.com" className="text-sky-500 hover:underline">admin@bluewaas.com</a>
             </p>
           </section>
         </div>
