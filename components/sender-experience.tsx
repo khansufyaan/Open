@@ -582,12 +582,6 @@ export function SenderExperience() {
                 {preview && preview.length > 0 && (
                   <div className="rounded-lg border border-slate-200/60 bg-slate-50/50 p-4 dark:border-slate-700/60 dark:bg-slate-800/50">
                     <div className="space-y-3">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                          {preview[0].name}
-                        </p>
-                      </div>
-
                       {preview[0].email && (
                         <div>
                           <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Email</p>
