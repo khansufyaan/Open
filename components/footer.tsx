@@ -18,12 +18,12 @@ export function Footer({ className }: { className?: string }) {
             <ul className="space-y-2 text-sm text-muted-foreground">
               <li>
                 <Link href="/send" className="hover:text-foreground transition-colors">
-                  Sender
+                  Send
                 </Link>
               </li>
               <li>
-                <Link href="/receive" className="hover:text-foreground transition-colors">
-                  Receiver
+                <Link href="/recipient" className="hover:text-foreground transition-colors">
+                  Receive
                 </Link>
               </li>
             </ul>
