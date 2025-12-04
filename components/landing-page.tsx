@@ -13,7 +13,7 @@ export function LandingPage() {
           <div className="mx-auto max-w-4xl space-y-6">
             {/* Main Heading */}
             <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-3xl md:text-4xl">
-              Move stablecoins using bank accounts — without exposing your wallet
+              Move stablecoins using bank accounts
             </h1>
 
             {/* CTA Buttons */}
