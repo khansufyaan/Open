@@ -33,32 +33,26 @@ export function LandingPage() {
               </Button>
             </div>
 
-            {/* Flow Diagram - Moved below CTA buttons */}
-            <div className="flex items-center justify-center gap-4 pt-2 sm:gap-8">
+            {/* Bank Logos */}
+            <div className="flex items-center justify-center gap-8 pt-2 sm:gap-12">
               {/* Bank of America */}
-              <div className="flex flex-col items-center gap-2">
-                <div className="rounded-lg bg-white p-2 dark:bg-slate-800">
-                  <Image src="/BOFA.png" alt="Bank of America" width={48} height={48} className="h-12 w-12 object-contain" />
+              <div className="flex flex-col items-center">
+                <div className="rounded-xl bg-white p-3 dark:bg-slate-800">
+                  <Image src="/BOFA.png" alt="Bank of America" width={80} height={80} className="h-20 w-20 object-contain" />
                 </div>
               </div>
-
-              {/* Arrow */}
-              <ArrowRight className="h-6 w-6 text-slate-400" />
 
               {/* Chase */}
-              <div className="flex flex-col items-center gap-2">
-                <div className="rounded-lg bg-white p-2 dark:bg-slate-800">
-                  <Image src="/Chase.png" alt="Chase" width={48} height={48} className="h-12 w-12 object-contain" />
+              <div className="flex flex-col items-center">
+                <div className="rounded-xl bg-white p-3 dark:bg-slate-800">
+                  <Image src="/Chase.png" alt="Chase" width={80} height={80} className="h-20 w-20 object-contain" />
                 </div>
               </div>
 
-              {/* Arrow */}
-              <ArrowRight className="h-6 w-6 text-slate-400" />
-
               {/* Wells Fargo */}
-              <div className="flex flex-col items-center gap-2">
-                <div className="rounded-lg bg-white p-2 dark:bg-slate-800">
-                  <Image src="/Wells.png" alt="Wells Fargo" width={48} height={48} className="h-12 w-12 object-contain" />
+              <div className="flex flex-col items-center">
+                <div className="rounded-xl bg-white p-3 dark:bg-slate-800">
+                  <Image src="/Wells.png" alt="Wells Fargo" width={80} height={80} className="h-20 w-20 object-contain" />
                 </div>
               </div>
             </div>
