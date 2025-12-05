@@ -21,13 +21,13 @@ export function LandingPage() {
             <div className="flex flex-col items-center justify-center gap-3 pt-4 sm:flex-row">
               <Button size="default" asChild className="min-w-[180px]">
                 <Link href="/send">
-                  Send Money
+                  Send USDC
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </Link>
               </Button>
               <Button size="default" asChild className="min-w-[180px]">
                 <Link href="/recipient">
-                  Receive Money
+                  Receive USDC
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </Link>
               </Button>
