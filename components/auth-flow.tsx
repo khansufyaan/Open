@@ -1434,18 +1434,7 @@ function TurnkeyAuthContent() {
           {step === "request" ? (
             <>
               <CardHeader className="space-y-3 text-center pb-3">
-                <div className="flex justify-center">
-                  <div className="h-12 w-12 rounded-xl bg-blue-600 flex items-center justify-center">
-                    <span className="text-xl font-bold text-white">B</span>
-                  </div>
-                </div>
                 <div>
-                  <CardTitle className="text-lg font-bold">Blue Wallets</CardTitle>
-                  <CardDescription className="text-xs text-slate-500 mt-1">
-                    Receive USDC Instantly
-                  </CardDescription>
-                </div>
-                <div className="pt-1">
                   <h2 className="text-base font-semibold text-slate-900 dark:text-white">
                     Sign in with your email
                   </h2>
@@ -1486,18 +1475,7 @@ function TurnkeyAuthContent() {
           ) : (
             <>
               <CardHeader className="space-y-3 text-center pb-3">
-                <div className="flex justify-center">
-                  <div className="h-12 w-12 rounded-xl bg-blue-600 flex items-center justify-center">
-                    <span className="text-xl font-bold text-white">B</span>
-                  </div>
-                </div>
                 <div>
-                  <CardTitle className="text-lg font-bold">Blue Wallets</CardTitle>
-                  <CardDescription className="text-xs text-slate-500 mt-1">
-                    Receive USDC Instantly
-                  </CardDescription>
-                </div>
-                <div className="pt-1">
                   <h2 className="text-base font-semibold text-slate-900 dark:text-white">
                     Enter verification code
                   </h2>
