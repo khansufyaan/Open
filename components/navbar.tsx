@@ -4,7 +4,6 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-import { ThemeToggle } from "@/components/theme-toggle";
 import { WalletButton } from "@/components/wallet-button";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -36,7 +35,6 @@ export function Navbar({ className }: { className?: string }) {
             <Link href="/contact">Contact</Link>
           </Button>
           {pathname !== "/" && pathname !== "/recipient" && <WalletButton />}
-          <ThemeToggle />
         </div>
       </nav>
     </div>
