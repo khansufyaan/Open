@@ -34,25 +34,25 @@ export function LandingPage() {
             </div>
 
             {/* Bank Logos */}
-            <div className="flex items-center justify-center gap-8 pt-2 sm:gap-12">
+            <div className="flex items-center justify-center gap-10 pt-4 sm:gap-16">
               {/* Bank of America */}
               <div className="flex flex-col items-center">
-                <div className="rounded-xl bg-white p-3 dark:bg-slate-800">
-                  <Image src="/BOFA.png" alt="Bank of America" width={80} height={80} className="h-20 w-20 object-contain" />
+                <div className="rounded-2xl bg-white p-4 dark:bg-slate-800">
+                  <Image src="/BOFA.png" alt="Bank of America" width={120} height={120} className="h-28 w-28 object-contain sm:h-32 sm:w-32" />
                 </div>
               </div>
 
               {/* Chase */}
               <div className="flex flex-col items-center">
-                <div className="rounded-xl bg-white p-3 dark:bg-slate-800">
-                  <Image src="/Chase.png" alt="Chase" width={80} height={80} className="h-20 w-20 object-contain" />
+                <div className="rounded-2xl bg-white p-4 dark:bg-slate-800">
+                  <Image src="/Chase.png" alt="Chase" width={120} height={120} className="h-28 w-28 object-contain sm:h-32 sm:w-32" />
                 </div>
               </div>
 
               {/* Wells Fargo */}
               <div className="flex flex-col items-center">
-                <div className="rounded-xl bg-white p-3 dark:bg-slate-800">
-                  <Image src="/Wells.png" alt="Wells Fargo" width={80} height={80} className="h-20 w-20 object-contain" />
+                <div className="rounded-2xl bg-white p-4 dark:bg-slate-800">
+                  <Image src="/Wells.png" alt="Wells Fargo" width={120} height={120} className="h-28 w-28 object-contain sm:h-32 sm:w-32" />
                 </div>
               </div>
             </div>
