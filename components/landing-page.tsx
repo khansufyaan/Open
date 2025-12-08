@@ -34,26 +34,20 @@ export function LandingPage() {
             </div>
 
             {/* Bank Logos */}
-            <div className="flex items-center justify-center gap-10 pt-4 sm:gap-16">
+            <div className="flex items-center justify-center gap-6 pt-4 sm:gap-10">
               {/* Bank of America */}
               <div className="flex flex-col items-center">
-                <div className="rounded-2xl bg-white p-4 dark:bg-slate-800">
-                  <Image src="/BOFA.png" alt="Bank of America" width={120} height={120} className="h-28 w-28 object-contain sm:h-32 sm:w-32" />
-                </div>
+                <Image src="/BOFA.png" alt="Bank of America" width={360} height={360} className="h-32 w-32 object-contain sm:h-48 sm:w-48" />
               </div>
 
               {/* Chase */}
               <div className="flex flex-col items-center">
-                <div className="rounded-2xl bg-white p-4 dark:bg-slate-800">
-                  <Image src="/Chase.png" alt="Chase" width={120} height={120} className="h-28 w-28 object-contain sm:h-32 sm:w-32" />
-                </div>
+                <Image src="/Chase.png" alt="Chase" width={360} height={360} className="h-32 w-32 object-contain sm:h-48 sm:w-48" />
               </div>
 
               {/* Wells Fargo */}
               <div className="flex flex-col items-center">
-                <div className="rounded-2xl bg-white p-4 dark:bg-slate-800">
-                  <Image src="/Wells.png" alt="Wells Fargo" width={120} height={120} className="h-28 w-28 object-contain sm:h-32 sm:w-32" />
-                </div>
+                <Image src="/Wells.png" alt="Wells Fargo" width={360} height={360} className="h-32 w-32 object-contain sm:h-48 sm:w-48" />
               </div>
             </div>
 
