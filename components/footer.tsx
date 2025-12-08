@@ -49,6 +49,11 @@ export function Footer({ className }: { className?: string }) {
             <h3 className="text-sm font-semibold">Support</h3>
             <ul className="space-y-2 text-sm text-muted-foreground">
               <li>
+                <Link href="/faq" className="hover:text-foreground transition-colors">
+                  FAQ
+                </Link>
+              </li>
+              <li>
                 <Link href="/contact" className="hover:text-foreground transition-colors">
                   Contact Us
                 </Link>
