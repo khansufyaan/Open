@@ -15,8 +15,8 @@ export function Navbar({ className }: { className?: string }) {
       <nav className="grid w-full max-w-5xl grid-cols-3 items-center gap-4 rounded-full border border-slate-200/70 bg-white/85 px-6 py-3 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/85">
         <Link href="/" className="transition hover:opacity-80">
           <Image
-            src="/main_logo.jpg"
-            alt="Blue Wallet"
+            src="/FINAL2.png"
+            alt="Blue"
             width={40}
             height={40}
             className="rounded-lg"
