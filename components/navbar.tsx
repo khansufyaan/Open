@@ -17,8 +17,8 @@ export function Navbar({ className }: { className?: string }) {
           <Image
             src="/FINAL2.png"
             alt="Blue"
-            width={40}
-            height={40}
+            width={52}
+            height={52}
             className="rounded-lg"
             priority
           />
