@@ -33,51 +33,18 @@ export function LandingPage() {
               </Button>
             </div>
 
-            {/* Bank Logos */}
-            <div className="flex items-center justify-center gap-6 pt-4 sm:gap-10">
-              {/* Bank of America */}
-              <div className="flex flex-col items-center">
-                <Image src="/BOFA.png" alt="Bank of America" width={360} height={360} className="h-32 w-32 object-contain sm:h-48 sm:w-48" />
-              </div>
-
-              {/* Chase */}
-              <div className="flex flex-col items-center">
-                <Image src="/Chase.png" alt="Chase" width={360} height={360} className="h-32 w-32 object-contain sm:h-48 sm:w-48" />
-              </div>
-
-              {/* Wells Fargo */}
-              <div className="flex flex-col items-center">
-                <Image src="/Wells.png" alt="Wells Fargo" width={360} height={360} className="h-32 w-32 object-contain sm:h-48 sm:w-48" />
-              </div>
-            </div>
-
-            {/* Features Grid - Compact */}
+            {/* Bank Logos Grid */}
             <div className="grid gap-4 pt-4 sm:grid-cols-3">
-              <div className="rounded-xl border border-slate-200/80 bg-white/60 p-4 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/60">
-                <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
-                  Non-Custodial
-                </h3>
-                <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
-                  Full control of your funds.
-                </p>
+              <div className="flex items-center justify-center rounded-xl border border-slate-200/80 bg-white/60 p-6 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/60">
+                <Image src="/BOFA.png" alt="Bank of America" width={200} height={200} className="h-24 w-24 object-contain sm:h-32 sm:w-32" />
               </div>
 
-              <div className="rounded-xl border border-slate-200/80 bg-white/60 p-4 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/60">
-                <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
-                  KYC-Compliant
-                </h3>
-                <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
-                  Bank-verified identity.
-                </p>
+              <div className="flex items-center justify-center rounded-xl border border-slate-200/80 bg-white/60 p-6 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/60">
+                <Image src="/Chase.png" alt="Chase" width={200} height={200} className="h-24 w-24 object-contain sm:h-32 sm:w-32" />
               </div>
 
-              <div className="rounded-xl border border-slate-200/80 bg-white/60 p-4 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/60">
-                <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
-                  Privacy First
-                </h3>
-                <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
-                  Protected wallet address.
-                </p>
+              <div className="flex items-center justify-center rounded-xl border border-slate-200/80 bg-white/60 p-6 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/60">
+                <Image src="/Wells.png" alt="Wells Fargo" width={200} height={200} className="h-24 w-24 object-contain sm:h-32 sm:w-32" />
               </div>
             </div>
           </div>
