@@ -35,16 +35,16 @@ export function LandingPage() {
 
             {/* Bank Logos Grid */}
             <div className="grid gap-4 pt-4 sm:grid-cols-3">
-              <div className="flex items-center justify-center rounded-xl border border-slate-200/80 bg-white/60 p-6 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/60">
-                <Image src="/BOFA.png" alt="Bank of America" width={200} height={200} className="h-24 w-24 object-contain sm:h-32 sm:w-32" />
+              <div className="flex items-center justify-center rounded-xl border border-slate-200/80 bg-white/60 p-4 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/60">
+                <Image src="/BOFA.png" alt="Bank of America" width={300} height={300} className="h-full w-full object-contain" />
               </div>
 
-              <div className="flex items-center justify-center rounded-xl border border-slate-200/80 bg-white/60 p-6 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/60">
-                <Image src="/Chase.png" alt="Chase" width={200} height={200} className="h-24 w-24 object-contain sm:h-32 sm:w-32" />
+              <div className="flex items-center justify-center rounded-xl border border-slate-200/80 bg-white/60 p-4 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/60">
+                <Image src="/Chase.png" alt="Chase" width={300} height={300} className="h-full w-full object-contain" />
               </div>
 
-              <div className="flex items-center justify-center rounded-xl border border-slate-200/80 bg-white/60 p-6 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/60">
-                <Image src="/Wells.png" alt="Wells Fargo" width={200} height={200} className="h-24 w-24 object-contain sm:h-32 sm:w-32" />
+              <div className="flex items-center justify-center rounded-xl border border-slate-200/80 bg-white/60 p-4 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/60">
+                <Image src="/Wells.png" alt="Wells Fargo" width={300} height={300} className="h-full w-full object-contain" />
               </div>
             </div>
           </div>
