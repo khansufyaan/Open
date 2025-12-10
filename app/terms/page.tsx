@@ -66,10 +66,9 @@ export default function TermsOfServicePage() {
           </section>
 
           <section className="space-y-4">
-            <h2 className="text-2xl font-semibold">5. Fees and Surcharges</h2>
+            <h2 className="text-2xl font-semibold">5. Fees</h2>
             <p className="text-muted-foreground">
-              Blue Wallet charges a surcharge on transfers to cover operational costs and gas fees. Current surcharge rate is 5% of the transfer amount. 
-              Fees are subject to change with 30 days notice.
+              Blue is currently free to use. We may introduce fees in the future with 30 days notice.
             </p>
           </section>
 

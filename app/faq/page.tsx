@@ -87,15 +87,6 @@ export default function FAQPage() {
             </AccordionContent>
           </AccordionItem>
 
-          <AccordionItem value="fees" className="rounded-lg border px-4">
-            <AccordionTrigger className="text-left font-medium">
-              What are the fees?
-            </AccordionTrigger>
-            <AccordionContent className="text-muted-foreground">
-              Blue charges a 5% surcharge on transfers to cover operational costs and network gas fees. This fee is transparently displayed before you confirm any transaction. There are no hidden fees or monthly charges.
-            </AccordionContent>
-          </AccordionItem>
-
           <AccordionItem value="how-long" className="rounded-lg border px-4">
             <AccordionTrigger className="text-left font-medium">
               How long do transfers take?

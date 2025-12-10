@@ -78,8 +78,8 @@ function buildRecipientKey(routingNumber: string, accountNumber: string): string
 
 function getSurchargePercentage(): number {
   const envValue = process.env.SURCHARGE_PERCENTAGE;
-  const parsed = envValue ? parseFloat(envValue) : 5;
-  return !isNaN(parsed) && parsed >= 0 && parsed <= 100 ? parsed : 5;
+  const parsed = envValue ? parseFloat(envValue) : 0;
+  return !isNaN(parsed) && parsed >= 0 && parsed <= 100 ? parsed : 0;
 }
 
 function applySurcharge(amountCents: number, surchargePercentage: number): number {
