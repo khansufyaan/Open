@@ -17,11 +17,15 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className="font-sans antialiased bg-white dark:bg-slate-950">
+      <body className="font-sans antialiased bg-background">
         <AppProviders>
-          <div className="flex min-h-screen flex-col">
+          <div className="relative flex min-h-screen flex-col">
+            {/* Global background effects */}
+            <div className="fixed inset-0 bg-grid dark:bg-grid-dark opacity-30 pointer-events-none" />
+            <div className="fixed inset-0 gradient-mesh pointer-events-none" />
+
             <Navbar />
-            <div className="flex-1">{children}</div>
+            <div className="relative flex-1">{children}</div>
             <Footer />
           </div>
         </AppProviders>
