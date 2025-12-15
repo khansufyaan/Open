@@ -2,7 +2,7 @@ import { SenderExperience } from "@/components/sender-experience";
 
 export default function SendPage() {
   return (
-    <main className="flex-1 flex items-center justify-center px-6 py-16">
+    <main className="relative h-[calc(100vh-80px)] overflow-hidden">
       <SenderExperience />
     </main>
   );

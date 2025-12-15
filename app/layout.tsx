@@ -20,10 +20,6 @@ export default function RootLayout({
       <body className="font-sans antialiased bg-background">
         <AppProviders>
           <div className="relative flex min-h-screen flex-col">
-            {/* Global background effects */}
-            <div className="fixed inset-0 bg-grid dark:bg-grid-dark opacity-30 pointer-events-none" />
-            <div className="fixed inset-0 gradient-mesh pointer-events-none" />
-
             <Navbar />
             <div className="relative flex-1">{children}</div>
             <Footer />

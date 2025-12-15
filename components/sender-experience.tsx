@@ -1,29 +1,18 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-
 import { usePrivy, useWallets } from "@privy-io/react-auth";
 import { createPublicClient, encodeFunctionData, http, parseAbi, parseUnits } from "viem";
 import type { Hex } from "viem";
 import { base } from "viem/chains";
-
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { ChevronDown, ChevronUp } from "lucide-react";
 
 const DIGIT_REGEX = /\D+/g;
 const BASE_CHAIN_ID = base.id;
 const BASE_CHAIN_HEX = `0x${BASE_CHAIN_ID.toString(16)}` as const;
 const BASE_RPC_URL = process.env.NEXT_PUBLIC_BASE_RPC_URL ?? "https://mainnet.base.org";
 const BASE_USDC_CONTRACT = (process.env.NEXT_PUBLIC_BASE_USDC_CONTRACT ?? "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913").toLowerCase();
-const ERC20_TRANSFER_ABI = parseAbi([
-  "function transfer(address to, uint256 value) returns (bool)",
-]);
-const RAW_COMPANY_WALLET_ADDRESS = process.env.NEXT_PUBLIC_COMPANY_WALLET_ADDRESS;
-const COMPANY_WALLET_ADDRESS = RAW_COMPANY_WALLET_ADDRESS
-  ? RAW_COMPANY_WALLET_ADDRESS.trim()
-  : undefined;
+const ERC20_TRANSFER_ABI = parseAbi(["function transfer(address to, uint256 value) returns (bool)"]);
 
 function sanitizeDigits(value: string): string {
   return value.replace(DIGIT_REGEX, "");
@@ -40,719 +29,448 @@ type TransferResponse = {
   routingMask: string;
   fundingStatus?: "PENDING" | "CONFIRMED" | "FAILED" | null;
   fundingTxHash?: string | null;
-  recipientWalletAddress?: string | null;
-  recipientWalletId?: string | null;
-  recipientWalletName?: string | null;
-};
-
-type PastTransfer = {
-  transferId: string;
-  amount: string;
-  createdAt: string;
-  fundingStatus: string | null;
-  fundingTxHash: string | null;
-  recipientLast4: string;
-  recipientAccount?: string;
-  recipientRouting?: string;
-  walletAddress?: string;
-  depositAddress?: string;
-  recipientWalletAddress?: string | null;
-  recipientWalletId?: string | null;
-  recipientWalletName?: string | null;
-};
-
-type RecipientPreview = {
-  userId: string;
-  name: string | null;
-  email: string | null;
-  phone: string | null;
-  confidence: "exact" | "mask" | "mask-routing";
-  accountMask: string | null;
-  routingMask: string | null;
-  address?: {
-    street: string;
-    city: string;
-    region: string;
-    postal_code: string;
-    country: string | null;
-  } | null;
 };
 
 export function SenderExperience() {
-  const { ready: privyReady, authenticated, login, connectWallet, logout } = usePrivy();
+  const { ready: privyReady, authenticated, login, connectWallet } = usePrivy();
   const { wallets } = useWallets();
   const [isConnecting, setIsConnecting] = useState(false);
-  const [recipientAccountNumber, setRecipientAccountNumber] = useState("");
-  const [recipientRoutingNumber, setRecipientRoutingNumber] = useState("");
-  const STORAGE_KEY = "blue_wallet_transfer_history";
-
-  const [amount, setAmount] = useState("0.01");
+  const [accountNumber, setAccountNumber] = useState("");
+  const [routingNumber, setRoutingNumber] = useState("");
+  const [amount, setAmount] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [transfer, setTransfer] = useState<TransferResponse | null>(null);
-  const [, setPendingTransfer] = useState<TransferResponse | null>(null);
-  const [history, setHistory] = useState<Array<{ accountNumber: string; routingNumber: string }>>([]);
-  const [preview, setPreview] = useState<RecipientPreview[] | null>(null);
-  const [, setIsPreviewLoading] = useState(false);
-  const [, setPreviewError] = useState<string | null>(null);
-  const previewControllerRef = useRef<AbortController | null>(null);
   const [isFunding, setIsFunding] = useState(false);
-  const [fundingError, setFundingError] = useState<string | null>(null);
-  const [pastTransfers, setPastTransfers] = useState<PastTransfer[]>([]);
-  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
-  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    try {
-      const stored = window.localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored) as Array<{ accountNumber: string; routingNumber: string }>;
-        if (Array.isArray(parsed)) {
-          setHistory(parsed);
-        }
-      }
-    } catch (storageError) {
-      console.warn("Failed to load transfer history", storageError);
-    }
-  }, []);
-
-  const handleAccountNumberChange = useCallback(
-    (value: string) => {
-      const sanitized = sanitizeDigits(value);
-      setRecipientAccountNumber(sanitized);
-
-      const matched = history.find((entry) => entry.accountNumber === sanitized);
-      if (matched) {
-        setRecipientRoutingNumber(matched.routingNumber);
-      }
-    },
-    [history]
-  );
-
-  const handleRoutingNumberChange = useCallback(
-    (value: string) => {
-      const sanitized = sanitizeDigits(value);
-      setRecipientRoutingNumber(sanitized);
-
-      const matches = history.filter((entry) => entry.routingNumber === sanitized);
-      if (matches.length === 1) {
-        setRecipientAccountNumber(matches[0].accountNumber);
-      }
-    },
-    [history]
-  );
+  const previewControllerRef = useRef<AbortController | null>(null);
+  const [recipientEmail, setRecipientEmail] = useState<string | null>(null);
+  const [step, setStep] = useState(1); // 1: amount, 2: recipient, 3: confirm
 
   const senderAddress = useMemo(() => {
     const evmWallet = wallets.find((wallet) => wallet.type === "ethereum");
     return evmWallet?.address ?? null;
   }, [wallets]);
 
-  const refreshPastTransfers = useCallback(async () => {
-    if (!senderAddress) {
-      setPastTransfers([]);
-      return;
-    }
-
-    setIsLoadingHistory(true);
-
-    try {
-      const response = await fetch(`/api/transfers?senderAddress=${encodeURIComponent(senderAddress)}`);
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch transfer history");
-      }
-
-      const data = await response.json();
-      setPastTransfers(Array.isArray(data.transfers) ? data.transfers : []);
-    } catch (error) {
-      console.error("Failed to load transfer history:", error);
-      setPastTransfers([]);
-    } finally {
-      setIsLoadingHistory(false);
-    }
-  }, [senderAddress]);
-
-  useEffect(() => {
-    void refreshPastTransfers();
-  }, [refreshPastTransfers]);
-
-  const fundTransfer = useCallback(
-    async (currentTransfer: TransferResponse, amountValue: string) => {
-      const wallet = wallets.find((entry) => entry.type === "ethereum");
-
-      if (!wallet?.address) {
-        throw new Error("No connected Ethereum wallet detected.");
-      }
-
-      const normalizedAmount = amountValue.trim();
-
-      if (!normalizedAmount) {
-        throw new Error("Transfer amount is missing.");
-      }
-
-      const depositAddress = currentTransfer.depositAddress || currentTransfer.walletAddress;
-
-      if (!depositAddress || !depositAddress.startsWith("0x")) {
-        throw new Error("Deposit wallet address is invalid.");
-      }
-
-      let amountUnits: bigint;
-
-      try {
-        amountUnits = parseUnits(normalizedAmount, 6);
-      } catch (parseError) {
-        throw new Error(
-          parseError instanceof Error ? parseError.message : "Failed to parse transfer amount."
-        );
-      }
-
-      if (amountUnits <= BigInt(0)) {
-        throw new Error("Transfer amount must be greater than zero.");
-      }
-
-      setIsFunding(true);
-
-      const sendFundingStatus = async (
-        status: "PENDING" | "CONFIRMED" | "FAILED",
-        txHash?: string
-      ) => {
-        try {
-          await fetch(`/api/transfers/${currentTransfer.transferId}/funding`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(txHash ? { status, txHash } : { status }),
-          });
-        } catch (updateError) {
-          console.warn("Failed to update funding status", updateError);
-        }
-      };
-
-      let txHash: string | undefined;
-
-      try {
-        const currentChain = wallet.chainId?.startsWith("eip155:")
-          ? Number(wallet.chainId.split(":")[1])
-          : null;
-
-        if (currentChain !== BASE_CHAIN_ID) {
-          await wallet.switchChain(BASE_CHAIN_HEX);
-        }
-
-        const provider = await wallet.getEthereumProvider();
-
-        const data = encodeFunctionData({
-          abi: ERC20_TRANSFER_ABI,
-          functionName: "transfer",
-          args: [depositAddress as `0x${string}`, amountUnits],
-        });
-
-        txHash = (await provider.request({
-          method: "eth_sendTransaction",
-          params: [
-            {
-              from: wallet.address,
-              to: BASE_USDC_CONTRACT,
-              data,
-              value: "0x0",
-            },
-          ],
-        })) as string;
-
-        await sendFundingStatus("PENDING", txHash);
-
-        const publicClient = createPublicClient({
-          chain: base,
-          transport: http(BASE_RPC_URL),
-        });
-
-        await publicClient.waitForTransactionReceipt({ hash: txHash as Hex });
-
-        await sendFundingStatus("CONFIRMED", txHash);
-
-        return {
-          status: "CONFIRMED" as const,
-          txHash,
-        };
-      } catch (fundingErr) {
-        await sendFundingStatus("FAILED", txHash);
-
-        if (fundingErr instanceof Error) {
-          throw fundingErr;
-        }
-
-        throw new Error("Failed to send USDC funding transaction.");
-      } finally {
-        setIsFunding(false);
-      }
-    },
-    [wallets]
-  );
-
-  const executeFunding = useCallback(
-    async (transferToFund: TransferResponse) => {
-      setPendingTransfer(transferToFund);
-      setFundingError(null);
-
-      try {
-        const result = await fundTransfer(transferToFund, transferToFund.amount);
-
-        setPendingTransfer(null);
-        setFundingError(null);
-        setTransfer({
-          ...transferToFund,
-          fundingStatus: result.status,
-          fundingTxHash: result.txHash,
-        });
-
-        void refreshPastTransfers();
-      } catch (fundingErr) {
-        setFundingError(
-          fundingErr instanceof Error ? fundingErr.message : "Failed to fund transfer."
-        );
-        setTransfer(null);
-      }
-    },
-    [fundTransfer, refreshPastTransfers]
-  );
-
   const handleConnectWallet = useCallback(async () => {
     setError(null);
-
-    if (!privyReady) {
-      setError("Wallet connections are still loading. Please try again in a moment.");
-      return;
-    }
-
+    if (!privyReady) return;
     setIsConnecting(true);
-
     try {
-      if (!authenticated) {
-        await login({ loginMethods: ["wallet"] });
-        return;
-      }
-
-      if (!senderAddress) {
-        await connectWallet();
-      }
-    } catch (connectionError) {
-      const message =
-        connectionError instanceof Error
-          ? connectionError.message
-          : "Failed to connect a wallet.";
-      setError(message);
-    } finally {
-      setIsConnecting(false);
-    }
+      if (!authenticated) { await login({ loginMethods: ["wallet"] }); return; }
+      if (!senderAddress) await connectWallet();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to connect wallet");
+    } finally { setIsConnecting(false); }
   }, [privyReady, authenticated, login, connectWallet, senderAddress]);
 
-  const isFormDisabled = useMemo(
-    () => !senderAddress || isSubmitting || isFunding,
-    [senderAddress, isSubmitting, isFunding]
-  );
+  const fundTransfer = useCallback(async (currentTransfer: TransferResponse, amountValue: string) => {
+    const wallet = wallets.find((entry) => entry.type === "ethereum");
+    if (!wallet?.address) throw new Error("No wallet connected");
+    const depositAddress = currentTransfer.depositAddress || currentTransfer.walletAddress;
+    if (!depositAddress) throw new Error("Invalid deposit address");
 
-  const handleSubmit = useCallback(
-    async (event: FormEvent<HTMLFormElement>) => {
-      event.preventDefault();
+    const amountUnits = parseUnits(amountValue.trim(), 6);
+    if (amountUnits <= BigInt(0)) throw new Error("Amount must be greater than zero");
 
-      if (!senderAddress) {
-        setError("Connect a wallet before sending a transfer.");
-        return;
-      }
-
-      setIsSubmitting(true);
-      setError(null);
-      setFundingError(null);
-
+    setIsFunding(true);
+    const sendStatus = async (status: string, txHash?: string) => {
       try {
-        const response = await fetch("/api/transfers", {
+        await fetch(`/api/transfers/${currentTransfer.transferId}/funding`, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            senderAddress,
-            recipientAccountNumber,
-            recipientRoutingNumber,
-            amount,
-          }),
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(txHash ? { status, txHash } : { status }),
         });
+      } catch {}
+    };
 
-        const data = await response.json();
+    let txHash: string | undefined;
+    try {
+      const currentChain = wallet.chainId?.startsWith("eip155:") ? Number(wallet.chainId.split(":")[1]) : null;
+      if (currentChain !== BASE_CHAIN_ID) await wallet.switchChain(BASE_CHAIN_HEX);
+      const provider = await wallet.getEthereumProvider();
+      const data = encodeFunctionData({
+        abi: ERC20_TRANSFER_ABI,
+        functionName: "transfer",
+        args: [depositAddress as `0x${string}`, amountUnits],
+      });
+      txHash = (await provider.request({
+        method: "eth_sendTransaction",
+        params: [{ from: wallet.address, to: BASE_USDC_CONTRACT, data, value: "0x0" }],
+      })) as string;
+      await sendStatus("PENDING", txHash);
+      const publicClient = createPublicClient({ chain: base, transport: http(BASE_RPC_URL) });
+      await publicClient.waitForTransactionReceipt({ hash: txHash as Hex });
+      await sendStatus("CONFIRMED", txHash);
+      return { status: "CONFIRMED", txHash };
+    } catch (e) {
+      await sendStatus("FAILED", txHash);
+      throw e;
+    } finally { setIsFunding(false); }
+  }, [wallets]);
 
-        if (!response.ok) {
-          throw new Error(data.message ?? "Failed to create transfer.");
-        }
+  const handleSubmit = useCallback(async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!senderAddress) return;
+    setIsSubmitting(true);
+    setError(null);
 
-        const createdTransfer = data.transfer as TransferResponse;
-        setTransfer(createdTransfer);
+    try {
+      const response = await fetch("/api/transfers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ senderAddress, recipientAccountNumber: accountNumber, recipientRoutingNumber: routingNumber, amount }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message ?? "Failed to create transfer");
+      const createdTransfer = data.transfer as TransferResponse;
 
-        try {
-          const normalizedEntry = {
-            accountNumber: sanitizeDigits(recipientAccountNumber),
-            routingNumber: sanitizeDigits(recipientRoutingNumber),
-          };
+      const result = await fundTransfer(createdTransfer, amount);
+      setTransfer({ ...createdTransfer, fundingStatus: result.status as "CONFIRMED", fundingTxHash: result.txHash });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Transfer failed");
+      setTransfer(null);
+    } finally { setIsSubmitting(false); }
+  }, [senderAddress, accountNumber, routingNumber, amount, fundTransfer]);
 
-          if (normalizedEntry.accountNumber && normalizedEntry.routingNumber) {
-            const nextHistory = [
-              normalizedEntry,
-              ...history.filter(
-                (entry) =>
-                  entry.accountNumber !== normalizedEntry.accountNumber ||
-                  entry.routingNumber !== normalizedEntry.routingNumber
-              ),
-            ].slice(0, 5);
-
-            setHistory(nextHistory);
-
-            if (typeof window !== "undefined") {
-              window.localStorage.setItem(STORAGE_KEY, JSON.stringify(nextHistory));
-            }
-          }
-        } catch (storageError) {
-          console.warn("Failed to persist transfer history", storageError);
-        }
-
-        setTransfer(null);
-        await executeFunding(createdTransfer);
-      } catch (submitError) {
-        const message =
-          submitError instanceof Error ? submitError.message : "Unable to submit transfer.";
-        setError(message);
-        setTransfer(null);
-      } finally {
-        setIsSubmitting(false);
-      }
-    },
-    [senderAddress, recipientAccountNumber, recipientRoutingNumber, amount, history, executeFunding]
-  );
-
+  // Lookup recipient
   useEffect(() => {
-    const accountDigits = sanitizeDigits(recipientAccountNumber);
-    const routingDigits = sanitizeDigits(recipientRoutingNumber);
-
-    if (accountDigits.length < 4 || routingDigits.length !== 9) {
-      previewControllerRef.current?.abort();
-      previewControllerRef.current = null;
-      setPreview(null);
-      setPreviewError(null);
-      setIsPreviewLoading(false);
-      return;
-    }
+    const acc = sanitizeDigits(accountNumber);
+    const rout = sanitizeDigits(routingNumber);
+    if (acc.length < 4 || rout.length !== 9) { setRecipientEmail(null); return; }
 
     const controller = new AbortController();
     previewControllerRef.current?.abort();
     previewControllerRef.current = controller;
 
-    setIsPreviewLoading(true);
-    setPreviewError(null);
-
-    fetch(
-      `/api/db/lookup-recipient?accountNumber=${encodeURIComponent(accountDigits)}&routingNumber=${encodeURIComponent(routingDigits)}`,
-      { signal: controller.signal }
-    )
-      .then(async (response) => {
-        if (controller.signal.aborted) {
-          return;
-        }
-
-        if (!response.ok) {
-          const data = await response.json().catch(() => ({}));
-          const message = typeof data.message === "string" ? data.message : null;
-          if (response.status === 404) {
-            setPreview(null);
-            setPreviewError(message ?? "No verified recipient found for this account yet.");
-          } else {
-            throw new Error(message ?? "Recipient lookup failed.");
-          }
-          return;
-        }
-
-        const data = (await response.json()) as { matches: RecipientPreview[] };
-        setPreview(Array.isArray(data.matches) ? data.matches : []);
+    fetch(`/api/db/lookup-recipient?accountNumber=${acc}&routingNumber=${rout}`, { signal: controller.signal })
+      .then(async (res) => {
+        if (!res.ok) { setRecipientEmail(null); return; }
+        const data = await res.json();
+        if (data.matches?.[0]?.email) setRecipientEmail(data.matches[0].email);
       })
-      .catch((error) => {
-        if (controller.signal.aborted) {
-          return;
-        }
-        setPreview(null);
-        setPreviewError(error instanceof Error ? error.message : "Recipient lookup failed.");
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) {
-          setIsPreviewLoading(false);
-        }
-      });
+      .catch(() => setRecipientEmail(null));
 
-    return () => {
-      controller.abort();
-    };
-  }, [recipientAccountNumber, recipientRoutingNumber]);
+    return () => controller.abort();
+  }, [accountNumber, routingNumber]);
+
+  const isDisabled = !senderAddress || isSubmitting || isFunding;
+  const canProceedToRecipient = parseFloat(amount) > 0;
+  const canProceedToConfirm = routingNumber.length === 9 && accountNumber.length >= 4;
 
   return (
-    <div className="mx-auto w-full space-y-6" style={{ maxWidth: '28rem' }}>
-      <section>
-        <div className="rounded-3xl border border-slate-200/80 bg-white/70 p-6 text-slate-700 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-200">
-        <div className="space-y-4">
-          <div className="text-center">
-            <h1 className="text-3xl font-semibold tracking-tight">Send</h1>
-          </div>
+    <div className="absolute inset-0 flex items-center justify-center px-4 overflow-hidden">
+      {/* Background */}
+      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+        <div className="absolute top-1/4 left-1/4 w-[600px] h-[600px] rounded-full bg-blue-500/5 blur-[150px]" />
+        <div className="absolute bottom-1/4 right-1/4 w-[500px] h-[500px] rounded-full bg-purple-500/5 blur-[150px]" />
+      </div>
 
-          {!senderAddress ? (
-            <div className="flex flex-col items-center gap-3">
-              <Button size="lg" onClick={handleConnectWallet} disabled={isConnecting || !privyReady}>
-                {!privyReady ? "Loading…" : isConnecting ? "Connecting…" : "Connect wallet"}
-              </Button>
+      <div className="relative w-full max-w-md z-10">
+        {/* Main Card */}
+        <div className="relative">
+          {/* Glow effect */}
+          <div className="absolute -inset-1 bg-gradient-to-r from-blue-500/20 via-purple-500/20 to-blue-500/20 rounded-3xl blur-xl opacity-70" />
+
+          <div className="relative bg-card/95 backdrop-blur-xl rounded-3xl border border-border/50 shadow-2xl overflow-hidden">
+            {/* Header */}
+            <div className="px-6 pt-6 pb-4 border-b border-border/50">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-bold text-foreground">Send USDC</h2>
+                <div className="flex items-center gap-1">
+                  {[1, 2, 3].map((s) => (
+                    <div
+                      key={s}
+                      className={`w-2 h-2 rounded-full transition-all duration-300 ${
+                        step >= s ? 'bg-blue-500' : 'bg-muted'
+                      }`}
+                    />
+                  ))}
+                </div>
+              </div>
+              <p className="text-sm text-muted-foreground mt-1">
+                {step === 1 && "Enter amount"}
+                {step === 2 && "Recipient details"}
+                {step === 3 && "Confirm & send"}
+              </p>
             </div>
-          ) : (
-            <>
-              <form className="space-y-4" onSubmit={handleSubmit}>
-                <div className="space-y-2">
-                  <Label htmlFor="accountNumber">Account number</Label>
-                  <Input
-                    id="accountNumber"
-                    name="accountNumber"
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    required
-                    value={recipientAccountNumber}
-                    onChange={(event) => handleAccountNumberChange(event.target.value)}
-                    placeholder="000123456789"
-                    disabled={isFormDisabled}
-                    list="sender-account-history"
-                  />
-                  {history.length > 0 && (
-                    <datalist id="sender-account-history">
-                      {history.map((entry) => (
-                        <option
-                          key={`${entry.routingNumber}-${entry.accountNumber}`}
-                          value={entry.accountNumber}
-                          label={`Account ••••${entry.accountNumber.slice(-4)} · Routing ${entry.routingNumber}`}
-                        />
-                      ))}
-                    </datalist>
-                  )}
-                </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="routingNumber">Routing number</Label>
-                  <Input
-                    id="routingNumber"
-                    name="routingNumber"
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    required
-                    value={recipientRoutingNumber}
-                    onChange={(event) => handleRoutingNumberChange(event.target.value)}
-                    placeholder="021000021"
-                    disabled={isFormDisabled}
-                    maxLength={9}
-                    list="sender-routing-history"
-                  />
-                  {history.length > 0 && (
-                    <datalist id="sender-routing-history">
-                      {[...new Map(history.map((entry) => [entry.routingNumber, entry.routingNumber])).values()].map((routing) => (
-                        <option key={routing} value={routing} />
-                      ))}
-                    </datalist>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="amount">Amount (USDC)</Label>
-                  <Input
-                    id="amount"
-                    name="amount"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    required
-                    value={amount}
-                    onChange={(event) => setAmount(event.target.value)}
-                    placeholder="1000"
-                    disabled={isFormDisabled}
-                  />
-                </div>
-
-                {preview && preview.length > 0 && (
-                  <div className="rounded-lg border border-slate-200/60 bg-slate-50/50 p-4 dark:border-slate-700/60 dark:bg-slate-800/50">
-                    <div className="space-y-3">
-                      {preview[0].email && (
-                        <div>
-                          <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Email</p>
-                          <p className="text-sm text-slate-700 dark:text-slate-200">{preview[0].email}</p>
-                        </div>
-                      )}
-
-
-                      <div className="grid grid-cols-2 gap-3">
-                        {preview[0].accountMask && (
-                          <div>
-                            <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Account</p>
-                            <p className="text-sm font-mono text-slate-700 dark:text-slate-200">{preview[0].accountMask}</p>
-                          </div>
-                        )}
-
-                        {preview[0].routingMask && (
-                          <div>
-                            <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Routing</p>
-                            <p className="text-sm font-mono text-slate-700 dark:text-slate-200">{preview[0].routingMask}</p>
-                          </div>
-                        )}
-                      </div>
-                    </div>
+            {/* Content */}
+            <div className="p-6">
+              {!senderAddress ? (
+                // Connect Wallet State
+                <div className="text-center py-8">
+                  <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-gradient-to-br from-blue-500/20 to-purple-500/20 flex items-center justify-center">
+                    <svg className="w-10 h-10 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 12a2.25 2.25 0 00-2.25-2.25H15a3 3 0 11-6 0H5.25A2.25 2.25 0 003 12m18 0v6a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 18v-6m18 0V9M3 12V9m18 0a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 9m18 0V6a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v3" />
+                    </svg>
                   </div>
-                )}
-
-                <div className="flex justify-center">
+                  <h3 className="text-lg font-semibold mb-2">Connect Your Wallet</h3>
+                  <p className="text-sm text-muted-foreground mb-6">Connect a wallet with USDC to send</p>
                   <Button
-                    type="submit"
-                    size="lg"
-                    disabled={isFormDisabled}
-                    className="px-8"
+                    onClick={handleConnectWallet}
+                    disabled={isConnecting || !privyReady}
+                    className="w-full h-12 text-base font-semibold gradient-blue"
                   >
-                    {isSubmitting ? "Sending…" : isFunding ? "Confirm in wallet…" : "Send"}
+                    {isConnecting ? (
+                      <span className="flex items-center gap-2">
+                        <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Connecting...
+                      </span>
+                    ) : "Connect Wallet"}
                   </Button>
                 </div>
 
-                {error && (
-                  <p className="text-sm text-red-600 dark:text-red-400 text-center">{error}</p>
-                )}
-
-                {fundingError && (
-                  <p className="text-sm text-red-600 dark:text-red-400 text-center">{fundingError}</p>
-                )}
-              </form>
-
-              {transfer && (
-                <div className="mt-6 rounded-3xl border border-emerald-200/70 bg-emerald-50/70 p-5 text-left text-emerald-800 shadow-sm dark:border-emerald-800/60 dark:bg-emerald-900/60 dark:text-emerald-100">
-                  <p className="text-sm font-semibold">Deposit confirmed</p>
-                  <p className="mt-1 text-xs text-emerald-900/80 dark:text-emerald-100/80">
-                    The recipient&apos;s wallet will receive the vault funds once they claim it.
-                  </p>
+              ) : transfer?.fundingStatus === "CONFIRMED" ? (
+                // Success State
+                <div className="text-center py-8">
+                  <div className="relative w-24 h-24 mx-auto mb-6">
+                    <div className="absolute inset-0 bg-green-500/20 rounded-full animate-ping" />
+                    <div className="relative w-full h-full rounded-full bg-gradient-to-br from-green-400 to-green-600 flex items-center justify-center">
+                      <svg className="w-12 h-12 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                  </div>
+                  <h3 className="text-2xl font-bold mb-2">Sent!</h3>
+                  <p className="text-4xl font-black text-gradient-blue mb-4">${transfer.amount}</p>
+                  <p className="text-sm text-muted-foreground mb-6">USDC sent successfully</p>
                   {transfer.fundingTxHash && (
-                    <dl className="mt-3 space-y-2 text-[11px]">
-                      <div>
-                        <dt className="uppercase tracking-wide text-emerald-900/70 dark:text-emerald-100/70">Funding tx</dt>
-                        <dd className="break-all text-emerald-950 dark:text-emerald-50">
-                          <a
-                            href={`https://basescan.org/tx/${transfer.fundingTxHash}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="underline hover:no-underline"
-                          >
-                            {transfer.fundingTxHash}
-                          </a>
-                        </dd>
-                      </div>
-                    </dl>
+                    <a
+                      href={`https://basescan.org/tx/${transfer.fundingTxHash}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 text-sm text-blue-400 hover:text-blue-300 transition-colors mb-6"
+                    >
+                      View on BaseScan
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                      </svg>
+                    </a>
                   )}
+                  <Button
+                    onClick={() => { setTransfer(null); setAccountNumber(""); setRoutingNumber(""); setAmount(""); setStep(1); }}
+                    className="w-full h-12 text-base font-semibold gradient-blue"
+                  >
+                    Send More
+                  </Button>
                 </div>
-              )}
-            </>
-          )}
-        </div>
-      </div>
-    </section>
 
-      {senderAddress && (
-        <section>
-          <div className="rounded-3xl border border-slate-200/80 bg-white/70 text-slate-700 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-200">
-            <button
-              onClick={() => setIsHistoryOpen(!isHistoryOpen)}
-              className="w-full p-6 flex items-center justify-between text-left hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition-colors rounded-3xl"
-            >
-              <h2 className="text-lg font-semibold">Past transfers</h2>
-              {isHistoryOpen ? (
-                <ChevronUp className="h-5 w-5 text-slate-400" />
               ) : (
-                <ChevronDown className="h-5 w-5 text-slate-400" />
-              )}
-            </button>
+                // Form States
+                <form onSubmit={handleSubmit}>
+                  {step === 1 && (
+                    // Step 1: Amount
+                    <div className="space-y-6">
+                      <div className="text-center py-4">
+                        <div className="flex items-center justify-center gap-2 mb-2">
+                          <span className="text-4xl font-bold text-muted-foreground">$</span>
+                          <input
+                            type="number"
+                            value={amount}
+                            onChange={(e) => setAmount(e.target.value)}
+                            placeholder="0"
+                            className="text-6xl font-black bg-transparent border-none outline-none text-center w-48 text-foreground placeholder:text-muted-foreground/30"
+                            step="0.01"
+                            min="0"
+                          />
+                        </div>
+                        <p className="text-sm text-muted-foreground">USDC</p>
+                      </div>
 
-            {isHistoryOpen && (
-              <div className="px-6 pb-6 max-h-96 overflow-y-auto">
-                {isLoadingHistory ? (
-                  <p className="text-sm text-slate-500 dark:text-slate-400">Loading...</p>
-                ) : pastTransfers.length === 0 ? (
-                  <p className="text-sm text-slate-500 dark:text-slate-400">No past transfers</p>
-                ) : (
-                  <div className="space-y-3">
-                    {pastTransfers
-                      .filter((txn) => txn.fundingStatus === "CONFIRMED" || txn.fundingStatus === "FAILED")
-                      .map((txn) => (
-                      <div
-                        key={txn.transferId}
-                        className="rounded-lg border border-slate-200/60 bg-white/80 p-3 dark:border-slate-700/60 dark:bg-slate-900/70"
-                      >
-                        <div className="flex justify-between items-start mb-2">
-                          <div>
-                            <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
-                              ${txn.amount} USDC
-                            </p>
-                          </div>
-                          <span
-                            className={`text-xs px-2 py-1 rounded ${
-                              txn.fundingStatus === "CONFIRMED"
-                                ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400"
-                                : "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400"
+                      {/* Quick amounts */}
+                      <div className="flex gap-2">
+                        {[10, 50, 100, 500].map((val) => (
+                          <button
+                            key={val}
+                            type="button"
+                            onClick={() => setAmount(val.toString())}
+                            className={`flex-1 py-2 px-3 rounded-xl text-sm font-medium transition-all ${
+                              amount === val.toString()
+                                ? 'bg-blue-500 text-white'
+                                : 'bg-muted/50 text-muted-foreground hover:bg-muted'
                             }`}
                           >
-                            {txn.fundingStatus}
-                          </span>
+                            ${val}
+                          </button>
+                        ))}
+                      </div>
+
+                      <Button
+                        type="button"
+                        onClick={() => setStep(2)}
+                        disabled={!canProceedToRecipient}
+                        className="w-full h-12 text-base font-semibold gradient-blue disabled:opacity-50"
+                      >
+                        Continue
+                      </Button>
+                    </div>
+                  )}
+
+                  {step === 2 && (
+                    // Step 2: Recipient
+                    <div className="space-y-4">
+                      <button
+                        type="button"
+                        onClick={() => setStep(1)}
+                        className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                        </svg>
+                        Back
+                      </button>
+
+                      <div className="p-4 rounded-2xl bg-muted/30 border border-border/50">
+                        <p className="text-sm text-muted-foreground mb-1">Sending</p>
+                        <p className="text-2xl font-bold">${amount} <span className="text-base font-normal text-muted-foreground">USDC</span></p>
+                      </div>
+
+                      <div className="space-y-3">
+                        <div>
+                          <label className="text-sm font-medium text-muted-foreground mb-2 block">Routing Number</label>
+                          <input
+                            type="text"
+                            value={routingNumber}
+                            onChange={(e) => setRoutingNumber(sanitizeDigits(e.target.value))}
+                            placeholder="021000021"
+                            maxLength={9}
+                            className="w-full h-12 px-4 rounded-xl bg-muted/50 border border-border/50 text-foreground font-mono text-lg placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium text-muted-foreground mb-2 block">Account Number</label>
+                          <input
+                            type="text"
+                            value={accountNumber}
+                            onChange={(e) => setAccountNumber(sanitizeDigits(e.target.value))}
+                            placeholder="1234567890"
+                            className="w-full h-12 px-4 rounded-xl bg-muted/50 border border-border/50 text-foreground font-mono text-lg placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                          />
                         </div>
 
-                        <div className="space-y-1 mt-2">
-                          {txn.recipientAccount && (
-                            <p className="text-xs text-slate-600 dark:text-slate-300">
-                              <span className="font-medium">Account:</span> {txn.recipientAccount}
-                            </p>
-                          )}
-                          {txn.recipientRouting && (
-                            <p className="text-xs text-slate-600 dark:text-slate-300">
-                              <span className="font-medium">Routing:</span> {txn.recipientRouting}
-                            </p>
-                          )}
-                          {txn.depositAddress && (
-                            <p className="text-xs text-slate-600 dark:text-slate-300 break-all">
-                              <span className="font-medium">Vault:</span> {txn.depositAddress}
-                            </p>
-                          )}
-                          {(txn.recipientWalletAddress || txn.walletAddress) && (
-                            <p className="text-xs text-slate-600 dark:text-slate-300 break-all">
-                              <span className="font-medium">Recipient wallet:</span> {txn.recipientWalletAddress ?? txn.walletAddress}
-                            </p>
-                          )}
-                        </div>
-
-                        <p className="text-xs text-slate-400 dark:text-slate-500 mt-2">
-                          {new Date(txn.createdAt).toLocaleDateString()} {new Date(txn.createdAt).toLocaleTimeString()}
-                        </p>
-
-                        {txn.fundingTxHash && (
-                          <a
-                            href={`https://basescan.org/tx/${txn.fundingTxHash}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-xs text-blue-600 dark:text-blue-400 hover:underline block mt-2 break-all"
-                          >
-                            {txn.fundingTxHash}
-                          </a>
+                        {recipientEmail && (
+                          <div className="flex items-center gap-2 p-3 rounded-xl bg-green-500/10 border border-green-500/20">
+                            <svg className="w-5 h-5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            <span className="text-sm text-green-400">Blue Wallet found: {recipientEmail}</span>
+                          </div>
                         )}
                       </div>
-                    ))}
-                  </div>
-                )}
+
+                      <Button
+                        type="button"
+                        onClick={() => setStep(3)}
+                        disabled={!canProceedToConfirm}
+                        className="w-full h-12 text-base font-semibold gradient-blue disabled:opacity-50"
+                      >
+                        Review
+                      </Button>
+                    </div>
+                  )}
+
+                  {step === 3 && (
+                    // Step 3: Confirm
+                    <div className="space-y-4">
+                      <button
+                        type="button"
+                        onClick={() => setStep(2)}
+                        className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                        </svg>
+                        Back
+                      </button>
+
+                      <div className="p-5 rounded-2xl bg-gradient-to-br from-blue-500/10 to-purple-500/10 border border-blue-500/20">
+                        <p className="text-sm text-muted-foreground mb-1">You&apos;re sending</p>
+                        <p className="text-4xl font-black text-gradient-blue mb-4">${amount}</p>
+
+                        <div className="space-y-2 pt-4 border-t border-border/30">
+                          <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">To</span>
+                            <span className="font-mono">****{accountNumber.slice(-4)}</span>
+                          </div>
+                          <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">Routing</span>
+                            <span className="font-mono">{routingNumber}</span>
+                          </div>
+                          <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">Network</span>
+                            <span className="flex items-center gap-1">
+                              <span className="w-2 h-2 rounded-full bg-blue-500" />
+                              Base
+                            </span>
+                          </div>
+                          <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">Fee</span>
+                            <span className="text-green-400">$0.00</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {error && (
+                        <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20">
+                          <p className="text-sm text-red-400 text-center">{error}</p>
+                        </div>
+                      )}
+
+                      <Button
+                        type="submit"
+                        disabled={isDisabled}
+                        className="w-full h-14 text-lg font-bold gradient-blue disabled:opacity-50"
+                      >
+                        {isSubmitting || isFunding ? (
+                          <span className="flex items-center gap-2">
+                            <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            {isFunding ? "Confirming..." : "Processing..."}
+                          </span>
+                        ) : (
+                          <span className="flex items-center gap-2">
+                            Send ${amount}
+                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                            </svg>
+                          </span>
+                        )}
+                      </Button>
+
+                      <p className="text-xs text-center text-muted-foreground">
+                        By sending, you agree to our terms of service
+                      </p>
+                    </div>
+                  )}
+                </form>
+              )}
+            </div>
+
+            {/* Footer */}
+            {senderAddress && !transfer && (
+              <div className="px-6 py-4 border-t border-border/50 bg-muted/20">
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>Connected: {senderAddress.slice(0, 6)}...{senderAddress.slice(-4)}</span>
+                  <span className="flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                    Base Network
+                  </span>
+                </div>
               </div>
             )}
           </div>
-        </section>
-      )}
+        </div>
+
+        {/* Bottom text */}
+        <p className="text-center text-xs text-muted-foreground mt-6">
+          Powered by Base • Instant settlement • Zero fees
+        </p>
+      </div>
     </div>
   );
 }

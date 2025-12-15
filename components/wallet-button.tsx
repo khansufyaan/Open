@@ -14,12 +14,27 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 export function WalletButton() {
-  const { ready: privyReady, authenticated, logout } = usePrivy();
+  const { ready: privyReady, authenticated, login, connectWallet, logout } = usePrivy();
   const { wallets } = useWallets();
   const [copied, setCopied] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
 
   const evmWallet = wallets.find((wallet) => wallet.type === "ethereum");
   const address = evmWallet?.address;
+
+  const handleConnect = async () => {
+    if (!privyReady) return;
+    setIsConnecting(true);
+    try {
+      if (!authenticated) {
+        await login({ loginMethods: ["wallet"] });
+      } else if (!address) {
+        await connectWallet();
+      }
+    } finally {
+      setIsConnecting(false);
+    }
+  };
 
   const handleCopy = async () => {
     if (address) {
@@ -39,8 +54,22 @@ export function WalletButton() {
     await logout();
   };
 
-  if (!privyReady || !authenticated || !address) {
+  if (!privyReady) {
     return null;
+  }
+
+  if (!authenticated || !address) {
+    return (
+      <Button
+        size="sm"
+        onClick={handleConnect}
+        disabled={isConnecting}
+        className="gap-2 gradient-blue text-white font-semibold"
+      >
+        <Wallet className="h-4 w-4" />
+        {isConnecting ? "Connecting..." : "Connect Wallet"}
+      </Button>
+    );
   }
 
   const truncatedAddress = `${address.slice(0, 6)}...${address.slice(-4)}`;
