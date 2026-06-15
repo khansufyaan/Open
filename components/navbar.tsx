@@ -45,10 +45,10 @@ export function Navbar({ className }: { className?: string }) {
     <header className={cn("relative z-50 w-full", className)}>
       <div className="px-4 sm:px-6 pt-4 pb-2">
         <div className="relative max-w-6xl mx-auto">
-          {/* Glow effect */}
-          <div className="absolute -inset-[1px] rounded-2xl opacity-50 blur-sm bg-gradient-to-r from-blue-500/30 via-blue-400/20 to-blue-500/30" />
+          {/* Subtle glow */}
+          <div className="absolute -inset-[1px] rounded-2xl opacity-25 blur-sm bg-gradient-to-r from-blue-500/20 via-blue-400/10 to-blue-500/20" />
 
-          <nav className="relative flex w-full items-center justify-between gap-4 rounded-2xl px-4 sm:px-6 py-2.5 bg-blue-950/90 backdrop-blur-xl border border-blue-400/20">
+          <nav className="relative flex w-full items-center justify-between gap-4 rounded-2xl px-4 sm:px-6 py-2.5 bg-white/[0.04] backdrop-blur-xl border border-white/10">
 
             {/* Logo + Brand */}
             <Link href="/" className="flex items-center gap-3 transition hover:opacity-80">
