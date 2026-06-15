@@ -43,13 +43,13 @@ export function LandingPage() {
                 asChild
                 className="group relative min-w-[280px] h-16 text-xl font-semibold gradient-blue hover:opacity-90 transition-all duration-500 animate-pulse-glow overflow-hidden"
               >
-                <Link href="/recipient">
+                <Link href="/app">
                   Get Your Blue Wallet
                   <ArrowRight className="ml-2 h-5 w-5 transition-transform group-hover:translate-x-1" />
                 </Link>
               </Button>
               <p className="text-sm text-muted-foreground">
-                Already have one? <Link href="/send" className="text-blue-400 hover:underline">Send USDC to someone</Link>
+                Already have one? <Link href="/app" className="text-blue-400 hover:underline">Open your wallet</Link>
               </p>
             </div>
 
@@ -88,8 +88,8 @@ export function LandingPage() {
             <div className="grid md:grid-cols-3 gap-8 mb-16">
               <div className="relative p-6 rounded-2xl bg-card/30 border border-border/50 text-center">
                 <div className="absolute -top-4 left-1/2 -translate-x-1/2 w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white text-sm font-bold">1</div>
-                <p className="font-semibold text-lg text-foreground mt-2 mb-2">Connect your bank</p>
-                <p className="text-sm text-muted-foreground">Securely verify via Plaid</p>
+                <p className="font-semibold text-lg text-foreground mt-2 mb-2">Verify your identity</p>
+                <p className="text-sm text-muted-foreground">Quick KYC powered by Bridge</p>
               </div>
               <div className="relative p-6 rounded-2xl bg-card/30 border border-border/50 text-center">
                 <div className="absolute -top-4 left-1/2 -translate-x-1/2 w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white text-sm font-bold">2</div>

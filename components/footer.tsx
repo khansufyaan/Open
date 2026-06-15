@@ -20,13 +20,13 @@ export function Footer({ className }: { className?: string }) {
             <h3 className="text-sm font-semibold text-foreground">Product</h3>
             <ul className="space-y-3 text-sm text-muted-foreground">
               <li>
-                <Link href="/send" className="hover:text-primary transition-colors">
-                  Send USDC
+                <Link href="/app" className="hover:text-primary transition-colors">
+                  Open App
                 </Link>
               </li>
               <li>
-                <Link href="/recipient" className="hover:text-primary transition-colors">
-                  Receive USDC
+                <Link href="/app" className="hover:text-primary transition-colors">
+                  Send &amp; Receive
                 </Link>
               </li>
             </ul>

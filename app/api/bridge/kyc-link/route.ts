@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server";
 
-import { GetCommand, PutCommand } from "@aws-sdk/lib-dynamodb";
-
 import {
   createKycLink,
   getKycLink,
@@ -9,7 +7,7 @@ import {
   BridgeRequestError,
 } from "@/lib/bridge/server";
 import { handleBridgeError, isDemoAutoApprove } from "@/lib/bridge/route-helpers";
-import { docClient, USERS_TABLE as TABLE_NAME } from "@/lib/db/dynamo";
+import { getUser, updateUser } from "@/lib/db/store";
 import { requireAuth } from "@/lib/auth/privy";
 
 // Bridge KYC links are short-lived; refresh rather than hand back a dead URL.
@@ -37,32 +35,22 @@ export async function POST(request: Request) {
 
   const { fullName } = (body ?? {}) as { fullName?: string };
 
-  let user: Record<string, unknown>;
-
-  try {
-    const existing = await docClient.send(
-      new GetCommand({ TableName: TABLE_NAME, Key: { userId } })
-    );
-    if (!existing.Item) {
-      return NextResponse.json(
-        { error: "USER_NOT_FOUND", message: "Sign in before starting verification." },
-        { status: 404 }
-      );
-    }
-    user = existing.Item as Record<string, unknown>;
-  } catch (error) {
-    console.error("[Bridge KYC Link] Failed to load user:", error);
+  const user = await getUser(userId);
+  if (!user) {
     return NextResponse.json(
-      { error: "USER_LOOKUP_FAILED", message: "Unable to load user record." },
-      { status: 500 }
+      { error: "USER_NOT_FOUND", message: "Sign in before starting verification." },
+      { status: 404 }
     );
   }
 
-  const email = typeof user.email === "string" ? user.email : undefined;
+  const email = user.email;
 
   if (!isBridgeConfigured()) {
     if (isDemoAutoApprove()) {
-      // Local demo without Bridge credentials: no hosted flow to open.
+      // Local/demo without Bridge credentials: no hosted flow to open.
+      if (fullName && fullName !== user.fullName) {
+        await updateUser(userId, { fullName });
+      }
       return NextResponse.json({ demo: true, kycStatus: "not_started", url: null });
     }
     return NextResponse.json(
@@ -82,16 +70,14 @@ export async function POST(request: Request) {
   }
 
   try {
-    const existingLinkId = typeof user.bridgeKycLinkId === "string" ? user.bridgeKycLinkId : null;
+    const existingLinkId = user.bridgeKycLinkId ?? null;
 
-    // Reuse an in-flight KYC link only while it's still fresh; otherwise fall
-    // through and mint a new one so the client never opens an expired URL. If
-    // Bridge has deleted the link (404) we also fall through rather than 502.
+    // Reuse an in-flight KYC link only while it's still fresh; otherwise mint a
+    // new one so the client never opens an expired URL.
     if (existingLinkId) {
       try {
         const existingLink = await getKycLink(existingLinkId);
         const createdAt = existingLink.created_at ? Date.parse(existingLink.created_at) : NaN;
-        // Unparseable/absent timestamp → treat as expired and mint a fresh link.
         const ageMs = Number.isFinite(createdAt)
           ? Date.now() - createdAt
           : Number.POSITIVE_INFINITY;
@@ -113,23 +99,17 @@ export async function POST(request: Request) {
 
     const link = await createKycLink({
       email,
-      fullName: fullName || (typeof user.plaidVerifiedName === "string" ? user.plaidVerifiedName : email),
+      fullName: fullName || user.fullName || email,
       redirectUri,
     });
 
-    await docClient.send(
-      new PutCommand({
-        TableName: TABLE_NAME,
-        Item: {
-          ...user,
-          userId,
-          bridgeKycLinkId: link.id,
-          bridgeCustomerId: link.customer_id ?? user.bridgeCustomerId,
-          kycLinkUrl: link.kyc_link,
-          updatedAt: new Date().toISOString(),
-        },
-      })
-    );
+    await updateUser(userId, {
+      ...(fullName ? { fullName } : {}),
+      bridgeKycLinkId: link.id,
+      bridgeCustomerId: link.customer_id ?? user.bridgeCustomerId,
+      kycLinkUrl: link.kyc_link,
+      kycStatus: link.kyc_status,
+    });
 
     return NextResponse.json({
       url: link.kyc_link,

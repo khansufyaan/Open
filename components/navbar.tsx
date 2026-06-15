@@ -3,15 +3,14 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ArrowRight, Zap } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 
-import { WalletButton } from "@/components/wallet-button";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 export function Navbar({ className }: { className?: string }) {
   const pathname = usePathname();
-  const isHomePage = pathname === "/";
+  const isAppPage = pathname?.startsWith("/app");
 
   return (
     <header className={cn("relative z-50 w-full", className)}>
@@ -38,28 +37,6 @@ export function Navbar({ className }: { className?: string }) {
             {/* Center Nav - Desktop */}
             <div className="hidden md:flex items-center gap-1 bg-blue-900/50 rounded-xl px-1 py-1">
               <Link
-                href="/send"
-                className={cn(
-                  "px-4 py-2 rounded-lg text-sm font-medium transition-all",
-                  pathname === "/send"
-                    ? "bg-blue-500/20 text-white"
-                    : "text-blue-200 hover:text-white hover:bg-blue-500/10"
-                )}
-              >
-                Send
-              </Link>
-              <Link
-                href="/recipient"
-                className={cn(
-                  "px-4 py-2 rounded-lg text-sm font-medium transition-all",
-                  pathname === "/recipient"
-                    ? "bg-blue-500/20 text-white"
-                    : "text-blue-200 hover:text-white hover:bg-blue-500/10"
-                )}
-              >
-                Receive
-              </Link>
-              <Link
                 href="/faq"
                 className={cn(
                   "px-4 py-2 rounded-lg text-sm font-medium transition-all",
@@ -74,46 +51,16 @@ export function Navbar({ className }: { className?: string }) {
 
             {/* Right Side - CTA */}
             <div className="flex items-center gap-2 sm:gap-3">
-              {/* Mobile nav */}
-              <div className="flex md:hidden items-center gap-1">
-                <Link
-                  href="/send"
-                  className={cn(
-                    "px-3 py-1.5 rounded-lg text-sm font-medium transition-all",
-                    pathname === "/send"
-                      ? "bg-blue-500/20 text-white"
-                      : "text-blue-200 hover:text-white"
-                  )}
-                >
-                  Send
-                </Link>
-                <Link
-                  href="/recipient"
-                  className={cn(
-                    "px-3 py-1.5 rounded-lg text-sm font-medium transition-all",
-                    pathname === "/recipient"
-                      ? "bg-blue-500/20 text-white"
-                      : "text-blue-200 hover:text-white"
-                  )}
-                >
-                  Receive
-                </Link>
-              </div>
-
-              {/* Wallet button on send page */}
-              {pathname === "/send" && <WalletButton />}
-
-              {/* Primary CTA - only on homepage */}
-              {isHomePage && (
+              {/* Launch app CTA (hidden when already inside the portal) */}
+              {!isAppPage && (
                 <Button
                   size="sm"
                   asChild
                   className="group gradient-blue hover:opacity-90 text-white font-semibold px-4 h-10 glow-blue-sm"
                 >
-                  <Link href="/send">
-                    <Zap className="h-4 w-4 mr-1.5" />
-                    <span className="hidden sm:inline">Send Now</span>
-                    <span className="sm:hidden">Send</span>
+                  <Link href="/app">
+                    <span className="hidden sm:inline">Open App</span>
+                    <span className="sm:hidden">App</span>
                     <ArrowRight className="h-4 w-4 ml-1 transition-transform group-hover:translate-x-0.5" />
                   </Link>
                 </Button>

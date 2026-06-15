@@ -288,6 +288,99 @@ export async function listWallets(customerId: string): Promise<BridgeWallet[]> {
   return response.data ?? [];
 }
 
+export type BridgeWalletBalance = {
+  currency: string;
+  balance: string;
+  chain?: string;
+  contract_address?: string;
+};
+
+export type BridgeWalletDetail = BridgeWallet & {
+  balances?: BridgeWalletBalance[];
+};
+
+export async function getWallet(
+  customerId: string,
+  walletId: string
+): Promise<BridgeWalletDetail> {
+  return bridgeRequest<BridgeWalletDetail>(`/customers/${customerId}/wallets/${walletId}`);
+}
+
+/**
+ * Returns the wallet's balance for the configured transfer currency (USDC by
+ * default) as a decimal string, or "0" when no matching balance is reported.
+ */
+export function getWalletCurrencyBalance(wallet: BridgeWalletDetail): string {
+  const currency = (process.env.BRIDGE_TRANSFER_CURRENCY ?? "usdc").toLowerCase();
+  const match = wallet.balances?.find((b) => b.currency?.toLowerCase() === currency);
+  return match?.balance ?? "0";
+}
+
+/* -------------------------------------------------------------------------- */
+/*                              Virtual Accounts                              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A Bridge virtual account gives the customer a US bank account number +
+ * routing number. Funds wired/ACH'd to it are auto-converted to stablecoin and
+ * delivered to the linked Bridge wallet (the "Receive via bank" experience).
+ */
+export type BridgeVirtualAccount = {
+  id: string;
+  status?: string;
+  source_deposit_instructions?: {
+    bank_name?: string;
+    bank_address?: string;
+    bank_beneficiary_name?: string;
+    bank_account_number?: string;
+    bank_routing_number?: string;
+    routing_number?: string;
+    account_number?: string;
+    payment_rail?: string;
+    payment_rails?: string[];
+  };
+};
+
+export type CreateVirtualAccountInput = {
+  customerId: string;
+  walletId?: string;
+  chain?: string;
+  currency?: string;
+  idempotencyKey?: string;
+};
+
+export async function createVirtualAccount(
+  input: CreateVirtualAccountInput
+): Promise<BridgeVirtualAccount> {
+  const chain = input.chain ?? process.env.BRIDGE_DEFAULT_CHAIN ?? "base";
+  const currency = input.currency ?? process.env.BRIDGE_TRANSFER_CURRENCY ?? "usdc";
+
+  return bridgeRequest<BridgeVirtualAccount>(
+    `/customers/${input.customerId}/virtual_accounts`,
+    {
+      method: "POST",
+      idempotencyKey: input.idempotencyKey,
+      body: {
+        source: { currency: "usd" },
+        destination: {
+          payment_rail: chain,
+          currency,
+          ...(input.walletId ? { bridge_wallet_id: input.walletId } : {}),
+        },
+      },
+    }
+  );
+}
+
+export async function listVirtualAccounts(
+  customerId: string
+): Promise<BridgeVirtualAccount[]> {
+  const response = await bridgeRequest<{ data?: BridgeVirtualAccount[] }>(
+    `/customers/${customerId}/virtual_accounts`
+  );
+  return response.data ?? [];
+}
+
 /* -------------------------------------------------------------------------- */
 /*                                  Transfers                                 */
 /* -------------------------------------------------------------------------- */
