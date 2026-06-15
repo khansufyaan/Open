@@ -477,7 +477,7 @@ export function AuthFlow() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          userId: session.userId,
+          // userId is derived server-side from the Privy token, not the body.
           plaidVerifiedName: identityData.names[0],
           plaidVerifiedEmail: identityData.emails[0],
           plaidVerifiedPhone: identityData.phones[0],

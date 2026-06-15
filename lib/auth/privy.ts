@@ -28,6 +28,10 @@ function getPrivyClient(): PrivyClient | null {
   }
 
   if (!cachedClient) {
+    // The client is cached for the worker lifetime; a secret rotation requires
+    // a worker restart to take effect. Log the app id (not the secret) so the
+    // active credential is traceable.
+    console.info(`[Auth] Initialized Privy client for app ${appId}`);
     cachedClient = new PrivyClient(appId, appSecret);
   }
 

@@ -6,11 +6,16 @@
     "dev": "next dev --turbopack",
     "build": "next build --turbopack",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "ios:add": "cap add ios",
+    "ios:sync": "cap sync ios",
+    "ios:open": "cap open ios"
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.911.0",
     "@aws-sdk/lib-dynamodb": "^3.911.0",
+    "@capacitor/core": "^6.2.0",
+    "@capacitor/ios": "^6.2.0",
     "@privy-io/react-auth": "^3.4.0",
     "@privy-io/server-auth": "^1.32.5",
     "@radix-ui/react-accordion": "^1.2.12",
@@ -33,6 +38,7 @@
     "viem": "^2.38.3"
   },
   "devDependencies": {
+    "@capacitor/cli": "^6.2.0",
     "@eslint/eslintrc": "^3",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^24",
