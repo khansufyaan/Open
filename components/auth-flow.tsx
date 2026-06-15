@@ -314,9 +314,7 @@ export function AuthFlow() {
     const hydrate = async () => {
       let shouldMarkHydrated = true;
       try {
-        const response = await authedFetch(
-          `/api/db/user?userId=${encodeURIComponent(session.userId)}`
-        );
+        const response = await authedFetch("/api/db/user");
         if (!response.ok) {
           if (response.status === 404) {
             shouldMarkHydrated = false;
