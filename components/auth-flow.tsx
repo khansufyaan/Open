@@ -681,9 +681,10 @@ export function AuthFlow() {
           throw new Error(data.message ?? data.error ?? "Withdrawal failed.");
         }
 
+        // Bridge transfers settle asynchronously: txHash may be null (pending).
         setWithdrawSuccess((previous) => ({
           ...previous,
-          [summary.transferId]: data.txHash as string,
+          [summary.transferId]: typeof data.txHash === "string" ? data.txHash : null,
         }));
         setWithdrawInputs((previous) => ({ ...previous, [summary.transferId]: "" }));
 

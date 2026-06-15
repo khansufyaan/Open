@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, ScanCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+import { ScanCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 
 import {
   createTransfer,
@@ -9,8 +8,9 @@ import {
   isBridgeConfigured,
   BridgeRequestError,
 } from "@/lib/bridge/server";
+import { handleBridgeError } from "@/lib/bridge/route-helpers";
+import { docClient, TRANSFERS_TABLE } from "@/lib/db/dynamo";
 
-const TRANSFERS_TABLE = "blue-wallet-transfers";
 const TRANSFER_RAIL = process.env.BRIDGE_DEFAULT_CHAIN ?? "base";
 const TRANSFER_CURRENCY = process.env.BRIDGE_TRANSFER_CURRENCY ?? "usdc";
 
@@ -29,12 +29,6 @@ type TransferRecord = {
   claimTxHash?: string;
   depositAddress?: string;
 };
-
-const dynamoClient = new DynamoDBClient({
-  region: process.env.AWS_REGION || "us-east-2",
-});
-
-const docClient = DynamoDBDocumentClient.from(dynamoClient);
 
 type RouteParams = { transferId: string };
 type RouteContext = { params: Promise<RouteParams> | RouteParams };
@@ -192,10 +186,7 @@ export async function POST(request: Request, context: RouteContext) {
     }
 
     if (error instanceof BridgeRequestError) {
-      return NextResponse.json(
-        { error: error.code, message: error.message, details: error.details ?? null },
-        { status: 502 }
-      );
+      return handleBridgeError(error, "Claim");
     }
 
     return NextResponse.json(

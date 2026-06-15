@@ -266,6 +266,8 @@ export type CreateWalletInput = {
   chain?: string;
   /** Free-form tags to help correlate the wallet back to an app entity. */
   tags?: string[];
+  /** Stable key so concurrent provisioning attempts don't create duplicates. */
+  idempotencyKey?: string;
 };
 
 const DEFAULT_CHAIN = process.env.BRIDGE_DEFAULT_CHAIN ?? "base";
@@ -273,6 +275,7 @@ const DEFAULT_CHAIN = process.env.BRIDGE_DEFAULT_CHAIN ?? "base";
 export async function createWallet(input: CreateWalletInput): Promise<BridgeWallet> {
   return bridgeRequest<BridgeWallet>(`/customers/${input.customerId}/wallets`, {
     method: "POST",
+    idempotencyKey: input.idempotencyKey,
     body: {
       chain: input.chain ?? DEFAULT_CHAIN,
       ...(input.tags ? { tags: input.tags } : {}),

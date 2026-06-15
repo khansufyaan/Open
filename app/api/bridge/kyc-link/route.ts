@@ -8,9 +8,12 @@ import {
   isBridgeConfigured,
   BridgeRequestError,
 } from "@/lib/bridge/server";
+import { handleBridgeError } from "@/lib/bridge/route-helpers";
 import { docClient, USERS_TABLE as TABLE_NAME } from "@/lib/db/dynamo";
 
 const DEMO_AUTOAPPROVE = process.env.BRIDGE_DEMO_AUTOAPPROVE === "true";
+// Bridge KYC links are short-lived; refresh rather than hand back a dead URL.
+const KYC_LINK_TTL_MS = 30 * 60 * 1000;
 
 /**
  * Starts (or resumes) Bridge's hosted Persona KYC flow for a user.
@@ -86,15 +89,22 @@ export async function POST(request: Request) {
   try {
     const existingLinkId = typeof user.bridgeKycLinkId === "string" ? user.bridgeKycLinkId : null;
 
-    // Reuse an in-flight KYC link rather than creating a new one each time.
+    // Reuse an in-flight KYC link only while it's still fresh; otherwise fall
+    // through and mint a new one so the client never opens an expired URL.
     if (existingLinkId) {
       const existingLink = await getKycLink(existingLinkId);
-      return NextResponse.json({
-        url: existingLink.kyc_link,
-        tosLink: existingLink.tos_link ?? null,
-        kycStatus: existingLink.kyc_status,
-        tosStatus: existingLink.tos_status ?? null,
-      });
+      const ageMs = existingLink.created_at
+        ? Date.now() - Date.parse(existingLink.created_at)
+        : Number.POSITIVE_INFINITY;
+
+      if (Number.isFinite(ageMs) && ageMs < KYC_LINK_TTL_MS) {
+        return NextResponse.json({
+          url: existingLink.kyc_link,
+          tosLink: existingLink.tos_link ?? null,
+          kycStatus: existingLink.kyc_status,
+          tosStatus: existingLink.tos_status ?? null,
+        });
+      }
     }
 
     const redirectUri = process.env.BRIDGE_KYC_REDIRECT_URI;
@@ -127,10 +137,7 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     if (error instanceof BridgeRequestError) {
-      return NextResponse.json(
-        { error: error.code, message: error.message, details: error.details ?? null },
-        { status: error.status >= 400 && error.status < 600 ? error.status : 502 }
-      );
+      return handleBridgeError(error, "Bridge KYC Link");
     }
 
     console.error("[Bridge KYC Link] Failed to create KYC link:", error);

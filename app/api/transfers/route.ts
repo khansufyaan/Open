@@ -1,20 +1,13 @@
 import { NextResponse } from "next/server";
 import { createHash, randomUUID } from "crypto";
 
-import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, GetCommand, PutCommand, ScanCommand } from "@aws-sdk/lib-dynamodb";
+import { GetCommand, PutCommand, ScanCommand } from "@aws-sdk/lib-dynamodb";
 
 import { createWallet, listWallets, isBridgeConfigured } from "@/lib/bridge/server";
+import { docClient, TRANSFERS_TABLE } from "@/lib/db/dynamo";
 
-const TRANSFERS_TABLE = "blue-wallet-transfers";
 const RECIPIENT_WALLETS_TABLE =
   process.env.RECIPIENT_WALLETS_TABLE ?? "blue-wallet-recipient-wallets";
-
-const dynamoClient = new DynamoDBClient({
-  region: process.env.AWS_REGION || "us-east-2",
-});
-
-const docClient = DynamoDBDocumentClient.from(dynamoClient);
 
 type TransferRecord = {
   recipientKey: string;
@@ -186,6 +179,7 @@ async function createRecipientWallet(recipientKey: string): Promise<RecipientWal
     (await createWallet({
       customerId: companyCustomerId,
       tags: [walletTag],
+      idempotencyKey: `wallet:${walletTag}`,
     }));
 
   if (!wallet.address) {

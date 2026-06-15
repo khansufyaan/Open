@@ -9,6 +9,7 @@ import {
   isBridgeConfigured,
   BridgeRequestError,
 } from "@/lib/bridge/server";
+import { handleBridgeError } from "@/lib/bridge/route-helpers";
 import { docClient, USERS_TABLE as TABLE_NAME } from "@/lib/db/dynamo";
 
 const DEMO_AUTOAPPROVE = process.env.BRIDGE_DEMO_AUTOAPPROVE === "true";
@@ -112,7 +113,11 @@ export async function GET(request: Request) {
 
     if (customerId && (!walletId || !walletAddress)) {
       try {
-        const wallet = await createWallet({ customerId, tags: [`user:${userId}`] });
+        const wallet = await createWallet({
+          customerId,
+          tags: [`user:${userId}`],
+          idempotencyKey: `wallet:${userId}`,
+        });
         walletId = wallet.id;
         walletAddress = wallet.address;
       } catch (error) {
@@ -155,10 +160,7 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     if (error instanceof BridgeRequestError) {
-      return NextResponse.json(
-        { error: error.code, message: error.message, details: error.details ?? null },
-        { status: error.status >= 400 && error.status < 600 ? error.status : 502 }
-      );
+      return handleBridgeError(error, "Bridge KYC Status");
     }
 
     console.error("[Bridge KYC Status] Failed to read KYC status:", error);

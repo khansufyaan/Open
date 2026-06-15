@@ -18,8 +18,8 @@ function deriveUserId(email: string): string {
  * Establishes an app session for an email address.
  *
  * This replaces the former Turnkey email-OTP sign-in. Identity is verified
- * separately via Persona (see /api/persona/inquiry) before any wallet or
- * transfer capability is unlocked.
+ * separately via Bridge-hosted KYC (see /api/bridge/kyc-status) before any
+ * wallet or transfer capability is unlocked.
  */
 export async function POST(request: Request) {
   let body: unknown;

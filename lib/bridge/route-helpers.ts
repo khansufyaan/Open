@@ -14,8 +14,15 @@ export function bridgeNotConfigured() {
 
 export function handleBridgeError(error: unknown, context = "Bridge") {
   if (error instanceof BridgeRequestError) {
+    // error.details is the raw Bridge body and may contain internal ids/PII —
+    // only surface it outside production.
+    const exposeDetails = process.env.NODE_ENV !== "production";
     return NextResponse.json(
-      { error: error.code, message: error.message, details: error.details ?? null },
+      {
+        error: error.code,
+        message: error.message,
+        ...(exposeDetails ? { details: error.details ?? null } : {}),
+      },
       { status: error.status >= 400 && error.status < 600 ? error.status : 502 }
     );
   }
