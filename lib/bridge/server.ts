@@ -147,6 +147,7 @@ export type BridgeCustomer = {
   type?: string;
   email?: string;
   status?: string;
+  kyc_status?: string;
   first_name?: string;
   last_name?: string;
   // Bridge associates KYC with an external identity provider (Persona).
@@ -162,6 +163,8 @@ export type CreateCustomerInput = {
    */
   personaInquiryId?: string;
   fullName?: string;
+  /** Stable key so retries don't create duplicate customers. */
+  idempotencyKey?: string;
 };
 
 export async function createCustomer(input: CreateCustomerInput): Promise<BridgeCustomer> {
@@ -187,12 +190,29 @@ export async function createCustomer(input: CreateCustomerInput): Promise<Bridge
 
   return bridgeRequest<BridgeCustomer>("/customers", {
     method: "POST",
+    idempotencyKey: input.idempotencyKey,
     body,
   });
 }
 
 export async function getCustomer(customerId: string): Promise<BridgeCustomer> {
   return bridgeRequest<BridgeCustomer>(`/customers/${customerId}`);
+}
+
+/** Bridge's authoritative KYC status string for a customer. */
+export function getCustomerKycStatus(customer: BridgeCustomer): string {
+  return customer.kyc_status ?? customer.status ?? "under_review";
+}
+
+/** True when Bridge reports the customer's KYC as approved/active. */
+export function isCustomerApproved(customer: BridgeCustomer): boolean {
+  const status = (customer.kyc_status ?? customer.status ?? "").toLowerCase();
+  if (["approved", "active", "complete", "completed"].includes(status)) {
+    return true;
+  }
+  return (customer.endorsements ?? []).some(
+    (endorsement) => endorsement.status?.toLowerCase() === "approved"
+  );
 }
 
 /* -------------------------------------------------------------------------- */

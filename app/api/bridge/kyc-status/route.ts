@@ -3,6 +3,9 @@ import { NextResponse } from "next/server";
 import {
   getKycLink,
   isKycApproved,
+  getCustomer,
+  getCustomerKycStatus,
+  isCustomerApproved,
   isBridgeConfigured,
   BridgeRequestError,
 } from "@/lib/bridge/server";
@@ -69,6 +72,40 @@ export async function GET(request: Request) {
   }
 
   const kycLinkId = user.bridgeKycLinkId ?? null;
+
+  // Embedded-Persona (inquiry) flow: a customer exists but there's no hosted
+  // link. Poll the customer's authoritative KYC status from Bridge.
+  if (!kycLinkId && user.bridgeCustomerId) {
+    try {
+      const customer = await getCustomer(user.bridgeCustomerId);
+      const kycStatus = getCustomerKycStatus(customer);
+
+      if (!isCustomerApproved(customer)) {
+        await updateUser(userId, { kycStatus });
+        return NextResponse.json({ verified: false, kycStatus });
+      }
+
+      user = await updateUser(userId, {
+        kycStatus,
+        kycVerificationSource: "bridge",
+        personaVerificationCompleted: true,
+        personaVerifiedAt: new Date().toISOString(),
+      });
+      user = await ensureProvisioned(user);
+
+      return NextResponse.json({
+        verified: true,
+        kycStatus,
+        onboardingCompleted: Boolean(user.onboardingCompleted),
+      });
+    } catch (error) {
+      if (error instanceof BridgeRequestError) {
+        return handleBridgeError(error, "Bridge KYC Status");
+      }
+      throw error;
+    }
+  }
+
   if (!kycLinkId) {
     return NextResponse.json({ verified: false, kycStatus: "not_started" });
   }

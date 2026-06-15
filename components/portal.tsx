@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { BridgeKycButton } from "@/components/bridge-kyc-button";
+import { PersonaKyc } from "@/components/persona-kyc";
 
 type PortalState = {
   user: { userId: string; email: string | null; fullName: string | null };
@@ -233,8 +233,9 @@ function PortalInner() {
         </p>
         {error && <p className="mt-3 text-xs text-red-400">{error}</p>}
         <div className="mt-6">
-          <BridgeKycButton
+          <PersonaKyc
             fullName={state.user.fullName ?? undefined}
+            referenceId={state.user.userId}
             onVerified={() => {
               setError(null);
               void loadPortal();

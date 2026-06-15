@@ -45,6 +45,8 @@ export type UserRecord = {
   // --- KYC (Bridge-hosted Persona) ---
   bridgeKycLinkId?: string;
   kycLinkUrl?: string;
+  /** Persona inquiry id when KYC runs via the embedded Persona SDK. */
+  personaInquiryId?: string;
   kycStatus?: string; // not_started | under_review | incomplete | approved | rejected
   kycVerificationSource?: string;
   personaVerificationCompleted?: boolean;
