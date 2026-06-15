@@ -82,6 +82,23 @@ function CopyField({ label, value }: { label: string; value: string }) {
 }
 
 export function Portal() {
+  // Privy must be configured for the provider (and usePrivy) to work. Guard here
+  // so /app renders a clear message instead of crashing before keys are wired.
+  if (!process.env.NEXT_PUBLIC_PRIVY_APP_ID) {
+    return (
+      <CenteredCard>
+        <Wallet className="mx-auto h-10 w-10 text-blue-400" />
+        <h1 className="mt-4 text-2xl font-bold text-white">Almost ready</h1>
+        <p className="mt-2 text-sm text-blue-200/80">
+          The wallet portal is being configured. Check back shortly.
+        </p>
+      </CenteredCard>
+    );
+  }
+  return <PortalInner />;
+}
+
+function PortalInner() {
   const { ready, authenticated, login, logout, getAccessToken } = usePrivy();
 
   const [state, setState] = useState<PortalState | null>(null);
