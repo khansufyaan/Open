@@ -53,6 +53,32 @@ function demoVirtualAccount(userId: string): VirtualAccountDetails {
   };
 }
 
+/**
+ * Provisions a demo wallet + virtual account (clearly labeled) without any
+ * identity verification. Used when a user skips onboarding so testers can see
+ * the full dashboard. A later real KYC upgrades these to real Bridge resources.
+ */
+export async function provisionDemo(user: UserRecord): Promise<UserRecord> {
+  let next = user;
+  if (!next.walletAddress) {
+    next = await updateUser(next.userId, {
+      walletAddress: demoWalletAddress(next.userId),
+      walletChain: process.env.BRIDGE_DEFAULT_CHAIN ?? "base",
+      provisionSource: "demo",
+    });
+  }
+  if (!next.virtualAccount) {
+    next = await updateUser(next.userId, {
+      virtualAccount: demoVirtualAccount(next.userId),
+      provisionSource: "demo",
+    });
+  }
+  if (!next.onboardingCompleted) {
+    next = await updateUser(next.userId, { onboardingCompleted: true });
+  }
+  return next;
+}
+
 export async function ensureProvisioned(user: UserRecord): Promise<UserRecord> {
   // Only provision once identity is verified.
   if (!user.personaVerificationCompleted) {
@@ -63,23 +89,7 @@ export async function ensureProvisioned(user: UserRecord): Promise<UserRecord> {
 
   // --- Demo provisioning (no Bridge credentials) ---
   if (!isBridgeConfigured()) {
-    if (!next.walletAddress) {
-      next = await updateUser(next.userId, {
-        walletAddress: demoWalletAddress(next.userId),
-        walletChain: process.env.BRIDGE_DEFAULT_CHAIN ?? "base",
-        provisionSource: "demo",
-      });
-    }
-    if (!next.virtualAccount) {
-      next = await updateUser(next.userId, {
-        virtualAccount: demoVirtualAccount(next.userId),
-        provisionSource: "demo",
-      });
-    }
-    if (!next.onboardingCompleted) {
-      next = await updateUser(next.userId, { onboardingCompleted: true });
-    }
-    return next;
+    return provisionDemo(next);
   }
 
   // --- Real Bridge provisioning ---
@@ -89,6 +99,7 @@ export async function ensureProvisioned(user: UserRecord): Promise<UserRecord> {
     return next;
   }
 
+  // Real wallet (a demo skip only set walletAddress, never bridgeWalletId).
   if (!next.bridgeWalletId) {
     const wallet = await createWallet({
       customerId,
@@ -102,7 +113,8 @@ export async function ensureProvisioned(user: UserRecord): Promise<UserRecord> {
     });
   }
 
-  if (!next.virtualAccount) {
+  // Real virtual account (a demo skip set virtualAccount but no virtualAccountId).
+  if (!next.virtualAccountId) {
     // A virtual account requires the feature to be enabled on the Bridge
     // account. If it isn't, don't block onboarding — the wallet still works for
     // on-chain send/receive and the bank details show as pending.

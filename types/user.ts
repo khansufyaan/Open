@@ -72,6 +72,8 @@ export type UserRecord = {
   virtualAccount?: VirtualAccountDetails;
   provisionSource?: "bridge" | "demo";
   onboardingCompleted?: boolean;
+  /** User chose to skip KYC; demo wallet/account provisioned for testing. */
+  skippedOnboarding?: boolean;
 
   // --- Card ---
   card?: CardDetails;

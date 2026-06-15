@@ -63,6 +63,7 @@ export async function GET(request: Request) {
         kycStatus: user.kycStatus ?? "not_started",
         kycCompleted: Boolean(user.personaVerificationCompleted),
         onboardingCompleted: Boolean(user.onboardingCompleted),
+        skipped: Boolean(user.skippedOnboarding),
         provisionSource: user.provisionSource ?? null,
       },
       wallet: user.walletAddress

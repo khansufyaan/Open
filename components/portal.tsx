@@ -25,6 +25,7 @@ type PortalState = {
     kycStatus: string;
     kycCompleted: boolean;
     onboardingCompleted: boolean;
+    skipped: boolean;
     provisionSource: string | null;
   };
   wallet: { address: string; chain: string; balance: string; currency: string } | null;
@@ -180,7 +181,7 @@ function PortalInner() {
     }
   }, [userId]);
 
-  const handleSkip = useCallback(() => {
+  const handleSkip = useCallback(async () => {
     if (userId) {
       try {
         window.localStorage.setItem(`bluewallet:skipped:${userId}`, "1");
@@ -189,7 +190,14 @@ function PortalInner() {
       }
     }
     setSkipped(true);
-  }, [userId]);
+    // Demo-provision a wallet + bank account so the dashboard is populated.
+    try {
+      await authedFetch("/api/onboarding/skip", { method: "POST" });
+      await loadPortal();
+    } catch {
+      /* dashboard still renders; provisioning can be retried on reload */
+    }
+  }, [userId, authedFetch, loadPortal]);
 
   const handleSend = useCallback(async () => {
     setSendError(null);
@@ -281,7 +289,7 @@ function PortalInner() {
   const { onboarding } = state;
 
   // --- Needs onboarding / KYC (unless the user chose to skip for now) ---
-  if (!onboarding.kycCompleted && !skipped) {
+  if (!onboarding.kycCompleted && !skipped && !onboarding.skipped) {
     return (
       <CenteredCard>
         <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-500/15">
@@ -305,7 +313,7 @@ function PortalInner() {
           />
         </div>
         <button
-          onClick={handleSkip}
+          onClick={() => void handleSkip()}
           className="mt-4 block w-full text-sm font-medium text-blue-300 hover:text-blue-200"
         >
           Skip for now
@@ -331,17 +339,20 @@ function PortalInner() {
     );
   }
 
-  // --- Dashboard (wallet may be absent if the user skipped onboarding) ---
+  // --- Dashboard ---
   const { wallet, virtualAccount, transactions } = state;
   const isDemo = onboarding.provisionSource === "demo";
-  const onboardingComplete = onboarding.onboardingCompleted && !!wallet;
+  const verified = onboarding.kycCompleted;
+  // Wallet/account/card are unlocked once provisioned — real (verified) or demo
+  // (skipped). The reminder banner stays until identity is actually verified.
+  const provisioned = onboarding.onboardingCompleted && !!wallet;
   const currency = wallet?.currency ?? "USDC";
   const chain = wallet?.chain ?? "base";
 
   return (
     <div className="mx-auto w-full max-w-2xl space-y-6">
       <div className="flex items-center justify-between">
-        {onboardingComplete ? (
+        {verified ? (
           <div className="flex items-center gap-2 text-sm text-emerald-400">
             <ShieldCheck className="h-4 w-4" /> Verified
             {isDemo && (
@@ -352,7 +363,7 @@ function PortalInner() {
           </div>
         ) : (
           <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/15 px-2.5 py-0.5 text-xs font-medium text-amber-300">
-            Onboarding incomplete
+            Test mode
           </span>
         )}
         <button
@@ -363,13 +374,13 @@ function PortalInner() {
         </button>
       </div>
 
-      {/* Finish-onboarding reminder — stays until KYC + provisioning complete */}
-      {!onboardingComplete && (
+      {/* Test-mode reminder — stays until identity is actually verified */}
+      {!verified && (
         <div className="rounded-2xl border border-amber-400/25 bg-amber-500/10 p-5">
-          <h2 className="text-sm font-semibold text-amber-100">Finish setting up your wallet</h2>
+          <h2 className="text-sm font-semibold text-amber-100">You&apos;re in test mode</h2>
           <p className="mt-1 text-xs text-amber-200/80">
-            You skipped identity verification. Complete a quick check to unlock your balance,
-            bank account number, routing number, and sending.
+            These are demo details for previewing the app. Verify your identity to activate a
+            real wallet, bank account number, routing number, and card.
           </p>
           <div className="mt-4">
             <PersonaKyc
@@ -398,7 +409,7 @@ function PortalInner() {
         </p>
       </div>
 
-      {onboardingComplete && wallet ? (
+      {provisioned && wallet ? (
       <>
       {/* Tabs */}
       <div className="flex gap-1 rounded-2xl bg-blue-950/50 p-1">
