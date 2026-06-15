@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { PlaidConnectButton } from "@/components/plaid-connect-button";
-import { PersonaVerifyButton, type PersonaResult } from "@/components/persona-verify-button";
+import { BridgeKycButton } from "@/components/bridge-kyc-button";
 import { ReceiverDashboard } from "@/components/receiver-dashboard";
 import type { PlaidAchAccount, PlaidIdentitySnapshot, TransferSummary } from "@/types/receiver";
 import type { Session } from "@/types/session";
@@ -18,6 +18,7 @@ const DIGIT_REGEX = /\D+/g;
 const HEX_ADDRESS_REGEX = /^0x[a-fA-F0-9]{40}$/;
 const ALL_ACCOUNTS_KEY = "__ALL__";
 const SESSION_STORAGE_KEY = "bluewallet:session:v1";
+const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 const PLAID_STORAGE_PREFIX = "bluewallet:plaid:v1";
 
 function sanitizeDigits(value: string | null | undefined): string {
@@ -134,8 +135,14 @@ function loadStoredSession(): Session | null {
     if (!raw) {
       return null;
     }
-    const parsed = JSON.parse(raw) as Partial<Session> | null;
+    const parsed = JSON.parse(raw) as (Partial<Session> & { expiresAt?: number }) | null;
     if (parsed?.userId) {
+      // Reject expired sessions (the deterministic email session is not a
+      // security boundary on its own — funds access is gated by Bridge KYC).
+      if (typeof parsed.expiresAt === "number" && parsed.expiresAt < Date.now()) {
+        window.localStorage.removeItem(SESSION_STORAGE_KEY);
+        return null;
+      }
       return { userId: parsed.userId, email: parsed.email };
     }
   } catch {
@@ -152,9 +159,8 @@ export function AuthFlow() {
   const [email, setEmail] = useState("");
   const [isSigningIn, setIsSigningIn] = useState(false);
 
-  // Identity verification (Persona)
+  // Identity verification (Bridge-hosted KYC)
   const [personaVerified, setPersonaVerified] = useState<boolean | null>(null);
-  const [isRecordingInquiry, setIsRecordingInquiry] = useState(false);
 
   // Plaid / receiver dashboard
   const [plaidIdentity, setPlaidIdentity] = useState<PlaidIdentitySnapshot | null>(null);
@@ -475,7 +481,10 @@ export function AuthFlow() {
       setPersonaVerified(Boolean(data.personaVerificationCompleted));
 
       if (typeof window !== "undefined") {
-        window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(nextSession));
+        window.localStorage.setItem(
+          SESSION_STORAGE_KEY,
+          JSON.stringify({ ...nextSession, expiresAt: Date.now() + SESSION_TTL_MS })
+        );
       }
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : "Failed to sign in.");
@@ -483,49 +492,6 @@ export function AuthFlow() {
       setIsSigningIn(false);
     }
   };
-
-  const handlePersonaComplete = useCallback(
-    async (result: PersonaResult) => {
-      if (!session) {
-        return;
-      }
-
-      setIsRecordingInquiry(true);
-      setAuthError(null);
-
-      try {
-        const response = await fetch("/api/persona/inquiry", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            userId: session.userId,
-            inquiryId: result.inquiryId,
-            status: result.status,
-            fields: result.fields,
-          }),
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.message ?? "Unable to record verification.");
-        }
-
-        setPersonaVerified(Boolean(data.verified));
-
-        if (!data.verified) {
-          setAuthError(
-            `Identity verification is ${result.status || "incomplete"}. Please finish verification to continue.`
-          );
-        }
-      } catch (error) {
-        setAuthError(error instanceof Error ? error.message : "Failed to record verification.");
-      } finally {
-        setIsRecordingInquiry(false);
-      }
-    },
-    [session]
-  );
 
   const handleLogout = () => {
     setSession(null);
@@ -797,18 +763,19 @@ export function AuthFlow() {
       <section className="max-w-md mx-auto rounded-2xl border border-slate-200/80 bg-white/70 p-6 text-center text-slate-700 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-200">
         <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Verify your identity</h2>
         <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-          Complete a quick identity check with Persona to earn your blue verification badge and unlock
-          your wallet.
+          Complete a quick identity check (powered by Bridge) to earn your blue verification badge and
+          unlock your wallet.
         </p>
         {authError && (
           <p className="mt-3 text-xs text-red-600 dark:text-red-400">{authError}</p>
         )}
         <div className="mt-5">
-          <PersonaVerifyButton
-            referenceId={session.userId}
-            disabled={isRecordingInquiry}
-            label={isRecordingInquiry ? "Finishing up…" : "Verify with Persona"}
-            onComplete={handlePersonaComplete}
+          <BridgeKycButton
+            userId={session.userId}
+            onVerified={() => {
+              setAuthError(null);
+              setPersonaVerified(true);
+            }}
             onError={(message) => setAuthError(message)}
           />
         </div>

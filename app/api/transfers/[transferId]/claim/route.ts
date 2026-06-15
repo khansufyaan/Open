@@ -120,9 +120,10 @@ export async function POST(request: Request, context: RouteContext) {
     );
   }
 
-  if (Number(record.amount) <= 0) {
+  const amountValue = Number(record.amount);
+  if (!Number.isFinite(amountValue) || amountValue <= 0) {
     return NextResponse.json(
-      { error: "INVALID_AMOUNT", message: "Transfer amount must be greater than zero to claim." },
+      { error: "INVALID_AMOUNT", message: "Transfer amount must be a positive number to claim." },
       { status: 400 }
     );
   }
@@ -145,7 +146,10 @@ export async function POST(request: Request, context: RouteContext) {
       },
     });
 
-    const txHash = getTransferTxHash(transfer) ?? transfer.id;
+    // Bridge transfers are async: the on-chain hash may not exist yet. Only
+    // store a real hash (null otherwise) so Basescan links never 404. The
+    // Bridge transfer id is persisted separately for later reconciliation.
+    const onchainHash = getTransferTxHash(transfer);
     const timestamp = new Date().toISOString();
 
     await docClient.send(
@@ -162,7 +166,7 @@ export async function POST(request: Request, context: RouteContext) {
         ExpressionAttributeValues: {
           ":claimed": "CLAIMED",
           ":deposited": "DEPOSITED",
-          ":txHash": txHash,
+          ":txHash": onchainHash ?? null,
           ":bridgeId": transfer.id,
           ":claimedAt": timestamp,
           ":updatedAt": timestamp,
@@ -172,9 +176,10 @@ export async function POST(request: Request, context: RouteContext) {
 
     return NextResponse.json({
       success: true,
-      txHash,
+      txHash: onchainHash,
       bridgeTransferId: transfer.id,
       state: transfer.state,
+      pending: !onchainHash,
     });
   } catch (error) {
     console.error("Transfer claim failed:", error);

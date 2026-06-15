@@ -196,6 +196,60 @@ export async function getCustomer(customerId: string): Promise<BridgeCustomer> {
 }
 
 /* -------------------------------------------------------------------------- */
+/*                                    KYC                                     */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Bridge runs KYC through a hosted Persona flow. Creating a KYC link returns a
+ * short-lived `bridge.withpersona.com` URL; Bridge then reports the verified
+ * status authoritatively on the KYC link (`kyc_status`) and the underlying
+ * customer, so we never trust a client-supplied verification result.
+ */
+export type BridgeKycLink = {
+  id: string;
+  email: string;
+  type?: string;
+  full_name?: string;
+  kyc_link: string;
+  tos_link?: string;
+  // not_started | under_review | incomplete | approved | rejected
+  kyc_status: string;
+  // pending | approved
+  tos_status?: string;
+  customer_id?: string;
+  created_at?: string;
+};
+
+export type CreateKycLinkInput = {
+  email: string;
+  fullName: string;
+  type?: "individual" | "business";
+  endorsements?: string[];
+  redirectUri?: string;
+};
+
+export async function createKycLink(input: CreateKycLinkInput): Promise<BridgeKycLink> {
+  return bridgeRequest<BridgeKycLink>("/kyc_links", {
+    method: "POST",
+    body: {
+      full_name: input.fullName,
+      email: input.email,
+      type: input.type ?? "individual",
+      ...(input.endorsements ? { endorsements: input.endorsements } : {}),
+      ...(input.redirectUri ? { redirect_uri: input.redirectUri } : {}),
+    },
+  });
+}
+
+export async function getKycLink(kycLinkId: string): Promise<BridgeKycLink> {
+  return bridgeRequest<BridgeKycLink>(`/kyc_links/${kycLinkId}`);
+}
+
+export function isKycApproved(link: BridgeKycLink): boolean {
+  return link.kyc_status?.toLowerCase() === "approved";
+}
+
+/* -------------------------------------------------------------------------- */
 /*                                   Wallets                                  */
 /* -------------------------------------------------------------------------- */
 

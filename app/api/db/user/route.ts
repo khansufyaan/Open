@@ -1,14 +1,7 @@
 import { NextResponse } from "next/server";
-import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, PutCommand, GetCommand } from "@aws-sdk/lib-dynamodb";
+import { PutCommand, GetCommand } from "@aws-sdk/lib-dynamodb";
 
-const TABLE_NAME = "blue-wallet-users";
-
-const client = new DynamoDBClient({
-  region: process.env.AWS_REGION || "us-east-2",
-});
-
-const docClient = DynamoDBDocumentClient.from(client);
+import { docClient, USERS_TABLE as TABLE_NAME } from "@/lib/db/dynamo";
 
 // GET: Retrieve user data
 export async function GET(request: Request) {

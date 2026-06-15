@@ -1,36 +1,7 @@
 import { NextResponse } from "next/server";
 
-import {
-  createCustomer,
-  getCustomer,
-  isBridgeConfigured,
-  BridgeRequestError,
-} from "@/lib/bridge/server";
-
-function bridgeNotConfigured() {
-  return NextResponse.json(
-    {
-      error: "BRIDGE_NOT_CONFIGURED",
-      message: "Bridge API key is missing on the server. Set BRIDGE_API_KEY.",
-    },
-    { status: 500 }
-  );
-}
-
-function handleBridgeError(error: unknown) {
-  if (error instanceof BridgeRequestError) {
-    return NextResponse.json(
-      { error: error.code, message: error.message, details: error.details ?? null },
-      { status: error.status >= 400 && error.status < 600 ? error.status : 502 }
-    );
-  }
-
-  console.error("[Bridge Customer] Unexpected error:", error);
-  return NextResponse.json(
-    { error: "BRIDGE_CUSTOMER_FAILED", message: "Unexpected Bridge error." },
-    { status: 500 }
-  );
-}
+import { createCustomer, getCustomer, isBridgeConfigured } from "@/lib/bridge/server";
+import { bridgeNotConfigured, handleBridgeError } from "@/lib/bridge/route-helpers";
 
 export async function GET(request: Request) {
   if (!isBridgeConfigured()) {

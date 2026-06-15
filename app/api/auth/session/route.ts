@@ -1,16 +1,9 @@
 import { NextResponse } from "next/server";
 import { createHash } from "crypto";
 
-import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, GetCommand, PutCommand } from "@aws-sdk/lib-dynamodb";
+import { GetCommand, PutCommand } from "@aws-sdk/lib-dynamodb";
 
-const TABLE_NAME = "blue-wallet-users";
-
-const dynamoClient = new DynamoDBClient({
-  region: process.env.AWS_REGION || "us-east-2",
-});
-
-const docClient = DynamoDBDocumentClient.from(dynamoClient);
+import { docClient, USERS_TABLE as TABLE_NAME } from "@/lib/db/dynamo";
 
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
