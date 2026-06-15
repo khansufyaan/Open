@@ -1,38 +1,17 @@
 import { NextResponse } from "next/server";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, ScanCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
-import { getSignedTransactionFromActivity } from "@turnkey/http";
-import { createPublicClient, encodeFunctionData, formatEther, http, parseAbi, serializeTransaction } from "viem";
-import type { Address, Hex } from "viem";
-import { base } from "viem/chains";
 
-import { getTurnkeyApiClient, getTurnkeyOrganizationId, isTurnkeyConfigured } from "@/lib/turnkey/server";
-import type { TurnkeySDKApiTypes } from "@turnkey/sdk-server";
+import {
+  createTransfer,
+  getTransferTxHash,
+  isBridgeConfigured,
+  BridgeRequestError,
+} from "@/lib/bridge/server";
 
 const TRANSFERS_TABLE = "blue-wallet-transfers";
-const BASE_USDC_CONTRACT = (process.env.BASE_USDC_CONTRACT ?? "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913").toLowerCase();
-const BASE_RPC_URL = process.env.BASE_RPC_URL ?? "https://mainnet.base.org";
-
-const ERC20_ABI = parseAbi([
-  "function transfer(address to, uint256 value) returns (bool)",
-]);
-
-function getSurchargePercentage(): number {
-  const envValue = process.env.SURCHARGE_PERCENTAGE;
-  const parsed = envValue ? parseFloat(envValue) : 0;
-  return !isNaN(parsed) && parsed >= 0 && parsed <= 100 ? parsed : 0;
-}
-
-function applySurchargeToWei(amountWei: bigint, surchargePercentage: number): bigint {
-  const surcharge = (amountWei * BigInt(Math.round(surchargePercentage * 100))) / BigInt(10000);
-  return amountWei + surcharge;
-}
-
-const dynamoClient = new DynamoDBClient({
-  region: process.env.AWS_REGION || "us-east-2",
-});
-
-const docClient = DynamoDBDocumentClient.from(dynamoClient);
+const TRANSFER_RAIL = process.env.BRIDGE_DEFAULT_CHAIN ?? "base";
+const TRANSFER_CURRENCY = process.env.BRIDGE_TRANSFER_CURRENCY ?? "usdc";
 
 type TransferRecord = {
   transferId: string;
@@ -42,6 +21,8 @@ type TransferRecord = {
   amount: string;
   amountCents: number;
   status: "DEPOSITED" | "PENDING" | "FAILED" | "CLAIMED" | "WITHDRAWN";
+  walletId?: string;
+  walletAddress?: string;
   withdrawalTxHash?: string;
   withdrawalTargetAddress?: string;
   withdrawnAt?: string;
@@ -49,6 +30,12 @@ type TransferRecord = {
   claimedAt?: string;
   depositAddress?: string;
 };
+
+const dynamoClient = new DynamoDBClient({
+  region: process.env.AWS_REGION || "us-east-2",
+});
+
+const docClient = DynamoDBDocumentClient.from(dynamoClient);
 
 function normalizeAddress(address: string): string {
   return address.trim();
@@ -58,18 +45,12 @@ function isHexAddress(value: string): boolean {
   return /^0x[a-fA-F0-9]{40}$/.test(value);
 }
 
-function centsToUsdcUnits(amountCents: number): bigint {
-  return BigInt(amountCents) * BigInt(10000); // convert cents (1e2) to micro units (1e6)
-}
-
 async function findTransferById(transferId: string): Promise<TransferRecord | null> {
   const response = await docClient.send(
     new ScanCommand({
       TableName: TRANSFERS_TABLE,
       FilterExpression: "transferId = :transferId",
-      ExpressionAttributeValues: {
-        ":transferId": transferId,
-      },
+      ExpressionAttributeValues: { ":transferId": transferId },
     })
   );
 
@@ -77,148 +58,36 @@ async function findTransferById(transferId: string): Promise<TransferRecord | nu
   return record ?? null;
 }
 
-function createBasePublicClient() {
-  return createPublicClient({
-    chain: base,
-    transport: http(BASE_RPC_URL),
-  });
-}
-
-type BasePublicClient = ReturnType<typeof createBasePublicClient>;
-
-async function fetchFeeData(publicClient: BasePublicClient) {
-  try {
-    const feeData = await publicClient.estimateFeesPerGas();
-    if (feeData) {
-      const fallback = await publicClient.getGasPrice();
-      const maxFeePerGas = feeData.maxFeePerGas ?? feeData.maxPriorityFeePerGas ?? fallback;
-      const maxPriorityFeePerGas = feeData.maxPriorityFeePerGas ?? feeData.maxFeePerGas ?? fallback;
-      return { maxFeePerGas, maxPriorityFeePerGas };
-    }
-  } catch (error) {
-    console.warn("Failed to estimate fees per gas, falling back to gasPrice", error);
+/**
+ * Resolves which Bridge wallet currently holds the funds for a transfer.
+ * Claimed transfers sit in the recipient's managed wallet; unclaimed
+ * (DEPOSITED) transfers are still in the company vault.
+ */
+function resolveSourceWalletId(record: TransferRecord): string | null {
+  if (record.status === "CLAIMED") {
+    return record.walletId ?? process.env.BRIDGE_COMPANY_WALLET_ID ?? null;
   }
-
-  const gasPrice = await publicClient.getGasPrice();
-  return {
-    maxFeePerGas: gasPrice,
-    maxPriorityFeePerGas: gasPrice,
-  };
+  return process.env.BRIDGE_COMPANY_WALLET_ID ?? null;
 }
 
-async function prepareWithdrawalTransaction({
-  publicClient,
-  walletAddress,
-  destination,
-  amountUnits,
-}: {
-  publicClient: BasePublicClient;
-  walletAddress: Address;
-  destination: Address;
-  amountUnits: bigint;
-}) {
-  const contractAddress = BASE_USDC_CONTRACT as Address;
-
-  const data = encodeFunctionData({
-    abi: ERC20_ABI,
-    functionName: "transfer",
-    args: [destination, amountUnits],
-  });
-
-  const nonce = await publicClient.getTransactionCount({ address: walletAddress });
-
-  const gasLimit = await publicClient.estimateGas({
-    account: walletAddress,
-    to: contractAddress,
-    value: BigInt(0),
-    data,
-  });
-
-  const { maxFeePerGas, maxPriorityFeePerGas } = await fetchFeeData(publicClient);
-
-  const unsignedTransaction = serializeTransaction({
-    type: "eip1559",
-    chainId: base.id,
-    nonce,
-    to: contractAddress,
-    value: BigInt(0),
-    gas: gasLimit,
-    maxFeePerGas,
-    maxPriorityFeePerGas,
-    data,
-  });
-
-  const totalFeeWei = gasLimit * maxFeePerGas;
-
-  return {
-    unsignedTransaction: unsignedTransaction as Hex,
-    gasLimit,
-    maxFeePerGas,
-    maxPriorityFeePerGas,
-    totalFeeWei,
-  };
-}
-
-async function buildWithdrawalQuote({
-  publicClient,
-  walletAddress,
-  destination,
-  amountUnits,
-}: {
-  publicClient: BasePublicClient;
-  walletAddress: Address;
-  destination: Address;
-  amountUnits: bigint;
-}) {
-  const prepared = await prepareWithdrawalTransaction({
-    publicClient,
-    walletAddress,
-    destination,
-    amountUnits,
-  });
-
-  const bufferedTotalFeeWei = (prepared.totalFeeWei * BigInt(125) + BigInt(99)) / BigInt(100);
-  const walletBalanceWei = await publicClient.getBalance({ address: walletAddress });
-  const topUpWei =
-    bufferedTotalFeeWei > walletBalanceWei
-      ? bufferedTotalFeeWei - walletBalanceWei
-      : BigInt(0);
-
-  return {
-    ...prepared,
-    totalFeeWei: bufferedTotalFeeWei,
-    walletBalanceWei,
-    topUpWei,
-  };
-}
-
-type RouteParams = {
-  transferId: string;
-};
-
-type RouteContext = {
-  params: Promise<RouteParams> | RouteParams;
-};
+type RouteParams = { transferId: string };
+type RouteContext = { params: Promise<RouteParams> | RouteParams };
 
 export async function POST(request: Request, context: RouteContext) {
-  const companyWalletAddress = process.env.COMPANY_WALLET_ADDRESS;
-  const companyWalletId = process.env.COMPANY_WALLET_ID;
-
-  if (!companyWalletAddress || !companyWalletId) {
+  if (!isBridgeConfigured()) {
     return NextResponse.json(
-      {
-        error: "COMPANY_WALLET_NOT_CONFIGURED",
-        message: "Company wallet is not configured. Run scripts/provision-company-wallet-in-parent-org.ts",
-      },
+      { error: "BRIDGE_NOT_CONFIGURED", message: "Bridge API key is missing on the server." },
       { status: 500 }
     );
   }
 
-  if (!isTurnkeyConfigured()) {
+  const companyCustomerId = process.env.BRIDGE_COMPANY_CUSTOMER_ID;
+
+  if (!companyCustomerId) {
     return NextResponse.json(
       {
-        error: "TURNKEY_NOT_CONFIGURED",
-        message: "Turnkey is not configured on the server.",
+        error: "COMPANY_WALLET_NOT_CONFIGURED",
+        message: "Set BRIDGE_COMPANY_CUSTOMER_ID for the company Bridge customer.",
       },
       { status: 500 }
     );
@@ -229,10 +98,7 @@ export async function POST(request: Request, context: RouteContext) {
 
   if (!transferId) {
     return NextResponse.json(
-      {
-        error: "MISSING_TRANSFER_ID",
-        message: "transferId parameter is required.",
-      },
+      { error: "MISSING_TRANSFER_ID", message: "transferId parameter is required." },
       { status: 400 }
     );
   }
@@ -243,10 +109,7 @@ export async function POST(request: Request, context: RouteContext) {
     body = await request.json();
   } catch {
     return NextResponse.json(
-      {
-        error: "INVALID_JSON",
-        message: "Request body must be valid JSON.",
-      },
+      { error: "INVALID_JSON", message: "Request body must be valid JSON." },
       { status: 400 }
     );
   }
@@ -258,23 +121,8 @@ export async function POST(request: Request, context: RouteContext) {
 
   if (!isHexAddress(targetAddressInput)) {
     return NextResponse.json(
-      {
-        error: "INVALID_TARGET_ADDRESS",
-        message: "A valid Base wallet address (0x...) is required.",
-      },
+      { error: "INVALID_TARGET_ADDRESS", message: "A valid Base wallet address (0x...) is required." },
       { status: 400 }
-    );
-  }
-
-  const turnkeyClient = getTurnkeyApiClient();
-
-  if (!turnkeyClient) {
-    return NextResponse.json(
-      {
-        error: "TURNKEY_CLIENT_ERROR",
-        message: "Unable to initialize Turnkey client.",
-      },
-      { status: 500 }
     );
   }
 
@@ -282,20 +130,14 @@ export async function POST(request: Request, context: RouteContext) {
 
   if (!record) {
     return NextResponse.json(
-      {
-        error: "TRANSFER_NOT_FOUND",
-        message: "No transfer record matches the supplied transferId.",
-      },
+      { error: "TRANSFER_NOT_FOUND", message: "No transfer record matches the supplied transferId." },
       { status: 404 }
     );
   }
 
   if (record.status === "WITHDRAWN") {
     return NextResponse.json(
-      {
-        error: "ALREADY_WITHDRAWN",
-        message: "This transfer has already been withdrawn.",
-      },
+      { error: "ALREADY_WITHDRAWN", message: "This transfer has already been withdrawn." },
       { status: 409 }
     );
   }
@@ -304,74 +146,52 @@ export async function POST(request: Request, context: RouteContext) {
     return NextResponse.json(
       {
         error: "TRANSFER_NOT_READY",
-        message: `Transfer status must be DEPOSITED to withdraw (current: ${record.status}).`,
+        message: `Transfer status must be DEPOSITED or CLAIMED to withdraw (current: ${record.status}).`,
       },
       { status: 409 }
     );
   }
 
-  const amountUnits = centsToUsdcUnits(record.amountCents ?? Math.round(Number(record.amount) * 100));
-
-  if (amountUnits <= BigInt(0)) {
+  if (Number(record.amount) <= 0) {
     return NextResponse.json(
-      {
-        error: "INVALID_AMOUNT",
-        message: "Transfer amount must be greater than zero.",
-      },
+      { error: "INVALID_AMOUNT", message: "Transfer amount must be greater than zero." },
       { status: 400 }
     );
   }
 
-  const publicClient = createBasePublicClient();
-  const destination = targetAddressInput as Address;
+  const sourceWalletId = resolveSourceWalletId(record);
 
-  const parentOrgId = getTurnkeyOrganizationId();
-
-  if (!parentOrgId) {
+  if (!sourceWalletId) {
     return NextResponse.json(
       {
-        error: "TURNKEY_ORG_NOT_CONFIGURED",
-        message: "Turnkey organization ID is missing.",
+        error: "SOURCE_WALLET_MISSING",
+        message: "Unable to resolve the Bridge wallet holding these funds.",
       },
-      { status: 500 }
+      { status: 409 }
     );
   }
 
   try {
-    const quote = await buildWithdrawalQuote({
-      publicClient,
-      walletAddress: companyWalletAddress as Address,
-      destination,
-      amountUnits,
+    // Bridge custodies the wallet keys and broadcasts the on-chain transfer.
+    const transfer = await createTransfer({
+      amount: record.amount,
+      onBehalfOf: companyCustomerId,
+      idempotencyKey: `withdraw:${record.transferId}`,
+      source: {
+        payment_rail: TRANSFER_RAIL,
+        currency: TRANSFER_CURRENCY,
+        bridge_wallet_id: sourceWalletId,
+      },
+      destination: {
+        payment_rail: TRANSFER_RAIL,
+        currency: TRANSFER_CURRENCY,
+        to_address: targetAddressInput,
+      },
     });
 
-    if (quote.topUpWei > BigInt(0)) {
-      return NextResponse.json(
-        {
-          error: "INSUFFICIENT_GAS",
-          message: `Managed wallet requires ${formatEther(quote.topUpWei)} ETH for gas. Top up before withdrawing.`,
-          requiredTopUpWei: quote.topUpWei.toString(),
-        },
-        { status: 400 }
-      );
-    }
-
-    const activity: TurnkeySDKApiTypes.TSignTransactionResponse = await turnkeyClient.signTransaction({
-      organizationId: parentOrgId,
-      signWith: companyWalletAddress,
-      unsignedTransaction: quote.unsignedTransaction,
-      type: "TRANSACTION_TYPE_ETHEREUM",
-    });
-
-    const signedTransaction = getSignedTransactionFromActivity(activity.activity) as Hex;
-
-    const txHash = await publicClient.sendRawTransaction({
-      serializedTransaction: signedTransaction,
-    });
-
+    const txHash = getTransferTxHash(transfer) ?? transfer.id;
     const timestamp = new Date().toISOString();
 
-    // Use conditional update to prevent race condition / double-withdrawal
     await docClient.send(
       new UpdateCommand({
         TableName: TRANSFERS_TABLE,
@@ -380,17 +200,16 @@ export async function POST(request: Request, context: RouteContext) {
           transferId: record.transferId,
         },
         UpdateExpression:
-          "SET #status = :withdrawn, withdrawalTxHash = :txHash, withdrawalTargetAddress = :targetAddress, withdrawnAt = :withdrawnAt, updatedAt = :updatedAt",
-        ConditionExpression: "(#status = :deposited OR #status = :claimed)", // prevent double-withdrawal
-        ExpressionAttributeNames: {
-          "#status": "status",
-        },
+          "SET #status = :withdrawn, withdrawalTxHash = :txHash, bridgeWithdrawTransferId = :bridgeId, withdrawalTargetAddress = :targetAddress, withdrawnAt = :withdrawnAt, updatedAt = :updatedAt",
+        ConditionExpression: "(#status = :deposited OR #status = :claimed)",
+        ExpressionAttributeNames: { "#status": "status" },
         ExpressionAttributeValues: {
           ":withdrawn": "WITHDRAWN",
           ":deposited": "DEPOSITED",
           ":claimed": "CLAIMED",
           ":txHash": txHash,
-          ":targetAddress": destination,
+          ":bridgeId": transfer.id,
+          ":targetAddress": targetAddressInput,
           ":withdrawnAt": timestamp,
           ":updatedAt": timestamp,
         },
@@ -400,11 +219,12 @@ export async function POST(request: Request, context: RouteContext) {
     return NextResponse.json({
       success: true,
       txHash,
+      bridgeTransferId: transfer.id,
+      state: transfer.state,
     });
   } catch (error) {
     console.error("Transfer withdrawal failed:", error);
 
-    // Check if it was a conditional check failure (already withdrawn)
     if (error instanceof Error && error.name === "ConditionalCheckFailedException") {
       return NextResponse.json(
         {
@@ -415,51 +235,46 @@ export async function POST(request: Request, context: RouteContext) {
       );
     }
 
+    if (error instanceof BridgeRequestError) {
+      return NextResponse.json(
+        { error: error.code, message: error.message, details: error.details ?? null },
+        { status: 502 }
+      );
+    }
+
     return NextResponse.json(
       {
         error: "WITHDRAWAL_FAILED",
-        message: error instanceof Error ? error.message : "Failed to broadcast withdrawal transaction.",
+        message: error instanceof Error ? error.message : "Failed to broadcast withdrawal transfer.",
       },
       { status: 500 }
     );
   }
 }
 
+/**
+ * Lightweight withdrawal quote. Bridge sponsors gas and custodies the source
+ * wallet, so there is no user gas top-up to compute — this simply confirms the
+ * transfer is in a withdrawable state and echoes the amount.
+ */
 export async function GET(request: Request, context: RouteContext) {
-  const companyWalletAddress = process.env.COMPANY_WALLET_ADDRESS;
-
-  if (!companyWalletAddress) {
-    return NextResponse.json(
-      {
-        error: "COMPANY_WALLET_NOT_CONFIGURED",
-        message: "Company wallet is not configured. Run scripts/provision-company-wallet.ts",
-      },
-      { status: 500 }
-    );
-  }
-
   const resolvedParams = await Promise.resolve(context.params);
   const { transferId } = resolvedParams ?? {};
 
   if (!transferId) {
     return NextResponse.json(
-      {
-        error: "MISSING_TRANSFER_ID",
-        message: "transferId parameter is required.",
-      },
+      { error: "MISSING_TRANSFER_ID", message: "transferId parameter is required." },
       { status: 400 }
     );
   }
 
-  const { searchParams } = new URL(request.url);
-  const targetAddressInput = normalizeAddress(searchParams.get("targetAddress") ?? "");
+  const targetAddressInput = normalizeAddress(
+    new URL(request.url).searchParams.get("targetAddress") ?? ""
+  );
 
   if (!isHexAddress(targetAddressInput)) {
     return NextResponse.json(
-      {
-        error: "INVALID_TARGET_ADDRESS",
-        message: "A valid Base wallet address (0x...) is required.",
-      },
+      { error: "INVALID_TARGET_ADDRESS", message: "A valid Base wallet address (0x...) is required." },
       { status: 400 }
     );
   }
@@ -468,10 +283,7 @@ export async function GET(request: Request, context: RouteContext) {
 
   if (!record) {
     return NextResponse.json(
-      {
-        error: "TRANSFER_NOT_FOUND",
-        message: "No transfer record matches the supplied transferId.",
-      },
+      { error: "TRANSFER_NOT_FOUND", message: "No transfer record matches the supplied transferId." },
       { status: 404 }
     );
   }
@@ -480,71 +292,23 @@ export async function GET(request: Request, context: RouteContext) {
     return NextResponse.json(
       {
         error: "TRANSFER_NOT_READY",
-        message: `Transfer status must be DEPOSITED to quote withdrawal gas (current: ${record.status}).`,
+        message: `Transfer status must be DEPOSITED or CLAIMED to quote a withdrawal (current: ${record.status}).`,
       },
       { status: 409 }
     );
   }
 
-  const amountUnits = centsToUsdcUnits(record.amountCents ?? Math.round(Number(record.amount) * 100));
-
-  if (amountUnits <= BigInt(0)) {
-    return NextResponse.json(
-      {
-        error: "INVALID_AMOUNT",
-        message: "Transfer amount must be greater than zero to quote withdrawal.",
-      },
-      { status: 400 }
-    );
-  }
-
-  const publicClient = createBasePublicClient();
-  const destination = targetAddressInput as Address;
-
-  try {
-    const quote = await buildWithdrawalQuote({
-      publicClient,
-      walletAddress: companyWalletAddress as Address,
-      destination,
-      amountUnits,
-    });
-
-    const surchargePercentage = getSurchargePercentage();
-    const topUpWithSurchargeWei = quote.topUpWei > BigInt(0)
-      ? applySurchargeToWei(quote.topUpWei, surchargePercentage)
-      : BigInt(0);
-
-    return NextResponse.json({
-      success: true,
-      transferId,
-      companyWalletAddress,
-      destination,
-      amount: record.amount,
-      amountCents: record.amountCents,
-      gasLimit: quote.gasLimit.toString(),
-      maxFeePerGasWei: quote.maxFeePerGas.toString(),
-      maxPriorityFeePerGasWei: quote.maxPriorityFeePerGas.toString(),
-      totalFeeWei: quote.totalFeeWei.toString(),
-      totalFeeEth: formatEther(quote.totalFeeWei),
-      walletBalanceWei: quote.walletBalanceWei.toString(),
-      walletBalanceEth: formatEther(quote.walletBalanceWei),
-      topUpWei: quote.topUpWei.toString(),
-      topUpEth: formatEther(quote.topUpWei),
-      topUpWithSurchargeWei: topUpWithSurchargeWei.toString(),
-      topUpWithSurchargeEth: formatEther(topUpWithSurchargeWei),
-      surchargePercentage,
-      hasSufficientBalance: quote.topUpWei === BigInt(0),
-      chainId: base.id,
-    });
-  } catch (error) {
-    console.error("Withdrawal quote failed:", error);
-
-    return NextResponse.json(
-      {
-        error: "WITHDRAWAL_QUOTE_FAILED",
-        message: error instanceof Error ? error.message : "Unable to compute withdrawal quote.",
-      },
-      { status: 500 }
-    );
-  }
+  return NextResponse.json({
+    success: true,
+    transferId,
+    destination: targetAddressInput,
+    amount: record.amount,
+    amountCents: record.amountCents,
+    currency: TRANSFER_CURRENCY,
+    chain: TRANSFER_RAIL,
+    // Bridge custodies keys + sponsors gas: no on-chain top-up required.
+    hasSufficientBalance: true,
+    topUpWei: "0",
+    gasSponsoredByBridge: true,
+  });
 }

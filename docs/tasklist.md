@@ -14,17 +14,16 @@ Blue Wallet is a KYC (Know Your Customer) wallet verification service that links
 - **Framework:** Next.js (App Router)
 - **UI Components:** ShadCN/ui
 - **Styling:** Tailwind CSS
-- **Authentication:** Plaid (bank account verification for identity)
-- **Wallet Infrastructure:** Turnkey (wallet creation/management APIs with policy-controlled transaction flows)
-  - Turnkey wallets support attachable policies that govern what goes in/out (signing approvals, spending limits, whitelists)
+- **Sign-in:** Email-based session; bank verification via Plaid
+- **Identity / KYC:** Persona (hosted identity verification flow)
+- **Wallet Infrastructure:** Bridge (custodial stablecoin wallets + transfers; Bridge custodies keys and broadcasts transactions server-side)
+  - Bridge handles customer onboarding, wallet provisioning, and transfer execution via its REST API
 
 ## Project Architecture
 
 ### User Flow
-1. User authenticates via Plaid using their bank account (establishes verified identity)
-2. User either:
-   - Creates a new wallet via Turnkey, OR
-   - Connects existing wallet(s) by signing a message to prove ownership
+1. User signs in with email and verifies identity via Persona (establishes verified identity / KYC)
+2. System provisions a custodial Bridge wallet for the user (and links bank coordinates via Plaid)
 3. System links verified identity to wallet address(es)
 4. Other parties can query via API to verify wallet ownership and identity
 
@@ -54,8 +53,8 @@ Blue Wallet is a KYC (Know Your Customer) wallet verification service that links
    - Add new wallet functionality
 
 4. **Wallet Connection UI**
-   - Connect existing wallet button (WalletConnect/MetaMask)
-   - Create new wallet option (Turnkey integration)
+   - Connect existing wallet button (WalletConnect/MetaMask via Privy)
+   - Create new custodial wallet option (Bridge integration)
    - Display connected wallets with addresses
    - Verification status badges
    - Note: UI placeholder for "Connect wallet" removed; revisit once external wallet signature flow is planned.
@@ -79,9 +78,10 @@ Blue Wallet is a KYC (Know Your Customer) wallet verification service that links
    - `/api/plaid/exchange-public-token` - Exchange public token for access token
    - `/api/plaid/get-identity` - Fetch user identity data
 
-8. **Turnkey Integration API Routes**
-   - `/api/turnkey/create-wallet` - Create new wallet for user
-   - `/api/turnkey/get-wallets` - Retrieve user's Turnkey wallets
+8. **Bridge Integration API Routes**
+   - `/api/bridge/customer` - Create/fetch the Bridge customer for a user
+   - `/api/bridge/wallet` - Create/list custodial Bridge wallets
+   - `/api/persona/inquiry` - Record Persona verification + provision Bridge customer/wallet
 
 9. **Wallet Verification API Routes**
    - `/api/wallet/connect` - Connect existing wallet via signature verification
@@ -113,7 +113,7 @@ Blue Wallet is a KYC (Know Your Customer) wallet verification service that links
     - Rate limiting implementation
     - Input validation and sanitization
     - Secure session management
-    - Enforce Turnkey wallet policies to gate inflows/outflows and require approvals before signing transactions
+    - Gate inflows/outflows using Bridge transfer controls and require KYC (Persona) before unlocking wallet actions
 
 14. **Privacy Controls**
     - User consent flows
@@ -157,15 +157,15 @@ Blue Wallet is a KYC (Know Your Customer) wallet verification service that links
 - Follow security best practices for handling sensitive data
 - Consider implementing proper error boundaries
 - Add loading states for all async operations
-- Turnkey policies run server-side and can enforce approvals, spending caps, address allowlists/denylists, and time-based restrictions on wallet actions
-- Policy definitions can be updated via Turnkey API; plan for UI hooks that surface policy status and violations to users
+- Bridge custodies wallet keys and broadcasts transfers server-side; the app never handles private keys
+- Persona inquiries can be handed to Bridge to satisfy KYC; plan UI hooks that surface verification status to users
 
 ### API Integration Notes
 - Plaid SDK will need API keys (store in environment variables)
-- Turnkey API will need proper authentication setup
-- Consider implementing webhook handlers for real-time updates
+- Bridge API requires a server-side API key and an idempotency key on all mutating requests
+- Persona requires a template id + environment id (public, client-side)
+- Consider implementing webhook handlers for real-time updates (Bridge transfer state, Persona inquiry status)
 - Plan for API versioning from the start
-- Turnkey's policy engine exposes endpoints for creating/updating policies and applying them to wallets or keys; integrate policy assignment during wallet provisioning and whenever signature flow is invoked
 
 ### No Backend Infrastructure Assumption
 - Leverage Next.js API routes for all backend functionality

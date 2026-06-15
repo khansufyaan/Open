@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import type { Session } from "@turnkey/sdk-types";
+import type { Session } from "@/types/session";
 import { Button } from "@/components/ui/button";
 import type { PlaidAchAccount, TransferSummary } from "@/types/receiver";
 import { CheckCircle2 } from "lucide-react";

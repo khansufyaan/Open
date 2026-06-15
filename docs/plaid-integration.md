@@ -169,7 +169,7 @@ export async function POST(request: Request) {
   try {
     const response = await plaidClient.linkTokenCreate({
       user: {
-        client_user_id: 'user-id-from-session', // Use Turnkey user ID
+        client_user_id: 'user-id-from-session', // Use app session user ID
       },
       client_name: 'Blue Wallet',
       products: [Products.Identity], // Only Identity product
@@ -280,7 +280,7 @@ More sandbox credentials: https://plaid.com/docs/sandbox/test-credentials/
 ### 3. DynamoDB Table
 ```
 Table: UserIdentity
-Primary Key: userId (Turnkey user ID from session)
+Primary Key: userId (app session user ID)
 
 Fields:
 - userId (string) - PK

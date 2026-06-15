@@ -8,14 +8,16 @@ Identity-attested crypto wallets for compliant on-chain transactions.
 
 ## Overview
 
-Blue Wallet links self-custodied wallets to bank-verified identities. Individuals authenticate with Plaid, connect or create wallets via Turnkey, and receive a "blue" verification badge that institutions can trust. The production app will surface minimal, brand-forward messaging while enforcing Turnkey wallet policies for inflow/outflow controls.
+Blue Wallet links bank-verified, identity-attested users to custodial stablecoin wallets. Individuals sign in with email, verify their identity with Persona, and receive a "blue" verification badge that institutions can trust. Custodial wallets, on-chain transfers, and signing are handled by the Bridge API — the app never touches private keys.
 
 Key frontend tech:
 
 - Next.js App Router + TypeScript
 - Tailwind CSS with ShadCN/ui primitives
 - `next-themes` powered light/dark mode toggle
-- Turnkey Auth component powering social/email/passkey login in the identity flow
+- Persona hosted flow for identity verification (KYC) in the sign-in journey
+- Bridge API for custodial wallets and transfers (server-side)
+- Privy for external-wallet connect on the sender side
 - Typography stack mirrors Claude's interface using `Söhne` (falls back to Inter/Helvetica if the licensed font isn't installed)
 
 Further product planning lives in [`docs/tasklist.md`](docs/tasklist.md).
@@ -47,13 +49,23 @@ lib/            # Utility helpers (Tailwind class name merge)
 public/         # Static assets
 ```
 
-## Authentication Flow (Current Mock)
+## Authentication & Verification Flow
 
-1. **Sign in with Turnkey** – users authenticate through the hosted `<Auth>` widget with configurable email, passkey, phone, and social providers.
-2. **Choose wallet path** – after login, the UI presents two cards:
-   - *Bring your own keys* will soon call Turnkey wallet-linking APIs (currently a stubbed action).
-   - *Generate a blue wallet* still mocks the Turnkey create flow while backend wiring is in progress.
-3. **Contact** – the navbar button links to `/contact`, a dedicated mailto form for teams that want to share extra context.
+1. **Sign in with email** – `POST /api/auth/session` establishes a lightweight session keyed by a deterministic id derived from the email address.
+2. **Verify identity with Persona** – the hosted Persona flow runs against the configured template/environment. On completion the inquiry is posted to `POST /api/persona/inquiry`, which records the result and (when Bridge is configured) provisions the user's Bridge customer and custodial wallet.
+3. **Link a bank account** – Plaid supplies bank identity and ACH coordinates so inbound transfers can be routed to the right recipient.
+4. **Claim & withdraw** – recipients claim deposits from the company vault into their managed Bridge wallet, then withdraw to any external Base address. Both are executed as Bridge transfers; Bridge custodies the keys and broadcasts on-chain.
+
+### Backend integration map
+
+| Concern | Provider | Routes |
+| --- | --- | --- |
+| Session | App (email) | `app/api/auth/session` |
+| Identity / KYC | Persona | `app/api/persona/inquiry`, `components/persona-verify-button.tsx` |
+| Custodial wallets | Bridge | `app/api/bridge/wallet`, `lib/bridge/server.ts` |
+| Customers | Bridge | `app/api/bridge/customer` |
+| Transfers (claim/withdraw) | Bridge | `app/api/transfers/[transferId]/{claim,withdraw}` |
+| Bank linking | Plaid | `app/api/plaid/*` |
 
 ## Scripts
 
@@ -64,15 +76,14 @@ public/         # Static assets
 
 ## Environment
 
-The following environment variables are required for production deployment (configured in Amplify environment variables):
+The following environment variables are required for production deployment (configured in Amplify environment variables). See [`.env.example`](.env.example) for the full list.
 
 - `PLAID_CLIENT_ID` / `PLAID_SECRET`
-- `TURNKEY_API_KEY` / `TURNKEY_API_SECRET`
-- `NEXT_PUBLIC_TURNKEY_API_BASE_URL`
-- `NEXT_PUBLIC_TURNKEY_ORGANIZATION_ID`
-- Optional Turnkey tuning: `NEXT_PUBLIC_TURNKEY_SERVER_SIGN_URL`, `NEXT_PUBLIC_TURNKEY_IFRAME_URL`, `NEXT_PUBLIC_TURNKEY_RP_ID`
-- Auth provider toggles (`NEXT_PUBLIC_TURNKEY_ENABLE_*`) plus OAuth client IDs if you plan to enable Google/Apple/Facebook flows
-- Session behaviour: `NEXT_PUBLIC_TURNKEY_SESSION_SECONDS`, `NEXT_PUBLIC_TURNKEY_AUTH_ORDER`, `NEXT_PUBLIC_TURNKEY_OAUTH_IN_PAGE`
+- `BRIDGE_API_KEY` (server-side Bridge API key)
+- `BRIDGE_COMPANY_CUSTOMER_ID` / `BRIDGE_COMPANY_WALLET_ID` / `COMPANY_WALLET_ADDRESS` (company vault)
+- `NEXT_PUBLIC_PERSONA_TEMPLATE_ID` / `NEXT_PUBLIC_PERSONA_ENVIRONMENT_ID` (defaults baked into the client)
+- `NEXT_PUBLIC_PRIVY_APP_ID` (external wallet connect for senders)
+- Optional Bridge tuning: `BRIDGE_API_BASE_URL`, `BRIDGE_API_VERSION`, `BRIDGE_DEFAULT_CHAIN`, `BRIDGE_TRANSFER_CURRENCY`
 
 ## Contributing
 

@@ -3,14 +3,8 @@ import { createHash, randomUUID } from "crypto";
 
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, GetCommand, PutCommand, ScanCommand } from "@aws-sdk/lib-dynamodb";
-import { TurnkeyRequestError, defaultEthereumAccountAtIndex } from "@turnkey/sdk-server";
-import { randomBytes } from "crypto";
 
-import {
-  getTurnkeyApiClient,
-  getTurnkeyOrganizationId,
-  isTurnkeyConfigured,
-} from "@/lib/turnkey/server";
+import { createWallet, listWallets, isBridgeConfigured } from "@/lib/bridge/server";
 
 const TRANSFERS_TABLE = "blue-wallet-transfers";
 const RECIPIENT_WALLETS_TABLE =
@@ -168,97 +162,42 @@ async function saveRecipientWallet(record: RecipientWalletRecord): Promise<void>
 }
 
 async function createRecipientWallet(recipientKey: string): Promise<RecipientWalletRecord> {
-  if (!isTurnkeyConfigured()) {
-    throw new Error("Turnkey is not configured for wallet provisioning.");
+  if (!isBridgeConfigured()) {
+    throw new Error("Bridge is not configured for wallet provisioning.");
   }
 
-  const client = getTurnkeyApiClient();
-  const organizationId = getTurnkeyOrganizationId();
+  const companyCustomerId = process.env.BRIDGE_COMPANY_CUSTOMER_ID;
 
-  if (!client || !organizationId) {
-    throw new Error("Unable to initialize Turnkey client for wallet provisioning.");
+  if (!companyCustomerId) {
+    throw new Error(
+      "BRIDGE_COMPANY_CUSTOMER_ID is not configured. Recipient wallets are custodied under the company Bridge customer."
+    );
   }
 
+  const walletTag = `recipient:${recipientKey}`;
   const walletName = `Recipient-${recipientKey.slice(0, 12)}`;
 
-  const resolveWalletId = async (): Promise<{ walletId: string | null; walletName?: string } | null> => {
-    const walletsResponse = await client.getWallets({ organizationId });
-    const matched = walletsResponse.wallets?.find((wallet) => wallet.walletName === walletName);
-    if (!matched) {
-      return null;
-    }
-  const matchedId = matched.walletId ?? null;
-  if (!matchedId) {
-    return null;
-  }
-  return {
-    walletId: matchedId,
-    walletName: matched.walletName ?? walletName,
-  };
-};
+  // Reuse an existing tagged wallet if one was already provisioned for this recipient.
+  const existingWallets = await listWallets(companyCustomerId);
+  const matched = existingWallets.find((wallet) => wallet.tags?.includes(walletTag));
 
-  const existing = await resolveWalletId();
+  const wallet =
+    matched ??
+    (await createWallet({
+      customerId: companyCustomerId,
+      tags: [walletTag],
+    }));
 
-  let walletId: string | null = existing?.walletId ?? null;
-  let finalWalletName = existing?.walletName ?? walletName;
-
-  if (!walletId) {
-    let attemptName = walletName;
-    for (let attempt = 0; attempt < 3 && !walletId; attempt += 1) {
-      try {
-        const createResponse = await client.createWallet({
-          organizationId,
-          walletName: attemptName,
-          accounts: [defaultEthereumAccountAtIndex(0)],
-        });
-
-        walletId =
-          (createResponse as { walletId?: string }).walletId ??
-          ((createResponse as { wallet?: { walletId?: string } }).wallet?.walletId ?? null);
-        finalWalletName = attemptName;
-      } catch (error) {
-        if (error instanceof TurnkeyRequestError && error.code === 3) {
-          const resolved = await resolveWalletId();
-          if (resolved?.walletId) {
-            walletId = resolved.walletId;
-            finalWalletName = resolved.walletName ?? attemptName;
-            break;
-          }
-
-          attemptName = `${walletName}-${randomBytes(2).toString("hex")}`;
-        } else {
-          throw error instanceof Error ? error : new Error("Turnkey wallet provisioning failed.");
-        }
-      }
-    }
-  }
-
-  if (!walletId) {
-    const resolved = await resolveWalletId();
-    if (resolved?.walletId) {
-      walletId = resolved.walletId;
-      finalWalletName = resolved.walletName ?? walletName;
-    }
-  }
-
-  if (!walletId) {
-    throw new Error("Turnkey did not return a wallet identifier.");
-  }
-
-  const accountsResponse = await client.getWalletAccounts({ walletId });
-  const account = accountsResponse.accounts?.[0];
-  const walletAddress = account?.address?.toLowerCase();
-
-  if (!walletAddress) {
-    throw new Error("Turnkey wallet does not expose an EVM address.");
+  if (!wallet.address) {
+    throw new Error("Bridge wallet does not expose an address.");
   }
 
   const record: RecipientWalletRecord = {
     recipientKey,
-    walletId,
-    walletAddress,
-    walletCreatedAt: new Date().toISOString(),
-    walletName: finalWalletName,
+    walletId: wallet.id,
+    walletAddress: wallet.address.toLowerCase(),
+    walletCreatedAt: wallet.created_at ?? new Date().toISOString(),
+    walletName,
   };
 
   await saveRecipientWallet(record);

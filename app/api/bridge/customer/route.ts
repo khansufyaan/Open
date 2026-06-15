@@ -1,0 +1,92 @@
+import { NextResponse } from "next/server";
+
+import {
+  createCustomer,
+  getCustomer,
+  isBridgeConfigured,
+  BridgeRequestError,
+} from "@/lib/bridge/server";
+
+function bridgeNotConfigured() {
+  return NextResponse.json(
+    {
+      error: "BRIDGE_NOT_CONFIGURED",
+      message: "Bridge API key is missing on the server. Set BRIDGE_API_KEY.",
+    },
+    { status: 500 }
+  );
+}
+
+function handleBridgeError(error: unknown) {
+  if (error instanceof BridgeRequestError) {
+    return NextResponse.json(
+      { error: error.code, message: error.message, details: error.details ?? null },
+      { status: error.status >= 400 && error.status < 600 ? error.status : 502 }
+    );
+  }
+
+  console.error("[Bridge Customer] Unexpected error:", error);
+  return NextResponse.json(
+    { error: "BRIDGE_CUSTOMER_FAILED", message: "Unexpected Bridge error." },
+    { status: 500 }
+  );
+}
+
+export async function GET(request: Request) {
+  if (!isBridgeConfigured()) {
+    return bridgeNotConfigured();
+  }
+
+  const customerId = new URL(request.url).searchParams.get("customerId");
+
+  if (!customerId) {
+    return NextResponse.json(
+      { error: "MISSING_CUSTOMER_ID", message: "customerId query parameter is required." },
+      { status: 400 }
+    );
+  }
+
+  try {
+    const customer = await getCustomer(customerId);
+    return NextResponse.json({ customer });
+  } catch (error) {
+    return handleBridgeError(error);
+  }
+}
+
+export async function POST(request: Request) {
+  if (!isBridgeConfigured()) {
+    return bridgeNotConfigured();
+  }
+
+  let body: unknown;
+
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json(
+      { error: "INVALID_JSON", message: "Request body must be valid JSON." },
+      { status: 400 }
+    );
+  }
+
+  const { email, fullName, personaInquiryId } = (body ?? {}) as {
+    email?: string;
+    fullName?: string;
+    personaInquiryId?: string;
+  };
+
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return NextResponse.json(
+      { error: "INVALID_EMAIL", message: "A valid email is required to create a Bridge customer." },
+      { status: 400 }
+    );
+  }
+
+  try {
+    const customer = await createCustomer({ email, fullName, personaInquiryId });
+    return NextResponse.json({ customer });
+  } catch (error) {
+    return handleBridgeError(error);
+  }
+}

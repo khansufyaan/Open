@@ -96,7 +96,7 @@ export async function POST(request: Request) {
     email?: string;
     walletId?: string;
     walletAddress?: string;
-    turnkeySignInCompleted?: boolean;
+    signInCompleted?: boolean;
     walletCreated?: boolean;
     plaidVerifiedName?: string;
     plaidVerifiedEmail?: string;
@@ -166,12 +166,14 @@ export async function POST(request: Request) {
     console.log("[DB] User exists:", !isNewUser);
 
     const userData = {
+      // Preserve any fields written by other routes (Persona/Bridge/session).
+      ...(existingData.Item ?? {}),
       userId: data.userId,
       email: data.email ?? existingData.Item?.email,
       walletId: data.walletId ?? existingData.Item?.walletId,
       walletAddress: data.walletAddress ?? existingData.Item?.walletAddress,
-      turnkeySignInCompleted:
-        data.turnkeySignInCompleted ?? existingData.Item?.turnkeySignInCompleted ?? false,
+      signInCompleted:
+        data.signInCompleted ?? existingData.Item?.signInCompleted ?? false,
       walletCreated: data.walletCreated ?? existingData.Item?.walletCreated ?? false,
       plaidVerifiedName: data.plaidVerifiedName ?? existingData.Item?.plaidVerifiedName,
       plaidVerifiedEmail: data.plaidVerifiedEmail ?? existingData.Item?.plaidVerifiedEmail,
