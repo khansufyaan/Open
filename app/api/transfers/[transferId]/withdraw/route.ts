@@ -9,7 +9,7 @@ import {
 } from "@/lib/bridge/server";
 import { handleBridgeError } from "@/lib/bridge/route-helpers";
 import { docClient, TRANSFERS_TABLE } from "@/lib/db/dynamo";
-import { verifyAuth, unauthorized } from "@/lib/auth/privy";
+import { requireAuth } from "@/lib/auth/privy";
 import { userOwnsRecipientKey } from "@/lib/auth/authorize";
 
 const TRANSFER_RAIL = process.env.BRIDGE_DEFAULT_CHAIN ?? "base";
@@ -38,7 +38,8 @@ function isHexAddress(value: string): boolean {
 }
 
 function isValidAmount(amount: string): boolean {
-  return /^\d+(\.\d+)?$/.test(amount) && Number(amount) > 0;
+  // USDC has 6 decimals; reject trailing dots, scientific notation, and excess precision.
+  return /^\d+(\.\d{1,6})?$/.test(amount) && Number(amount) > 0;
 }
 
 async function findTransferById(transferId: string): Promise<TransferRecord | null> {
@@ -58,9 +59,9 @@ type RouteParams = { transferId: string };
 type RouteContext = { params: Promise<RouteParams> | RouteParams };
 
 export async function POST(request: Request, context: RouteContext) {
-  const auth = await verifyAuth(request);
-  if (!auth) {
-    return unauthorized();
+  const auth = await requireAuth(request);
+  if (auth instanceof NextResponse) {
+    return auth;
   }
 
   if (!isBridgeConfigured()) {
@@ -125,9 +126,10 @@ export async function POST(request: Request, context: RouteContext) {
   }
 
   if (!(await userOwnsRecipientKey(auth.userId, record.recipientKey))) {
+    // Return 404 (not 403) so a non-owner can't probe which transferIds exist.
     return NextResponse.json(
-      { error: "FORBIDDEN", message: "You are not the recipient of this transfer." },
-      { status: 403 }
+      { error: "TRANSFER_NOT_FOUND", message: "No transfer record matches the supplied transferId." },
+      { status: 404 }
     );
   }
 
@@ -257,9 +259,9 @@ export async function POST(request: Request, context: RouteContext) {
  * transfer is in a withdrawable state and echoes the amount.
  */
 export async function GET(request: Request, context: RouteContext) {
-  const auth = await verifyAuth(request);
-  if (!auth) {
-    return unauthorized();
+  const auth = await requireAuth(request);
+  if (auth instanceof NextResponse) {
+    return auth;
   }
 
   const resolvedParams = await Promise.resolve(context.params);
@@ -293,9 +295,10 @@ export async function GET(request: Request, context: RouteContext) {
   }
 
   if (!(await userOwnsRecipientKey(auth.userId, record.recipientKey))) {
+    // Return 404 (not 403) so a non-owner can't probe which transferIds exist.
     return NextResponse.json(
-      { error: "FORBIDDEN", message: "You are not the recipient of this transfer." },
-      { status: 403 }
+      { error: "TRANSFER_NOT_FOUND", message: "No transfer record matches the supplied transferId." },
+      { status: 404 }
     );
   }
 

@@ -28,6 +28,7 @@ export function BridgeKycButton({ fullName, onVerified, onError }: BridgeKycButt
   const [phase, setPhase] = useState<Phase>("idle");
   const pollCountRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mountedRef = useRef(true);
   const onVerifiedRef = useRef(onVerified);
   const onErrorRef = useRef(onError);
 
@@ -55,7 +56,13 @@ export function BridgeKycButton({ fullName, onVerified, onError }: BridgeKycButt
     }
   }, []);
 
-  useEffect(() => clearTimer, [clearTimer]);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      clearTimer();
+    };
+  }, [clearTimer]);
 
   const checkStatus = useCallback(
     async ({ silent }: { silent?: boolean } = {}) => {
@@ -96,9 +103,12 @@ export function BridgeKycButton({ fullName, onVerified, onError }: BridgeKycButt
   const poll = useCallback(() => {
     clearTimer();
     timerRef.current = setTimeout(async () => {
+      if (!mountedRef.current) {
+        return;
+      }
       pollCountRef.current += 1;
       const done = await checkStatus({ silent: true });
-      if (!done && pollCountRef.current < MAX_POLLS) {
+      if (!done && mountedRef.current && pollCountRef.current < MAX_POLLS) {
         poll();
       }
     }, POLL_INTERVAL_MS);

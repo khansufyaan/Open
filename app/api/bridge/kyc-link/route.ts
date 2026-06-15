@@ -10,7 +10,7 @@ import {
 } from "@/lib/bridge/server";
 import { handleBridgeError, isDemoAutoApprove } from "@/lib/bridge/route-helpers";
 import { docClient, USERS_TABLE as TABLE_NAME } from "@/lib/db/dynamo";
-import { verifyAuth, unauthorized } from "@/lib/auth/privy";
+import { requireAuth } from "@/lib/auth/privy";
 
 // Bridge KYC links are short-lived; refresh rather than hand back a dead URL.
 const KYC_LINK_TTL_MS = 30 * 60 * 1000;
@@ -22,9 +22,9 @@ const KYC_LINK_TTL_MS = 30 * 60 * 1000;
  * verified result is read back authoritatively via GET /api/bridge/kyc-status.
  */
 export async function POST(request: Request) {
-  const auth = await verifyAuth(request);
-  if (!auth) {
-    return unauthorized();
+  const auth = await requireAuth(request);
+  if (auth instanceof NextResponse) {
+    return auth;
   }
   const userId = auth.userId;
 
@@ -85,22 +85,27 @@ export async function POST(request: Request) {
     const existingLinkId = typeof user.bridgeKycLinkId === "string" ? user.bridgeKycLinkId : null;
 
     // Reuse an in-flight KYC link only while it's still fresh; otherwise fall
-    // through and mint a new one so the client never opens an expired URL.
+    // through and mint a new one so the client never opens an expired URL. If
+    // Bridge has deleted the link (404) we also fall through rather than 502.
     if (existingLinkId) {
-      const existingLink = await getKycLink(existingLinkId);
-      const createdAt = existingLink.created_at ? Date.parse(existingLink.created_at) : NaN;
-      // Unparseable/absent timestamp → treat as expired and mint a fresh link.
-      const ageMs = Number.isFinite(createdAt)
-        ? Date.now() - createdAt
-        : Number.POSITIVE_INFINITY;
+      try {
+        const existingLink = await getKycLink(existingLinkId);
+        const createdAt = existingLink.created_at ? Date.parse(existingLink.created_at) : NaN;
+        // Unparseable/absent timestamp → treat as expired and mint a fresh link.
+        const ageMs = Number.isFinite(createdAt)
+          ? Date.now() - createdAt
+          : Number.POSITIVE_INFINITY;
 
-      if (ageMs < KYC_LINK_TTL_MS) {
-        return NextResponse.json({
-          url: existingLink.kyc_link,
-          tosLink: existingLink.tos_link ?? null,
-          kycStatus: existingLink.kyc_status,
-          tosStatus: existingLink.tos_status ?? null,
-        });
+        if (ageMs < KYC_LINK_TTL_MS) {
+          return NextResponse.json({
+            url: existingLink.kyc_link,
+            tosLink: existingLink.tos_link ?? null,
+            kycStatus: existingLink.kyc_status,
+            tosStatus: existingLink.tos_status ?? null,
+          });
+        }
+      } catch (error) {
+        console.warn("[Bridge KYC Link] Could not reuse existing link, creating a new one:", error);
       }
     }
 

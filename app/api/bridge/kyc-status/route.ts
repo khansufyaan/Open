@@ -5,25 +5,23 @@ import { GetCommand, PutCommand } from "@aws-sdk/lib-dynamodb";
 import {
   getKycLink,
   isKycApproved,
-  createWallet,
   isBridgeConfigured,
   BridgeRequestError,
 } from "@/lib/bridge/server";
 import { handleBridgeError, isDemoAutoApprove } from "@/lib/bridge/route-helpers";
 import { docClient, USERS_TABLE as TABLE_NAME } from "@/lib/db/dynamo";
-import { verifyAuth, unauthorized } from "@/lib/auth/privy";
+import { requireAuth } from "@/lib/auth/privy";
 
 /**
- * Reads the authoritative KYC result from Bridge for a user.
- *
- * On first observed approval this also provisions the user's custodial Bridge
- * wallet and marks the user verified. Verification status is never accepted
+ * Reads the authoritative KYC result from Bridge for a user and records the
+ * verified state. Funds are withdrawn directly from the company vault, so no
+ * per-user wallet is provisioned here. Verification status is never accepted
  * from the client — it is read back from Bridge's KYC link object.
  */
 export async function GET(request: Request) {
-  const auth = await verifyAuth(request);
-  if (!auth) {
-    return unauthorized();
+  const auth = await requireAuth(request);
+  if (auth instanceof NextResponse) {
+    return auth;
   }
   const userId = auth.userId;
 
@@ -53,7 +51,6 @@ export async function GET(request: Request) {
     return NextResponse.json({
       verified: true,
       kycStatus: typeof user.kycStatus === "string" ? user.kycStatus : "approved",
-      walletAddress: user.walletAddress ?? null,
     });
   }
 
@@ -74,7 +71,7 @@ export async function GET(request: Request) {
           },
         })
       );
-      return NextResponse.json({ verified: true, kycStatus: "approved", demo: true, walletAddress: null });
+      return NextResponse.json({ verified: true, kycStatus: "approved", demo: true });
     }
     return NextResponse.json(
       { error: "BRIDGE_NOT_CONFIGURED", message: "Bridge API key is missing on the server." },
@@ -85,7 +82,7 @@ export async function GET(request: Request) {
   const kycLinkId = typeof user.bridgeKycLinkId === "string" ? user.bridgeKycLinkId : null;
 
   if (!kycLinkId) {
-    return NextResponse.json({ verified: false, kycStatus: "not_started", walletAddress: null });
+    return NextResponse.json({ verified: false, kycStatus: "not_started" });
   }
 
   try {
@@ -93,39 +90,11 @@ export async function GET(request: Request) {
     const approved = isKycApproved(link);
 
     if (!approved) {
-      return NextResponse.json({
-        verified: false,
-        kycStatus: link.kyc_status,
-        walletAddress: null,
-      });
+      return NextResponse.json({ verified: false, kycStatus: link.kyc_status });
     }
 
     const customerId =
       link.customer_id ?? (typeof user.bridgeCustomerId === "string" ? user.bridgeCustomerId : undefined);
-
-    let walletId = typeof user.walletId === "string" ? user.walletId : undefined;
-    let walletAddress = typeof user.walletAddress === "string" ? user.walletAddress : undefined;
-    let bridgeWarning: string | null = null;
-
-    if (customerId && (!walletId || !walletAddress)) {
-      try {
-        const wallet = await createWallet({
-          customerId,
-          tags: [`user:${userId}`],
-          idempotencyKey: `wallet:${userId}`,
-        });
-        walletId = wallet.id;
-        walletAddress = wallet.address;
-      } catch (error) {
-        bridgeWarning =
-          error instanceof BridgeRequestError
-            ? error.message
-            : error instanceof Error
-              ? error.message
-              : "Bridge wallet provisioning failed.";
-        console.error("[Bridge KYC Status] Wallet provisioning failed:", error);
-      }
-    }
 
     const timestamp = new Date().toISOString();
 
@@ -143,9 +112,6 @@ export async function GET(request: Request) {
             kycVerificationSource: "bridge",
             personaVerificationCompleted: true,
             personaVerifiedAt: timestamp,
-            walletId,
-            walletAddress,
-            walletCreated: Boolean(walletId),
             updatedAt: timestamp,
           },
           ConditionExpression:
@@ -160,12 +126,7 @@ export async function GET(request: Request) {
       }
     }
 
-    return NextResponse.json({
-      verified: true,
-      kycStatus: link.kyc_status,
-      walletAddress: walletAddress ?? null,
-      bridgeWarning,
-    });
+    return NextResponse.json({ verified: true, kycStatus: link.kyc_status });
   } catch (error) {
     if (error instanceof BridgeRequestError) {
       return handleBridgeError(error, "Bridge KYC Status");

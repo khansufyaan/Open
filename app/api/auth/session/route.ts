@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { GetCommand, PutCommand } from "@aws-sdk/lib-dynamodb";
 
 import { docClient, USERS_TABLE as TABLE_NAME } from "@/lib/db/dynamo";
-import { verifyAuth, getPrivyEmail, isPrivyConfigured, authNotConfigured, unauthorized } from "@/lib/auth/privy";
+import { requireAuth, getPrivyEmail } from "@/lib/auth/privy";
 
 /**
  * Establishes (upserts) the app user record for the authenticated Privy user.
@@ -13,13 +13,9 @@ import { verifyAuth, getPrivyEmail, isPrivyConfigured, authNotConfigured, unauth
  * /api/bridge/kyc-status) before any wallet or transfer capability is unlocked.
  */
 export async function POST(request: Request) {
-  if (!isPrivyConfigured()) {
-    return authNotConfigured();
-  }
-
-  const auth = await verifyAuth(request);
-  if (!auth) {
-    return unauthorized();
+  const auth = await requireAuth(request);
+  if (auth instanceof NextResponse) {
+    return auth;
   }
 
   const userId = auth.userId;

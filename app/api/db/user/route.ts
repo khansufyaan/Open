@@ -2,13 +2,13 @@ import { NextResponse } from "next/server";
 import { PutCommand, GetCommand } from "@aws-sdk/lib-dynamodb";
 
 import { docClient, USERS_TABLE as TABLE_NAME } from "@/lib/db/dynamo";
-import { verifyAuth, unauthorized } from "@/lib/auth/privy";
+import { requireAuth } from "@/lib/auth/privy";
 
 // GET: Retrieve user data
 export async function GET(request: Request) {
-  const auth = await verifyAuth(request);
-  if (!auth) {
-    return unauthorized();
+  const auth = await requireAuth(request);
+  if (auth instanceof NextResponse) {
+    return auth;
   }
   const userId = auth.userId;
 
@@ -63,9 +63,9 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   console.log("[DB] POST /api/db/user - Request received");
 
-  const auth = await verifyAuth(request);
-  if (!auth) {
-    return unauthorized();
+  const auth = await requireAuth(request);
+  if (auth instanceof NextResponse) {
+    return auth;
   }
   const userId = auth.userId;
 
@@ -147,16 +147,14 @@ export async function POST(request: Request) {
     const isNewUser = !existingData.Item;
     console.log("[DB] User exists:", !isNewUser);
 
+    // This route only persists Plaid bank-verification data supplied by the
+    // client. Privileged fields (walletId, walletAddress, bridgeCustomerId,
+    // personaVerificationCompleted, signInCompleted, email) are written
+    // exclusively by their own server-authoritative routes and must NOT be
+    // overwritable from this request body.
     const userData = {
-      // Preserve any fields written by other routes (Persona/Bridge/session).
       ...(existingData.Item ?? {}),
       userId,
-      email: data.email ?? existingData.Item?.email,
-      walletId: data.walletId ?? existingData.Item?.walletId,
-      walletAddress: data.walletAddress ?? existingData.Item?.walletAddress,
-      signInCompleted:
-        data.signInCompleted ?? existingData.Item?.signInCompleted ?? false,
-      walletCreated: data.walletCreated ?? existingData.Item?.walletCreated ?? false,
       plaidVerifiedName: data.plaidVerifiedName ?? existingData.Item?.plaidVerifiedName,
       plaidVerifiedEmail: data.plaidVerifiedEmail ?? existingData.Item?.plaidVerifiedEmail,
       plaidVerifiedPhone: data.plaidVerifiedPhone ?? existingData.Item?.plaidVerifiedPhone,

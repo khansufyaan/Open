@@ -7,6 +7,10 @@ frontend:
         - env | grep -e PRIVY_APP_SECRET >> .env.production || true
         - env | grep -e PRIVY_VERIFICATION_KEY >> .env.production || true
         - env | grep -e BRIDGE_API_KEY >> .env.production || true
+        - env | grep -e BRIDGE_API_BASE_URL >> .env.production || true
+        - env | grep -e BRIDGE_API_VERSION >> .env.production || true
+        - env | grep -e BRIDGE_DEFAULT_CHAIN >> .env.production || true
+        - env | grep -e BRIDGE_TRANSFER_CURRENCY >> .env.production || true
         - env | grep -e BRIDGE_COMPANY_CUSTOMER_ID >> .env.production || true
         - env | grep -e BRIDGE_COMPANY_WALLET_ID >> .env.production || true
         - env | grep -e ADMIN_SECRET >> .env.production || true

@@ -11,11 +11,19 @@ import { PrivyClient } from "@privy-io/server-auth";
 
 let cachedClient: PrivyClient | null = null;
 
+let warnedUnconfigured = false;
+
 function getPrivyClient(): PrivyClient | null {
   const appId = process.env.NEXT_PUBLIC_PRIVY_APP_ID;
   const appSecret = process.env.PRIVY_APP_SECRET;
 
   if (!appId || !appSecret) {
+    if (!warnedUnconfigured) {
+      warnedUnconfigured = true;
+      console.warn(
+        "[Auth] Privy is not configured (NEXT_PUBLIC_PRIVY_APP_ID / PRIVY_APP_SECRET missing) — all authenticated routes will return 503."
+      );
+    }
     return null;
   }
 
@@ -36,7 +44,8 @@ export type AuthContext = {
 };
 
 function extractBearer(request: Request): string | null {
-  const header = request.headers.get("authorization") ?? request.headers.get("Authorization");
+  // Headers.get is case-insensitive, so a single lookup covers any casing.
+  const header = request.headers.get("authorization");
   if (!header) {
     return null;
   }
@@ -99,6 +108,28 @@ export async function getPrivyEmail(userId: string): Promise<string | undefined>
 
 export function unauthorized(message = "Authentication required.") {
   return NextResponse.json({ error: "UNAUTHENTICATED", message }, { status: 401 });
+}
+
+/**
+ * Single entry point for protected routes. Returns the AuthContext on success,
+ * or a NextResponse that the caller should return directly: 503 when Privy is
+ * not configured (so misconfiguration is distinguishable from a bad token) and
+ * 401 for a missing/invalid token.
+ *
+ * Usage:
+ *   const auth = await requireAuth(request);
+ *   if (auth instanceof NextResponse) return auth;
+ *   // auth.userId is now safe to use
+ */
+export async function requireAuth(request: Request): Promise<AuthContext | NextResponse> {
+  if (!isPrivyConfigured()) {
+    return authNotConfigured();
+  }
+  const auth = await verifyAuth(request);
+  if (!auth) {
+    return unauthorized();
+  }
+  return auth;
 }
 
 export function authNotConfigured() {
