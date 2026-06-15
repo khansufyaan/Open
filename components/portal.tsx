@@ -462,7 +462,7 @@ function PortalInner() {
       )}
 
       {/* Balance hero */}
-      <div className="hero-card animate-fade-up relative overflow-hidden rounded-[28px] p-8">
+      <div className="hero-card grain sheen animate-fade-up relative overflow-hidden rounded-[28px] p-8">
         <div className="pointer-events-none absolute -right-12 -top-12 h-44 w-44 rounded-full bg-white/[0.05] blur-2xl" />
         {/* Faint brand watermark */}
         <Image
@@ -597,7 +597,7 @@ function PortalInner() {
                 {state.card ? (
                   <div className="mt-4 space-y-3">
                     {/* Card face */}
-                    <div className="hero-card relative aspect-[1.586/1] overflow-hidden rounded-[20px] p-5 text-white">
+                    <div className="hero-card grain sheen relative aspect-[1.586/1] overflow-hidden rounded-[20px] p-5 text-white">
                       <div className="pointer-events-none absolute -right-10 -top-10 h-36 w-36 rounded-full bg-white/[0.06] blur-2xl" />
                       <div className="relative flex items-start justify-between">
                         <span className="text-[12px] font-semibold tracking-[0.12em] text-white/80">

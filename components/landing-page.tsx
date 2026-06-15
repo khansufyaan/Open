@@ -15,8 +15,9 @@ export function LandingPage() {
 
   return (
     <div className="relative min-h-screen overflow-hidden">
-      {/* Background — neutral base with a soft ambient light from the top */}
+      {/* Background — neutral base, drifting aurora mesh, soft ambient top-light */}
       <div className="absolute inset-0 bg-background" />
+      <div className="aurora pointer-events-none absolute inset-x-0 top-0 h-[760px] opacity-70" />
       <div className="pointer-events-none absolute inset-x-0 top-0 h-[620px] bg-[radial-gradient(60%_100%_at_50%_0%,oklch(0.42_0.05_256/0.18),transparent_72%)]" />
 
       <div className="relative z-10">

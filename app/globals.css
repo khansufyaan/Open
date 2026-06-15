@@ -332,3 +332,67 @@
   .animate-fade-up { animation: none; }
   .press { transition: none; }
 }
+
+/* ---------------------------------------------------------------------- */
+/*  Elevated material textures — grain, aurora mesh, specular sheen        */
+/* ---------------------------------------------------------------------- */
+
+/* Fine film grain overlaid on hero/card faces for true material realism */
+.grain {
+  position: relative;
+}
+.grain::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0.10;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 200px 200px;
+}
+
+/* Slowly drifting aurora mesh used behind hero sections */
+@keyframes aurora-drift {
+  0% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(2%, 1.5%, 0) scale(1.08); }
+  100% { transform: translate3d(0, 0, 0) scale(1); }
+}
+.aurora {
+  background:
+    radial-gradient(40% 50% at 25% 18%, oklch(0.46 0.085 256 / 0.22), transparent 60%),
+    radial-gradient(35% 45% at 78% 14%, oklch(0.44 0.075 285 / 0.18), transparent 60%),
+    radial-gradient(45% 42% at 60% 42%, oklch(0.42 0.06 228 / 0.14), transparent 66%);
+  filter: blur(34px);
+  animation: aurora-drift 20s ease-in-out infinite;
+  will-change: transform;
+}
+
+/* Specular sheen that sweeps across a surface on hover */
+.sheen {
+  position: relative;
+  overflow: hidden;
+}
+.sheen::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    105deg,
+    transparent 30%,
+    oklch(1 0 0 / 0.07) 48%,
+    transparent 66%
+  );
+  transform: translateX(-120%);
+  transition: transform 0.9s cubic-bezier(0.2, 0, 0, 1);
+}
+.sheen:hover::before {
+  transform: translateX(120%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aurora { animation: none; }
+  .sheen::before { transition: none; }
+}
