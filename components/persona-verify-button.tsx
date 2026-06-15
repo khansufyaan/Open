@@ -120,6 +120,7 @@ export function PersonaVerifyButton({
         ...(referenceId ? { referenceId } : {}),
         onReady: () => client.open(),
         onComplete: ({ inquiryId, status, fields }) => {
+          setIsLaunching(false);
           onCompleteRef.current({ inquiryId, status, fields });
         },
         onCancel: () => {

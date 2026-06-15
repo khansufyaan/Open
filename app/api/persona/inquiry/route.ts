@@ -20,6 +20,47 @@ const docClient = DynamoDBDocumentClient.from(dynamoClient);
 
 const PASSING_STATUSES = new Set(["completed", "approved", "passed"]);
 
+const PERSONA_API_BASE_URL = process.env.PERSONA_API_BASE_URL ?? "https://withpersona.com/api/v1";
+
+/**
+ * Fetches the authoritative inquiry status directly from Persona so we never
+ * trust a client-supplied `status`. Returns null when PERSONA_API_KEY is not
+ * configured (demo mode) or the lookup fails — callers then fall back to the
+ * client value and flag the result as unverified.
+ */
+async function fetchPersonaInquiryStatus(inquiryId: string): Promise<string | null> {
+  const apiKey = process.env.PERSONA_API_KEY;
+
+  if (!apiKey) {
+    return null;
+  }
+
+  try {
+    const response = await fetch(`${PERSONA_API_BASE_URL}/inquiries/${encodeURIComponent(inquiryId)}`, {
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        Accept: "application/json",
+        "Persona-Version": process.env.PERSONA_API_VERSION ?? "2023-01-05",
+      },
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      console.error(`[Persona Inquiry] Server verification failed (${response.status}).`);
+      return null;
+    }
+
+    const data = (await response.json()) as {
+      data?: { attributes?: { status?: string } };
+    };
+
+    return data.data?.attributes?.status?.toLowerCase() ?? null;
+  } catch (error) {
+    console.error("[Persona Inquiry] Server verification error:", error);
+    return null;
+  }
+}
+
 /**
  * Records the outcome of a Persona identity verification inquiry.
  *
@@ -60,7 +101,10 @@ export async function POST(request: Request) {
     );
   }
 
-  const normalizedStatus = (status ?? "").toLowerCase();
+  // Prefer the status reported directly by Persona's API over the client value.
+  const verifiedStatus = await fetchPersonaInquiryStatus(inquiryId);
+  const verificationSource = verifiedStatus ? "persona_api" : "client";
+  const normalizedStatus = verifiedStatus ?? (status ?? "").toLowerCase();
   const passed = PASSING_STATUSES.has(normalizedStatus);
 
   try {
@@ -125,6 +169,7 @@ export async function POST(request: Request) {
       userId,
       personaInquiryId: inquiryId,
       personaStatus: normalizedStatus || "unknown",
+      personaVerificationSource: verificationSource,
       personaVerificationCompleted: passed,
       personaVerifiedAt: passed ? timestamp : user.personaVerifiedAt,
       bridgeCustomerId,
@@ -140,6 +185,7 @@ export async function POST(request: Request) {
       success: true,
       verified: passed,
       personaStatus: updated.personaStatus,
+      verificationSource,
       bridgeCustomerId,
       walletId,
       walletAddress,

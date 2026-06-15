@@ -12,11 +12,8 @@ const DEFAULT_BASE_URL = "https://api.bridge.xyz";
 const DEFAULT_API_VERSION = "v0";
 
 function getBaseUrl(): string {
-  return (
-    process.env.BRIDGE_API_BASE_URL ??
-    process.env.NEXT_PUBLIC_BRIDGE_API_BASE_URL ??
-    DEFAULT_BASE_URL
-  ).replace(/\/$/, "");
+  // Server-only: do not expose the Bridge base URL via a NEXT_PUBLIC_ var.
+  return (process.env.BRIDGE_API_BASE_URL ?? DEFAULT_BASE_URL).replace(/\/$/, "");
 }
 
 function getApiVersion(): string {
@@ -104,7 +101,26 @@ async function bridgeRequest<T>(path: string, options: RequestOptions = {}): Pro
   });
 
   const text = await response.text();
-  const payload = text ? safeJsonParse(text) : null;
+  let payload: unknown = null;
+  let parseFailed = false;
+
+  if (text) {
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      parseFailed = true;
+    }
+  }
+
+  // A successful response with a non-empty, unparseable body is a protocol
+  // error — surface it instead of silently returning null to the caller.
+  if (response.ok && parseFailed) {
+    throw new BridgeRequestError({
+      status: 502,
+      code: "BRIDGE_INVALID_RESPONSE",
+      message: `Bridge returned a non-JSON response for ${path}.`,
+    });
+  }
 
   if (!response.ok) {
     const errorBody = (payload ?? {}) as Record<string, unknown>;
@@ -120,14 +136,6 @@ async function bridgeRequest<T>(path: string, options: RequestOptions = {}): Pro
   }
 
   return payload as T;
-}
-
-function safeJsonParse(text: string): unknown {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return null;
-  }
 }
 
 /* -------------------------------------------------------------------------- */

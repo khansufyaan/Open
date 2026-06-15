@@ -65,7 +65,9 @@ async function findTransferById(transferId: string): Promise<TransferRecord | nu
  */
 function resolveSourceWalletId(record: TransferRecord): string | null {
   if (record.status === "CLAIMED") {
-    return record.walletId ?? process.env.BRIDGE_COMPANY_WALLET_ID ?? null;
+    // Claimed funds live in the recipient's managed wallet. Never silently fall
+    // back to the company vault — that would withdraw the wrong funds.
+    return record.walletId ?? null;
   }
   return process.env.BRIDGE_COMPANY_WALLET_ID ?? null;
 }
