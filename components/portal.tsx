@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
+import Image from "next/image";
 import { usePrivy } from "@privy-io/react-auth";
 import {
   ArrowDownToLine,
@@ -64,6 +65,38 @@ const HEX_ADDRESS_REGEX = /^0x[a-fA-F0-9]{40}$/;
 
 const PRIMARY_BTN =
   "w-full h-12 rounded-2xl gradient-blue font-semibold press hover:opacity-95 disabled:opacity-60";
+
+const prefersReducedMotion = () =>
+  typeof window !== "undefined" &&
+  window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+
+/** Animates a number from 0 → target with an ease-out curve. */
+function useCountUp(target: number, durationMs = 750) {
+  const [value, setValue] = useState(target);
+  const prev = useRef(target);
+
+  useEffect(() => {
+    if (prefersReducedMotion()) {
+      setValue(target);
+      prev.current = target;
+      return;
+    }
+    const from = prev.current;
+    prev.current = target;
+    const start = performance.now();
+    let raf = 0;
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - start) / durationMs);
+      const eased = 1 - Math.pow(1 - t, 3); // easeOutCubic
+      setValue(from + (target - from) * eased);
+      if (t < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [target, durationMs]);
+
+  return value;
+}
 
 function CopyButton({ value, label }: { value: string; label?: string }) {
   const [copied, setCopied] = useState(false);
@@ -137,6 +170,10 @@ function PortalInner() {
   const [issuingCard, setIssuingCard] = useState(false);
   const [cardError, setCardError] = useState<string | null>(null);
   const [cardNote, setCardNote] = useState<string | null>(null);
+
+  // Animated balance — called unconditionally to respect the rules of hooks.
+  const balanceNum = state?.wallet ? parseFloat(state.wallet.balance || "0") : 0;
+  const animatedBalance = useCountUp(balanceNum);
 
   const authedFetch = useCallback(
     async (input: RequestInfo | URL, init: RequestInit = {}) => {
@@ -359,7 +396,7 @@ function PortalInner() {
   const currency = wallet?.currency ?? "USDC";
   const chain = wallet?.chain ?? "base";
 
-  const [intPart, decPart] = parseFloat(wallet?.balance || "0").toFixed(2).split(".");
+  const [intPart, decPart] = animatedBalance.toFixed(2).split(".");
 
   const tabs = [
     { id: "receive" as const, label: "Receive", icon: ArrowDownToLine },
@@ -425,22 +462,31 @@ function PortalInner() {
       )}
 
       {/* Balance hero */}
-      <div className="hero-card animate-fade-up relative overflow-hidden rounded-[28px] p-7">
+      <div className="hero-card animate-fade-up relative overflow-hidden rounded-[28px] p-8">
         <div className="pointer-events-none absolute -right-12 -top-12 h-44 w-44 rounded-full bg-white/[0.05] blur-2xl" />
+        {/* Faint brand watermark */}
+        <Image
+          src="/FINAL2.png"
+          alt=""
+          aria-hidden
+          width={150}
+          height={150}
+          className="pointer-events-none absolute -bottom-6 -right-4 select-none opacity-[0.06]"
+        />
         <div className="relative flex items-center justify-between">
           <span className="label-cap text-white/45">Balance</span>
           <span className="rounded-full border border-white/10 bg-white/[0.06] px-2.5 py-1 text-[11px] font-medium text-white/70">
             {chain.toUpperCase()}
           </span>
         </div>
-        <div className="relative mt-4 flex items-baseline gap-2 tabular-nums tracking-[-0.03em]">
+        <div className="relative mt-5 flex items-baseline gap-2 tabular-nums tracking-[-0.03em]">
           <span className="text-[46px] font-semibold leading-none text-white">
             {intPart}
             <span className="text-white/40">.{decPart}</span>
           </span>
           <span className="text-[17px] font-medium text-white/55">{currency}</span>
         </div>
-        <p className="relative mt-4 truncate text-[12px] text-white/40">{state.user.email}</p>
+        <p className="relative mt-5 truncate text-[12px] text-white/40">{state.user.email}</p>
       </div>
 
       {provisioned && wallet ? (
