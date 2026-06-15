@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { usePrivy } from "@privy-io/react-auth";
+
 import { Button } from "@/components/ui/button";
 
 type BridgeKycButtonProps = {
-  userId: string;
   fullName?: string;
   onVerified: (walletAddress?: string | null) => void;
   onError?: (message: string) => void;
@@ -22,7 +23,8 @@ const MAX_POLLS = 120; // ~10 minutes
  *   2. Polls the server for the authoritative verification status.
  *   3. Calls `onVerified` once Bridge reports approval.
  */
-export function BridgeKycButton({ userId, fullName, onVerified, onError }: BridgeKycButtonProps) {
+export function BridgeKycButton({ fullName, onVerified, onError }: BridgeKycButtonProps) {
+  const { getAccessToken } = usePrivy();
   const [phase, setPhase] = useState<Phase>("idle");
   const pollCountRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -33,6 +35,18 @@ export function BridgeKycButton({ userId, fullName, onVerified, onError }: Bridg
     onVerifiedRef.current = onVerified;
     onErrorRef.current = onError;
   }, [onVerified, onError]);
+
+  const authedFetch = useCallback(
+    async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const token = await getAccessToken();
+      const headers = new Headers(init.headers);
+      if (token) {
+        headers.set("Authorization", `Bearer ${token}`);
+      }
+      return fetch(input, { ...init, headers });
+    },
+    [getAccessToken]
+  );
 
   const clearTimer = useCallback(() => {
     if (timerRef.current) {
@@ -50,7 +64,7 @@ export function BridgeKycButton({ userId, fullName, onVerified, onError }: Bridg
       }
 
       try {
-        const response = await fetch(`/api/bridge/kyc-status?userId=${encodeURIComponent(userId)}`);
+        const response = await authedFetch("/api/bridge/kyc-status");
         const data = await response.json();
 
         if (!response.ok) {
@@ -76,7 +90,7 @@ export function BridgeKycButton({ userId, fullName, onVerified, onError }: Bridg
       }
       return false;
     },
-    [userId, clearTimer]
+    [authedFetch, clearTimer]
   );
 
   const poll = useCallback(() => {
@@ -94,10 +108,10 @@ export function BridgeKycButton({ userId, fullName, onVerified, onError }: Bridg
     setPhase("starting");
 
     try {
-      const response = await fetch("/api/bridge/kyc-link", {
+      const response = await authedFetch("/api/bridge/kyc-link", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, fullName }),
+        body: JSON.stringify({ fullName }),
       });
 
       const data = await response.json();
@@ -124,7 +138,7 @@ export function BridgeKycButton({ userId, fullName, onVerified, onError }: Bridg
         error instanceof Error ? error.message : "Unable to start identity verification."
       );
     }
-  }, [userId, fullName, poll, checkStatus]);
+  }, [authedFetch, fullName, poll, checkStatus]);
 
   if (phase === "awaiting" || phase === "checking") {
     return (

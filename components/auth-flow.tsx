@@ -1,12 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
+import { usePrivy } from "@privy-io/react-auth";
 import { LogOut } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { PlaidConnectButton } from "@/components/plaid-connect-button";
 import { BridgeKycButton } from "@/components/bridge-kyc-button";
@@ -17,8 +16,6 @@ import type { Session } from "@/types/session";
 const DIGIT_REGEX = /\D+/g;
 const HEX_ADDRESS_REGEX = /^0x[a-fA-F0-9]{40}$/;
 const ALL_ACCOUNTS_KEY = "__ALL__";
-const SESSION_STORAGE_KEY = "bluewallet:session:v1";
-const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 const PLAID_STORAGE_PREFIX = "bluewallet:plaid:v1";
 
 function sanitizeDigits(value: string | null | undefined): string {
@@ -126,38 +123,11 @@ function saveStoredPlaidSnapshot(userId: string, snapshot: StoredPlaidSnapshot):
   }
 }
 
-function loadStoredSession(): Session | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-  try {
-    const raw = window.localStorage.getItem(SESSION_STORAGE_KEY);
-    if (!raw) {
-      return null;
-    }
-    const parsed = JSON.parse(raw) as (Partial<Session> & { expiresAt?: number }) | null;
-    if (parsed?.userId) {
-      // Reject expired sessions (the deterministic email session is not a
-      // security boundary on its own — funds access is gated by Bridge KYC).
-      if (typeof parsed.expiresAt === "number" && parsed.expiresAt < Date.now()) {
-        window.localStorage.removeItem(SESSION_STORAGE_KEY);
-        return null;
-      }
-      return { userId: parsed.userId, email: parsed.email };
-    }
-  } catch {
-    return null;
-  }
-  return null;
-}
-
 export function AuthFlow() {
+  const { ready, authenticated, login, logout, getAccessToken } = usePrivy();
+
   const [session, setSession] = useState<Session | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
-
-  // Sign-in
-  const [email, setEmail] = useState("");
-  const [isSigningIn, setIsSigningIn] = useState(false);
 
   // Identity verification (Bridge-hosted KYC)
   const [personaVerified, setPersonaVerified] = useState<boolean | null>(null);
@@ -180,20 +150,17 @@ export function AuthFlow() {
   const [claimErrors, setClaimErrors] = useState<Record<string, string | null>>({});
   const [claimSuccess, setClaimSuccess] = useState<Record<string, string | null>>({});
 
-  const sessionRestored = useRef(false);
-
-  // Restore a persisted session on first mount.
-  useEffect(() => {
-    if (sessionRestored.current) {
-      return;
-    }
-    sessionRestored.current = true;
-
-    const restored = loadStoredSession();
-    if (restored) {
-      setSession(restored);
-    }
-  }, []);
+  const authedFetch = useCallback(
+    async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const token = await getAccessToken();
+      const headers = new Headers(init.headers);
+      if (token) {
+        headers.set("Authorization", `Bearer ${token}`);
+      }
+      return fetch(input, { ...init, headers });
+    },
+    [getAccessToken]
+  );
 
   useEffect(() => {
     void fetch("/api/db/init-table", { method: "POST" }).catch((error) => {
@@ -201,45 +168,47 @@ export function AuthFlow() {
     });
   }, []);
 
-  // Determine Persona verification state whenever a session is established.
+  // Establish (or clear) the app session based on Privy auth state. The userId
+  // is resolved server-side from the verified Privy token, never the client.
   useEffect(() => {
-    if (!session) {
-      setPersonaVerified(null);
+    if (!ready) {
       return;
     }
 
-    if (personaVerified !== null) {
+    if (!authenticated) {
+      setSession(null);
+      setPersonaVerified(null);
       return;
     }
 
     let cancelled = false;
 
-    const checkVerification = async () => {
+    const establish = async () => {
       try {
-        const response = await fetch(`/api/db/user?userId=${encodeURIComponent(session.userId)}`);
-        if (!response.ok) {
-          if (!cancelled) {
-            setPersonaVerified(false);
-          }
-          return;
-        }
+        const response = await authedFetch("/api/auth/session", { method: "POST" });
         const data = await response.json();
-        if (!cancelled) {
-          setPersonaVerified(Boolean(data.user?.personaVerificationCompleted));
+        if (!response.ok || !data.userId) {
+          throw new Error(data.message ?? "Unable to establish your session.");
         }
-      } catch {
         if (!cancelled) {
-          setPersonaVerified(false);
+          setSession({ userId: data.userId, email: data.email ?? undefined });
+          setPersonaVerified(Boolean(data.personaVerificationCompleted));
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setAuthError(
+            error instanceof Error ? error.message : "Unable to establish your session."
+          );
         }
       }
     };
 
-    void checkVerification();
+    void establish();
 
     return () => {
       cancelled = true;
     };
-  }, [session, personaVerified]);
+  }, [ready, authenticated, authedFetch]);
 
   const fetchTransfersForAccounts = useCallback(async (accounts: PlaidAchAccount[]) => {
     if (!accounts || accounts.length === 0) {
@@ -348,7 +317,9 @@ export function AuthFlow() {
     const hydrate = async () => {
       let shouldMarkHydrated = true;
       try {
-        const response = await fetch(`/api/db/user?userId=${encodeURIComponent(session.userId)}`);
+        const response = await authedFetch(
+          `/api/db/user?userId=${encodeURIComponent(session.userId)}`
+        );
         if (!response.ok) {
           if (response.status === 404) {
             shouldMarkHydrated = false;
@@ -429,7 +400,7 @@ export function AuthFlow() {
     return () => {
       cancelled = true;
     };
-  }, [session, plaidHydrated]);
+  }, [session, plaidHydrated, authedFetch]);
 
   // Refresh transfers when the selected accounts change.
   useEffect(() => {
@@ -451,68 +422,27 @@ export function AuthFlow() {
     void fetchTransfersForAccounts(accountsToFetch);
   }, [selectedAccountKey, linkedAccounts, fetchTransfersForAccounts]);
 
-  const handleSignIn = async (event: React.FormEvent) => {
-    event.preventDefault();
-    const trimmedEmail = email.trim();
-
-    if (!trimmedEmail) {
-      setAuthError("Please enter a valid email address.");
-      return;
-    }
-
-    setIsSigningIn(true);
-    setAuthError(null);
-
+  const handleLogout = useCallback(async () => {
     try {
-      const response = await fetch("/api/auth/session", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: trimmedEmail }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok || !data.userId) {
-        throw new Error(data.message ?? "Unable to sign in. Please try again.");
-      }
-
-      const nextSession: Session = { userId: data.userId, email: data.email ?? trimmedEmail };
-      setSession(nextSession);
-      setPersonaVerified(Boolean(data.personaVerificationCompleted));
-
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem(
-          SESSION_STORAGE_KEY,
-          JSON.stringify({ ...nextSession, expiresAt: Date.now() + SESSION_TTL_MS })
-        );
-      }
+      await logout();
     } catch (error) {
-      setAuthError(error instanceof Error ? error.message : "Failed to sign in.");
+      console.error("Privy logout failed", error);
     } finally {
-      setIsSigningIn(false);
+      setSession(null);
+      setPersonaVerified(null);
+      setPlaidIdentity(null);
+      setLinkedAccounts([]);
+      setSelectedAccountKey(ALL_ACCOUNTS_KEY);
+      setPlaidHydrated(false);
+      setAuthError(null);
+      setTransferSummaries([]);
+      setTransferError(null);
+      setWithdrawInputs({});
+      setWithdrawLoading({});
+      setWithdrawErrors({});
+      setWithdrawSuccess({});
     }
-  };
-
-  const handleLogout = () => {
-    setSession(null);
-    setPersonaVerified(null);
-    setPlaidIdentity(null);
-    setLinkedAccounts([]);
-    setSelectedAccountKey(ALL_ACCOUNTS_KEY);
-    setPlaidHydrated(false);
-    setAuthError(null);
-    setTransferSummaries([]);
-    setTransferError(null);
-    setWithdrawInputs({});
-    setWithdrawLoading({});
-    setWithdrawErrors({});
-    setWithdrawSuccess({});
-    setEmail("");
-
-    if (typeof window !== "undefined") {
-      window.localStorage.removeItem(SESSION_STORAGE_KEY);
-    }
-  };
+  }, [logout]);
 
   const handlePlaidSuccess = async (identityData: PlaidIdentitySnapshot) => {
     const mergedAccounts = mergeAchAccounts(
@@ -548,7 +478,7 @@ export function AuthFlow() {
     });
 
     try {
-      await fetch("/api/db/user", {
+      await authedFetch("/api/db/user", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -610,7 +540,7 @@ export function AuthFlow() {
       setClaimLoading((previous) => ({ ...previous, [summary.transferId]: true }));
 
       try {
-        const response = await fetch(`/api/transfers/${summary.transferId}/claim`, {
+        const response = await authedFetch(`/api/transfers/${summary.transferId}/claim`, {
           method: "POST",
         });
         const data = await response.json();
@@ -649,7 +579,7 @@ export function AuthFlow() {
         setClaimLoading((previous) => ({ ...previous, [summary.transferId]: false }));
       }
     },
-    [fetchTransfersForAccounts, linkedAccounts]
+    [authedFetch, fetchTransfersForAccounts, linkedAccounts]
   );
 
   const handleWithdraw = useCallback(
@@ -669,7 +599,7 @@ export function AuthFlow() {
       setWithdrawSuccess((previous) => ({ ...previous, [summary.transferId]: null }));
 
       try {
-        const response = await fetch(`/api/transfers/${summary.transferId}/withdraw`, {
+        const response = await authedFetch(`/api/transfers/${summary.transferId}/withdraw`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ targetAddress: destinationInput }),
@@ -706,8 +636,17 @@ export function AuthFlow() {
         setWithdrawLoading((previous) => ({ ...previous, [summary.transferId]: false }));
       }
     },
-    [fetchTransfersForAccounts, linkedAccounts, selectedAccountKey, withdrawInputs]
+    [authedFetch, fetchTransfersForAccounts, linkedAccounts, selectedAccountKey, withdrawInputs]
   );
+
+  // --- Render: loading Privy / establishing session ----------------------
+  if (!ready || (authenticated && !session)) {
+    return (
+      <section className="max-w-md mx-auto rounded-2xl border border-slate-200/80 bg-white/70 p-6 text-center text-slate-500 shadow-sm backdrop-blur dark:border-slate-800/60 dark:bg-slate-900/70 dark:text-slate-400">
+        Loading…
+      </section>
+    );
+  }
 
   // --- Render: signed out -------------------------------------------------
   if (!session) {
@@ -716,42 +655,23 @@ export function AuthFlow() {
         <Card className="border-0 shadow-none bg-transparent">
           <CardHeader className="space-y-3 text-center pb-3">
             <h2 className="text-base font-semibold text-slate-900 dark:text-white">
-              Sign in with your email
+              Sign in to Blue Wallet
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              We&apos;ll verify your identity with Persona before unlocking your wallet.
+              Sign in with your email, then verify your identity to unlock your wallet.
             </p>
           </CardHeader>
           <CardContent className="px-4 pb-4">
             {authError && (
               <p className="mb-3 text-xs text-red-600 dark:text-red-400 text-center">{authError}</p>
             )}
-            <form onSubmit={handleSignIn} className="space-y-3">
-              <div className="space-y-1.5">
-                <Label
-                  htmlFor="email"
-                  className="text-sm font-medium text-slate-700 dark:text-slate-300"
-                >
-                  Email Address
-                </Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="you@example.com"
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  required
-                  className="h-9 text-sm"
-                />
-              </div>
-              <Button
-                type="submit"
-                disabled={isSigningIn || !email.trim()}
-                className="w-full h-9 text-sm font-semibold bg-blue-600 hover:bg-blue-700"
-              >
-                {isSigningIn ? "Signing in…" : "Continue"}
-              </Button>
-            </form>
+            <Button
+              type="button"
+              onClick={() => login()}
+              className="w-full h-9 text-sm font-semibold bg-blue-600 hover:bg-blue-700"
+            >
+              Sign in
+            </Button>
           </CardContent>
         </Card>
       </section>
@@ -772,7 +692,6 @@ export function AuthFlow() {
         )}
         <div className="mt-5">
           <BridgeKycButton
-            userId={session.userId}
             onVerified={() => {
               setAuthError(null);
               setPersonaVerified(true);

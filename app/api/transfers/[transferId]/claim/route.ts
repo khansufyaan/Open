@@ -10,6 +10,8 @@ import {
 } from "@/lib/bridge/server";
 import { handleBridgeError } from "@/lib/bridge/route-helpers";
 import { docClient, TRANSFERS_TABLE } from "@/lib/db/dynamo";
+import { verifyAuth, unauthorized } from "@/lib/auth/privy";
+import { userOwnsRecipientKey } from "@/lib/auth/authorize";
 
 const TRANSFER_RAIL = process.env.BRIDGE_DEFAULT_CHAIN ?? "base";
 const TRANSFER_CURRENCY = process.env.BRIDGE_TRANSFER_CURRENCY ?? "usdc";
@@ -47,6 +49,11 @@ async function findTransferById(transferId: string): Promise<TransferRecord | nu
 }
 
 export async function POST(request: Request, context: RouteContext) {
+  const auth = await verifyAuth(request);
+  if (!auth) {
+    return unauthorized();
+  }
+
   if (!isBridgeConfigured()) {
     return NextResponse.json(
       { error: "BRIDGE_NOT_CONFIGURED", message: "Bridge API key is missing on the server." },
@@ -84,6 +91,13 @@ export async function POST(request: Request, context: RouteContext) {
     return NextResponse.json(
       { error: "TRANSFER_NOT_FOUND", message: "No transfer matched the provided transferId." },
       { status: 404 }
+    );
+  }
+
+  if (!(await userOwnsRecipientKey(auth.userId, record.recipientKey))) {
+    return NextResponse.json(
+      { error: "FORBIDDEN", message: "You are not the recipient of this transfer." },
+      { status: 403 }
     );
   }
 

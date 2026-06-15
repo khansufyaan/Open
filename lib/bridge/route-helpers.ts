@@ -2,6 +2,16 @@ import { NextResponse } from "next/server";
 
 import { BridgeRequestError } from "@/lib/bridge/server";
 
+/**
+ * Demo KYC auto-approval. Physically disabled in production builds so a stray
+ * env var can never approve real users.
+ */
+export function isDemoAutoApprove(): boolean {
+  return (
+    process.env.BRIDGE_DEMO_AUTOAPPROVE === "true" && process.env.NODE_ENV !== "production"
+  );
+}
+
 export function bridgeNotConfigured() {
   return NextResponse.json(
     {

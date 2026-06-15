@@ -9,10 +9,9 @@ import {
   isBridgeConfigured,
   BridgeRequestError,
 } from "@/lib/bridge/server";
-import { handleBridgeError } from "@/lib/bridge/route-helpers";
+import { handleBridgeError, isDemoAutoApprove } from "@/lib/bridge/route-helpers";
 import { docClient, USERS_TABLE as TABLE_NAME } from "@/lib/db/dynamo";
-
-const DEMO_AUTOAPPROVE = process.env.BRIDGE_DEMO_AUTOAPPROVE === "true";
+import { verifyAuth, unauthorized } from "@/lib/auth/privy";
 
 /**
  * Reads the authoritative KYC result from Bridge for a user.
@@ -22,14 +21,11 @@ const DEMO_AUTOAPPROVE = process.env.BRIDGE_DEMO_AUTOAPPROVE === "true";
  * from the client — it is read back from Bridge's KYC link object.
  */
 export async function GET(request: Request) {
-  const userId = new URL(request.url).searchParams.get("userId");
-
-  if (!userId) {
-    return NextResponse.json(
-      { error: "MISSING_USER_ID", message: "userId query parameter is required." },
-      { status: 400 }
-    );
+  const auth = await verifyAuth(request);
+  if (!auth) {
+    return unauthorized();
   }
+  const userId = auth.userId;
 
   let user: Record<string, unknown>;
 
@@ -62,7 +58,7 @@ export async function GET(request: Request) {
   }
 
   if (!isBridgeConfigured()) {
-    if (DEMO_AUTOAPPROVE) {
+    if (isDemoAutoApprove()) {
       const timestamp = new Date().toISOString();
       await docClient.send(
         new PutCommand({
@@ -133,24 +129,36 @@ export async function GET(request: Request) {
 
     const timestamp = new Date().toISOString();
 
-    await docClient.send(
-      new PutCommand({
-        TableName: TABLE_NAME,
-        Item: {
-          ...user,
-          userId,
-          bridgeCustomerId: customerId,
-          kycStatus: link.kyc_status,
-          kycVerificationSource: "bridge",
-          personaVerificationCompleted: true,
-          personaVerifiedAt: timestamp,
-          walletId,
-          walletAddress,
-          walletCreated: Boolean(walletId),
-          updatedAt: timestamp,
-        },
-      })
-    );
+    try {
+      // Only the first concurrent poll commits the approval, so a later poll
+      // can't overwrite fields written by the first.
+      await docClient.send(
+        new PutCommand({
+          TableName: TABLE_NAME,
+          Item: {
+            ...user,
+            userId,
+            bridgeCustomerId: customerId,
+            kycStatus: link.kyc_status,
+            kycVerificationSource: "bridge",
+            personaVerificationCompleted: true,
+            personaVerifiedAt: timestamp,
+            walletId,
+            walletAddress,
+            walletCreated: Boolean(walletId),
+            updatedAt: timestamp,
+          },
+          ConditionExpression:
+            "attribute_not_exists(personaVerificationCompleted) OR personaVerificationCompleted <> :verified",
+          ExpressionAttributeValues: { ":verified": true },
+        })
+      );
+    } catch (error) {
+      // Another concurrent poll already recorded the approval — that's fine.
+      if (!(error instanceof Error && error.name === "ConditionalCheckFailedException")) {
+        throw error;
+      }
+    }
 
     return NextResponse.json({
       verified: true,

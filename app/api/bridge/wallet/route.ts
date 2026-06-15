@@ -2,10 +2,17 @@ import { NextResponse } from "next/server";
 
 import { createWallet, listWallets, isBridgeConfigured } from "@/lib/bridge/server";
 import { bridgeNotConfigured, handleBridgeError } from "@/lib/bridge/route-helpers";
+import { verifyAuth, unauthorized } from "@/lib/auth/privy";
+import { userOwnsBridgeCustomer } from "@/lib/auth/authorize";
 
 export async function GET(request: Request) {
   if (!isBridgeConfigured()) {
     return bridgeNotConfigured();
+  }
+
+  const auth = await verifyAuth(request);
+  if (!auth) {
+    return unauthorized();
   }
 
   const customerId = new URL(request.url).searchParams.get("customerId");
@@ -14,6 +21,13 @@ export async function GET(request: Request) {
     return NextResponse.json(
       { error: "MISSING_CUSTOMER_ID", message: "customerId query parameter is required." },
       { status: 400 }
+    );
+  }
+
+  if (!(await userOwnsBridgeCustomer(auth.userId, customerId))) {
+    return NextResponse.json(
+      { error: "FORBIDDEN", message: "This customer does not belong to you." },
+      { status: 403 }
     );
   }
 
@@ -28,6 +42,11 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   if (!isBridgeConfigured()) {
     return bridgeNotConfigured();
+  }
+
+  const auth = await verifyAuth(request);
+  if (!auth) {
+    return unauthorized();
   }
 
   let body: unknown;
@@ -48,6 +67,13 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { error: "MISSING_CUSTOMER_ID", message: "customerId is required to create a wallet." },
       { status: 400 }
+    );
+  }
+
+  if (!(await userOwnsBridgeCustomer(auth.userId, customerId))) {
+    return NextResponse.json(
+      { error: "FORBIDDEN", message: "This customer does not belong to you." },
+      { status: 403 }
     );
   }
 

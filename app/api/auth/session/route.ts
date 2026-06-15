@@ -1,61 +1,42 @@
 import { NextResponse } from "next/server";
-import { createHash } from "crypto";
 
 import { GetCommand, PutCommand } from "@aws-sdk/lib-dynamodb";
 
 import { docClient, USERS_TABLE as TABLE_NAME } from "@/lib/db/dynamo";
-
-function normalizeEmail(email: string): string {
-  return email.trim().toLowerCase();
-}
-
-/** Deterministic user id so re-signing in with the same email resolves the same record. */
-function deriveUserId(email: string): string {
-  return createHash("sha256").update(`bluewallet:user:${email}`, "utf8").digest("hex");
-}
+import { verifyAuth, getPrivyEmail, isPrivyConfigured, authNotConfigured, unauthorized } from "@/lib/auth/privy";
 
 /**
- * Establishes an app session for an email address.
+ * Establishes (upserts) the app user record for the authenticated Privy user.
  *
- * This replaces the former Turnkey email-OTP sign-in. Identity is verified
- * separately via Bridge-hosted KYC (see /api/bridge/kyc-status) before any
- * wallet or transfer capability is unlocked.
+ * The userId is the verified Privy DID — it is never derived from request
+ * input. Identity is verified separately via Bridge-hosted KYC (see
+ * /api/bridge/kyc-status) before any wallet or transfer capability is unlocked.
  */
 export async function POST(request: Request) {
-  let body: unknown;
-
-  try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json(
-      { error: "INVALID_JSON", message: "Request body must be valid JSON." },
-      { status: 400 }
-    );
+  if (!isPrivyConfigured()) {
+    return authNotConfigured();
   }
 
-  const email = normalizeEmail((body as { email?: string })?.email ?? "");
-
-  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return NextResponse.json(
-      { error: "INVALID_EMAIL", message: "Provide a valid email address to sign in." },
-      { status: 400 }
-    );
+  const auth = await verifyAuth(request);
+  if (!auth) {
+    return unauthorized();
   }
 
-  const userId = deriveUserId(email);
+  const userId = auth.userId;
 
   try {
     const existing = await docClient.send(
       new GetCommand({ TableName: TABLE_NAME, Key: { userId } })
     );
 
+    const email = (await getPrivyEmail(userId)) ?? (existing.Item?.email as string | undefined);
     const timestamp = new Date().toISOString();
     const isNewUser = !existing.Item;
 
     const userData = {
       ...(existing.Item ?? {}),
       userId,
-      email,
+      ...(email ? { email } : {}),
       signInCompleted: true,
       createdAt: existing.Item?.createdAt ?? timestamp,
       updatedAt: timestamp,
@@ -66,7 +47,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       userId,
-      email,
+      email: email ?? null,
       personaVerificationCompleted: Boolean(existing.Item?.personaVerificationCompleted),
       isNewUser,
     });

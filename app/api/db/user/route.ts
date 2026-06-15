@@ -2,24 +2,17 @@ import { NextResponse } from "next/server";
 import { PutCommand, GetCommand } from "@aws-sdk/lib-dynamodb";
 
 import { docClient, USERS_TABLE as TABLE_NAME } from "@/lib/db/dynamo";
+import { verifyAuth, unauthorized } from "@/lib/auth/privy";
 
 // GET: Retrieve user data
 export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const userId = searchParams.get("userId");
+  const auth = await verifyAuth(request);
+  if (!auth) {
+    return unauthorized();
+  }
+  const userId = auth.userId;
 
   console.log("[DB] GET /api/db/user - Request received for userId:", userId);
-
-  if (!userId) {
-    console.error("[DB] Missing userId in GET request");
-    return NextResponse.json(
-      {
-        error: "MISSING_USER_ID",
-        message: "userId is required",
-      },
-      { status: 400 }
-    );
-  }
 
   try {
     console.log("[DB] Fetching user from DynamoDB");
@@ -69,6 +62,13 @@ export async function GET(request: Request) {
 // POST: Create or update user data
 export async function POST(request: Request) {
   console.log("[DB] POST /api/db/user - Request received");
+
+  const auth = await verifyAuth(request);
+  if (!auth) {
+    return unauthorized();
+  }
+  const userId = auth.userId;
+
   let body: unknown;
 
   try {
@@ -129,18 +129,7 @@ export async function POST(request: Request) {
     plaidLastLinkedAt?: string;
   };
 
-  if (!data.userId) {
-    console.error("[DB] Missing userId in request");
-    return NextResponse.json(
-      {
-        error: "MISSING_USER_ID",
-        message: "userId is required",
-      },
-      { status: 400 }
-    );
-  }
-
-  console.log("[DB] Processing request for userId:", data.userId);
+  console.log("[DB] Processing request for userId:", userId);
 
   try {
     const timestamp = new Date().toISOString();
@@ -150,7 +139,7 @@ export async function POST(request: Request) {
     const getCommand = new GetCommand({
       TableName: TABLE_NAME,
       Key: {
-        userId: data.userId,
+        userId,
       },
     });
 
@@ -161,7 +150,7 @@ export async function POST(request: Request) {
     const userData = {
       // Preserve any fields written by other routes (Persona/Bridge/session).
       ...(existingData.Item ?? {}),
-      userId: data.userId,
+      userId,
       email: data.email ?? existingData.Item?.email,
       walletId: data.walletId ?? existingData.Item?.walletId,
       walletAddress: data.walletAddress ?? existingData.Item?.walletAddress,

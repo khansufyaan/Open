@@ -8,10 +8,10 @@ import {
   isBridgeConfigured,
   BridgeRequestError,
 } from "@/lib/bridge/server";
-import { handleBridgeError } from "@/lib/bridge/route-helpers";
+import { handleBridgeError, isDemoAutoApprove } from "@/lib/bridge/route-helpers";
 import { docClient, USERS_TABLE as TABLE_NAME } from "@/lib/db/dynamo";
+import { verifyAuth, unauthorized } from "@/lib/auth/privy";
 
-const DEMO_AUTOAPPROVE = process.env.BRIDGE_DEMO_AUTOAPPROVE === "true";
 // Bridge KYC links are short-lived; refresh rather than hand back a dead URL.
 const KYC_LINK_TTL_MS = 30 * 60 * 1000;
 
@@ -22,25 +22,20 @@ const KYC_LINK_TTL_MS = 30 * 60 * 1000;
  * verified result is read back authoritatively via GET /api/bridge/kyc-status.
  */
 export async function POST(request: Request) {
-  let body: unknown;
+  const auth = await verifyAuth(request);
+  if (!auth) {
+    return unauthorized();
+  }
+  const userId = auth.userId;
 
+  let body: unknown = null;
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json(
-      { error: "INVALID_JSON", message: "Request body must be valid JSON." },
-      { status: 400 }
-    );
+    body = null;
   }
 
-  const { userId, fullName } = (body ?? {}) as { userId?: string; fullName?: string };
-
-  if (!userId) {
-    return NextResponse.json(
-      { error: "MISSING_USER_ID", message: "userId is required." },
-      { status: 400 }
-    );
-  }
+  const { fullName } = (body ?? {}) as { fullName?: string };
 
   let user: Record<string, unknown>;
 
@@ -66,7 +61,7 @@ export async function POST(request: Request) {
   const email = typeof user.email === "string" ? user.email : undefined;
 
   if (!isBridgeConfigured()) {
-    if (DEMO_AUTOAPPROVE) {
+    if (isDemoAutoApprove()) {
       // Local demo without Bridge credentials: no hosted flow to open.
       return NextResponse.json({ demo: true, kycStatus: "not_started", url: null });
     }

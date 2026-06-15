@@ -28,6 +28,9 @@ export function AppProviders({ children }: AppProvidersProps) {
     <PrivyProvider
       appId={privyAppId}
       config={{
+        // Email OTP provides the email-ownership proof the receiver flow needs;
+        // wallet login remains available for senders.
+        loginMethods: ["email", "wallet"],
         appearance: {},
         embeddedWallets: {},
       }}
