@@ -12,6 +12,35 @@ export function Navbar({ className }: { className?: string }) {
   const pathname = usePathname();
   const isAppPage = pathname?.startsWith("/app");
 
+  // Apple-quiet header inside the wallet: minimal mark + hairline, no filled bar.
+  if (isAppPage) {
+    return (
+      <header className={cn("relative z-50 w-full", className)}>
+        <div className="mx-auto flex max-w-md items-center justify-between px-5 pt-6 pb-3">
+          <Link href="/" className="flex items-center gap-2.5 transition hover:opacity-80">
+            <Image
+              src="/FINAL2.png"
+              alt="Blue"
+              width={30}
+              height={30}
+              className="rounded-[9px]"
+              priority
+            />
+            <span className="text-[15px] font-semibold tracking-tight text-white">
+              Blue Wallet
+            </span>
+          </Link>
+          <Link
+            href="/faq"
+            className="text-[13px] font-medium text-white/45 transition hover:text-white/75"
+          >
+            FAQ
+          </Link>
+        </div>
+      </header>
+    );
+  }
+
   return (
     <header className={cn("relative z-50 w-full", className)}>
       <div className="px-4 sm:px-6 pt-4 pb-2">

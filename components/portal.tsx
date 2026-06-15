@@ -62,6 +62,9 @@ type PortalState = {
 
 const HEX_ADDRESS_REGEX = /^0x[a-fA-F0-9]{40}$/;
 
+const PRIMARY_BTN =
+  "w-full h-12 rounded-2xl gradient-blue font-semibold press hover:opacity-95 disabled:opacity-60";
+
 function CopyButton({ value, label }: { value: string; label?: string }) {
   const [copied, setCopied] = useState(false);
   return (
@@ -73,10 +76,14 @@ function CopyButton({ value, label }: { value: string; label?: string }) {
           setTimeout(() => setCopied(false), 1500);
         });
       }}
-      className="inline-flex items-center gap-1 text-xs font-medium text-blue-300 hover:text-blue-200 transition"
+      className="press inline-flex items-center gap-1 text-[12px] font-medium text-white/55 transition hover:text-white"
       aria-label={`Copy ${label ?? "value"}`}
     >
-      {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+      {copied ? (
+        <Check className="h-3.5 w-3.5 text-emerald-400" />
+      ) : (
+        <Copy className="h-3.5 w-3.5" />
+      )}
       {copied ? "Copied" : "Copy"}
     </button>
   );
@@ -84,12 +91,12 @@ function CopyButton({ value, label }: { value: string; label?: string }) {
 
 function CopyField({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl border border-blue-400/15 bg-blue-950/40 px-4 py-3">
+    <div className="material-flat rounded-2xl px-4 py-3">
       <div className="flex items-center justify-between gap-3">
-        <span className="text-xs uppercase tracking-wide text-blue-300/70">{label}</span>
+        <span className="label-cap text-white/40">{label}</span>
         <CopyButton value={value} label={label} />
       </div>
-      <p className="mt-1 font-mono text-sm text-white break-all">{value}</p>
+      <p className="mt-2 break-all font-mono text-[13px] tracking-tight text-white/90">{value}</p>
     </div>
   );
 }
@@ -100,9 +107,9 @@ export function Portal() {
   if (!process.env.NEXT_PUBLIC_PRIVY_APP_ID) {
     return (
       <CenteredCard>
-        <Wallet className="mx-auto h-10 w-10 text-blue-400" />
-        <h1 className="mt-4 text-2xl font-bold text-white">Almost ready</h1>
-        <p className="mt-2 text-sm text-blue-200/80">
+        <Wallet className="mx-auto h-10 w-10 text-blue-300" />
+        <h1 className="mt-4 text-2xl font-semibold tracking-tight text-white">Almost ready</h1>
+        <p className="mt-2 text-sm text-white/55">
           The wallet portal is being configured. Check back shortly.
         </p>
       </CenteredCard>
@@ -266,15 +273,16 @@ function PortalInner() {
   if (!authenticated) {
     return (
       <CenteredCard>
-        <Wallet className="mx-auto h-10 w-10 text-blue-400" />
-        <h1 className="mt-4 text-2xl font-bold text-white">Welcome to Blue Wallet</h1>
-        <p className="mt-2 text-sm text-blue-200/80">
+        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white/[0.06] ring-1 ring-white/10">
+          <Wallet className="h-7 w-7 text-blue-300" />
+        </div>
+        <h1 className="mt-5 text-2xl font-semibold tracking-tight text-white">
+          Welcome to Blue Wallet
+        </h1>
+        <p className="mt-2 text-sm text-white/55">
           Sign in to open your bank-linked crypto wallet.
         </p>
-        <Button
-          onClick={() => login()}
-          className="mt-6 w-full h-11 text-base font-semibold gradient-blue hover:opacity-90"
-        >
+        <Button onClick={() => login()} className={`mt-7 ${PRIMARY_BTN}`}>
           Sign in
         </Button>
       </CenteredCard>
@@ -292,11 +300,13 @@ function PortalInner() {
   if (!onboarding.kycCompleted && !skipped && !onboarding.skipped) {
     return (
       <CenteredCard>
-        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-500/15">
-          <ShieldCheck className="h-7 w-7 text-blue-400" />
+        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white/[0.06] ring-1 ring-white/10">
+          <ShieldCheck className="h-7 w-7 text-blue-300" />
         </div>
-        <h1 className="mt-4 text-2xl font-bold text-white">Let&apos;s get you set up</h1>
-        <p className="mt-2 text-sm text-blue-200/80">
+        <h1 className="mt-5 text-2xl font-semibold tracking-tight text-white">
+          Let&apos;s get you set up
+        </h1>
+        <p className="mt-2 text-sm leading-relaxed text-white/55">
           Complete a quick identity check (powered by Bridge) to unlock your wallet, bank
           account number, and routing number.
         </p>
@@ -314,7 +324,7 @@ function PortalInner() {
         </div>
         <button
           onClick={() => void handleSkip()}
-          className="mt-4 block w-full text-sm font-medium text-blue-300 hover:text-blue-200"
+          className="press mt-4 block w-full text-sm font-medium text-white/50 transition hover:text-white/80"
         >
           Skip for now
         </button>
@@ -327,11 +337,11 @@ function PortalInner() {
   if (onboarding.kycCompleted && (!onboarding.onboardingCompleted || !state.wallet)) {
     return (
       <CenteredCard>
-        <h1 className="text-2xl font-bold text-white">Setting up your wallet…</h1>
-        <p className="mt-2 text-sm text-blue-200/80">
+        <h1 className="text-2xl font-semibold tracking-tight text-white">Setting up your wallet…</h1>
+        <p className="mt-2 text-sm leading-relaxed text-white/55">
           We&apos;re provisioning your Bridge wallet and bank account. This only takes a moment.
         </p>
-        <Button onClick={() => void loadPortal()} disabled={loading} className="mt-6 gradient-blue">
+        <Button onClick={() => void loadPortal()} disabled={loading} className={`mt-6 ${PRIMARY_BTN}`}>
           {loading ? "Checking…" : "Refresh"}
         </Button>
         <SignOutLink onClick={logout} />
@@ -349,269 +359,300 @@ function PortalInner() {
   const currency = wallet?.currency ?? "USDC";
   const chain = wallet?.chain ?? "base";
 
+  const [intPart, decPart] = parseFloat(wallet?.balance || "0").toFixed(2).split(".");
+
+  const tabs = [
+    { id: "receive" as const, label: "Receive", icon: ArrowDownToLine },
+    { id: "send" as const, label: "Send", icon: ArrowUpRight },
+    { id: "card" as const, label: "Card", icon: CreditCard },
+  ];
+  const activeIndex = tabs.findIndex((t) => t.id === tab);
+
   return (
-    <div className="mx-auto w-full max-w-2xl space-y-6">
+    <div className="mx-auto w-full max-w-md space-y-5">
+      {/* Status row */}
       <div className="flex items-center justify-between">
         {verified ? (
-          <div className="flex items-center gap-2 text-sm text-emerald-400">
-            <ShieldCheck className="h-4 w-4" /> Verified
+          <span className="inline-flex items-center gap-2 text-[13px] font-medium text-white/70">
+            <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_8px] shadow-emerald-400/60" />
+            Verified
             {isDemo && (
-              <span className="ml-2 rounded-full bg-amber-500/15 px-2 py-0.5 text-xs text-amber-300">
-                Demo mode
+              <span className="ml-1 rounded-full border border-white/10 bg-white/[0.05] px-2 py-0.5 text-[11px] text-white/55">
+                Demo
               </span>
             )}
-          </div>
+          </span>
         ) : (
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/15 px-2.5 py-0.5 text-xs font-medium text-amber-300">
+          <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.05] px-3 py-1 text-[12px] font-medium text-white/60">
+            <span className="h-1.5 w-1.5 rounded-full bg-amber-400 shadow-[0_0_8px] shadow-amber-400/60" />
             Test mode
           </span>
         )}
         <button
           onClick={() => logout()}
-          className="inline-flex items-center gap-1.5 text-sm text-blue-300 hover:text-blue-200"
+          className="press inline-flex items-center gap-1.5 text-[13px] text-white/45 transition hover:text-white/80"
         >
           <LogOut className="h-4 w-4" /> Sign out
         </button>
       </div>
 
-      {/* Test-mode reminder — stays until identity is actually verified */}
+      {/* Test-mode reminder — quiet, informative, stays until verified */}
       {!verified && (
-        <div className="rounded-2xl border border-amber-400/25 bg-amber-500/10 p-5">
-          <h2 className="text-sm font-semibold text-amber-100">You&apos;re in test mode</h2>
-          <p className="mt-1 text-xs text-amber-200/80">
-            These are demo details for previewing the app. Verify your identity to activate a
-            real wallet, bank account number, routing number, and card.
-          </p>
-          <div className="mt-4">
-            <PersonaKyc
-              fullName={state.user.fullName ?? undefined}
-              referenceId={state.user.userId}
-              onVerified={() => {
-                setError(null);
-                void loadPortal();
-              }}
-              onError={(message) => setError(message)}
-            />
+        <div className="material animate-fade-up rounded-3xl p-5">
+          <div className="flex items-start gap-3">
+            <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-amber-400 shadow-[0_0_10px] shadow-amber-400/50" />
+            <div className="min-w-0 flex-1">
+              <h2 className="text-[14px] font-semibold text-white">You&apos;re in test mode</h2>
+              <p className="mt-1 text-[12.5px] leading-relaxed text-white/55">
+                These are demo details for previewing the app. Verify your identity to activate a
+                real wallet, bank account, routing number, and card.
+              </p>
+              <div className="mt-4">
+                <PersonaKyc
+                  fullName={state.user.fullName ?? undefined}
+                  referenceId={state.user.userId}
+                  onVerified={() => {
+                    setError(null);
+                    void loadPortal();
+                  }}
+                  onError={(message) => setError(message)}
+                />
+              </div>
+              {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
+            </div>
           </div>
-          {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
         </div>
       )}
 
-      {/* Balance */}
-      <div className="rounded-3xl bg-gradient-to-br from-blue-500 to-blue-700 p-8 text-white shadow-lg">
-        <p className="text-sm font-medium opacity-90">Balance</p>
-        <p className="mt-1 text-5xl font-bold tracking-tight">
-          {parseFloat(wallet?.balance || "0").toFixed(2)}{" "}
-          <span className="text-2xl font-semibold opacity-80">{currency}</span>
-        </p>
-        <p className="mt-3 text-xs opacity-80">
-          {chain.toUpperCase()} • {state.user.email}
-        </p>
+      {/* Balance hero */}
+      <div className="hero-card animate-fade-up relative overflow-hidden rounded-[28px] p-7">
+        <div className="pointer-events-none absolute -right-12 -top-12 h-44 w-44 rounded-full bg-white/[0.05] blur-2xl" />
+        <div className="relative flex items-center justify-between">
+          <span className="label-cap text-white/45">Balance</span>
+          <span className="rounded-full border border-white/10 bg-white/[0.06] px-2.5 py-1 text-[11px] font-medium text-white/70">
+            {chain.toUpperCase()}
+          </span>
+        </div>
+        <div className="relative mt-4 flex items-baseline gap-2 tabular-nums tracking-[-0.03em]">
+          <span className="text-[46px] font-semibold leading-none text-white">
+            {intPart}
+            <span className="text-white/40">.{decPart}</span>
+          </span>
+          <span className="text-[17px] font-medium text-white/55">{currency}</span>
+        </div>
+        <p className="relative mt-4 truncate text-[12px] text-white/40">{state.user.email}</p>
       </div>
 
       {provisioned && wallet ? (
-      <>
-      {/* Tabs */}
-      <div className="flex gap-1 rounded-2xl bg-blue-950/50 p-1">
-        <TabButton active={tab === "receive"} onClick={() => setTab("receive")}>
-          <ArrowDownToLine className="h-4 w-4" /> Receive
-        </TabButton>
-        <TabButton active={tab === "send"} onClick={() => setTab("send")}>
-          <ArrowUpRight className="h-4 w-4" /> Send
-        </TabButton>
-        <TabButton active={tab === "card"} onClick={() => setTab("card")}>
-          <CreditCard className="h-4 w-4" /> Card
-        </TabButton>
-      </div>
-
-      {tab === "receive" && (
-        <div className="space-y-4">
-          <section className="rounded-2xl border border-blue-400/15 bg-blue-950/30 p-5">
-            <h2 className="text-sm font-semibold text-white">Receive via bank transfer</h2>
-            <p className="mt-1 text-xs text-blue-200/70">
-              Send a US wire or ACH to these details — it auto-converts to {wallet.currency} in
-              your wallet.
-            </p>
-            {virtualAccount ? (
-              <div className="mt-4 space-y-3">
-                <CopyField label="Account number" value={virtualAccount.accountNumber} />
-                <CopyField label="Routing number" value={virtualAccount.routingNumber} />
-                {virtualAccount.beneficiaryName && (
-                  <CopyField label="Beneficiary" value={virtualAccount.beneficiaryName} />
-                )}
-                {virtualAccount.bankName && (
-                  <p className="text-xs text-blue-200/60">Bank: {virtualAccount.bankName}</p>
-                )}
-              </div>
-            ) : (
-              <p className="mt-4 text-sm text-blue-200/60">No bank account provisioned yet.</p>
-            )}
-          </section>
-
-          <section className="rounded-2xl border border-blue-400/15 bg-blue-950/30 p-5">
-            <h2 className="text-sm font-semibold text-white">Receive on-chain</h2>
-            <p className="mt-1 text-xs text-blue-200/70">
-              Send {wallet.currency} on {wallet.chain.toUpperCase()} to your wallet address.
-            </p>
-            <div className="mt-4">
-              <CopyField label="Wallet address" value={wallet.address} />
-            </div>
-          </section>
-        </div>
-      )}
-
-      {tab === "send" && (
-        <section className="rounded-2xl border border-blue-400/15 bg-blue-950/30 p-5">
-          <h2 className="text-sm font-semibold text-white">Send {wallet.currency}</h2>
-          <div className="mt-4 space-y-3">
-            <div>
-              <label className="text-xs text-blue-200/70">Amount ({wallet.currency})</label>
-              <input
-                type="text"
-                inputMode="decimal"
-                placeholder="0.00"
-                value={sendAmount}
-                onChange={(e) => setSendAmount(e.target.value)}
-                disabled={sending}
-                className="mt-1 w-full h-11 rounded-xl border border-blue-400/20 bg-blue-950/60 px-3 text-white placeholder:text-blue-300/40 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <div>
-              <label className="text-xs text-blue-200/70">Destination address</label>
-              <input
-                type="text"
-                placeholder="0x…"
-                value={sendTo}
-                onChange={(e) => setSendTo(e.target.value)}
-                disabled={sending}
-                className="mt-1 w-full h-11 rounded-xl border border-blue-400/20 bg-blue-950/60 px-3 font-mono text-sm text-white placeholder:text-blue-300/40 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            {sendError && <p className="text-xs text-red-400">{sendError}</p>}
-            {sendSuccess && <p className="text-xs text-emerald-400">{sendSuccess}</p>}
-            <Button
-              onClick={() => void handleSend()}
-              disabled={sending}
-              className="w-full h-11 gradient-blue hover:opacity-90 font-semibold"
-            >
-              {sending ? "Sending…" : "Send"}
-            </Button>
-          </div>
-        </section>
-      )}
-
-      {tab === "card" && (
-        <section className="rounded-2xl border border-blue-400/15 bg-blue-950/30 p-5">
-          <h2 className="text-sm font-semibold text-white">Your card</h2>
-          <p className="mt-1 text-xs text-blue-200/70">
-            A Visa card that spends directly from your {currency} balance.
-          </p>
-
-          {state.card ? (
-            <div className="mt-4 space-y-3">
-              {/* Card visual */}
-              <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-800 via-blue-900 to-blue-700 p-5 text-white shadow-lg">
-                <div className="flex items-start justify-between">
-                  <span className="text-xs font-semibold uppercase tracking-widest opacity-80">
-                    Blue Wallet
-                  </span>
-                  <CreditCard className="h-6 w-6 opacity-80" />
-                </div>
-                <p className="mt-6 font-mono text-lg tracking-widest">
-                  •••• •••• •••• {state.card.last4 ?? "0000"}
-                </p>
-                <div className="mt-4 flex items-end justify-between text-xs">
-                  <span className="opacity-80">
-                    {state.card.expMonth && state.card.expYear
-                      ? `EXP ${String(state.card.expMonth).padStart(2, "0")}/${String(state.card.expYear).slice(-2)}`
-                      : ""}
-                  </span>
-                  <span className="font-semibold uppercase tracking-wide">
-                    {state.card.brand ?? "visa"}
-                  </span>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 text-xs">
-                <span className="rounded-full bg-blue-500/15 px-2 py-0.5 text-blue-200 capitalize">
-                  {state.card.type ?? "virtual"}
-                </span>
-                <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-emerald-300 capitalize">
-                  {state.card.status ?? "active"}
-                </span>
-                {state.card.source === "demo" && (
-                  <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-amber-300">
-                    Demo card
-                  </span>
-                )}
-              </div>
-
-              {(cardNote || state.card.source === "demo") && (
-                <p className="text-xs text-amber-200/80">
-                  {cardNote ??
-                    "This is a demo card. Real cards require the Cards product enabled on your Bridge account."}
-                </p>
-              )}
-
-              {state.card.source === "demo" && (
-                <Button
-                  onClick={() => void handleIssueCard()}
-                  disabled={issuingCard}
-                  variant="outline"
-                  className="w-full h-10 border-blue-400/30 text-blue-200 hover:bg-blue-500/10"
+        <>
+          {/* Segmented control with sliding pill */}
+          <div className="material-flat relative grid grid-cols-3 rounded-full p-1">
+            <div
+              className="absolute inset-y-1 left-1 rounded-full border border-white/10 bg-white/[0.09] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition-transform duration-300 ease-[cubic-bezier(0.2,0,0,1)]"
+              style={{ width: "calc((100% - 0.5rem) / 3)", transform: `translateX(${activeIndex * 100}%)` }}
+            />
+            {tabs.map((t) => {
+              const Icon = t.icon;
+              const active = tab === t.id;
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => setTab(t.id)}
+                  className={`press relative z-10 flex items-center justify-center gap-2 rounded-full py-2.5 text-[13px] font-medium transition-colors ${
+                    active ? "text-white" : "text-white/45 hover:text-white/70"
+                  }`}
                 >
-                  {issuingCard ? "Checking…" : "Try issuing a real card"}
-                </Button>
-              )}
-            </div>
-          ) : (
-            <div className="mt-4 space-y-3">
-              {cardError && <p className="text-xs text-red-400">{cardError}</p>}
-              <Button
-                onClick={() => void handleIssueCard()}
-                disabled={issuingCard}
-                className="w-full h-11 gradient-blue hover:opacity-90 font-semibold"
-              >
-                {issuingCard ? "Issuing…" : "Get your Blue Card"}
-              </Button>
-            </div>
-          )}
-        </section>
-      )}
-      </>
-      ) : (
-        <section className="rounded-2xl border border-blue-400/15 bg-blue-950/30 p-6 text-center">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-500/15">
-            <Lock className="h-6 w-6 text-blue-300" />
+                  <Icon className="h-4 w-4" /> {t.label}
+                </button>
+              );
+            })}
           </div>
-          <h2 className="mt-3 text-sm font-semibold text-white">
-            Send &amp; Receive are locked
-          </h2>
-          <p className="mt-1 text-xs text-blue-200/70">
-            Finish identity verification above to get your bank account number, routing number,
-            and wallet address — then you can send and receive.
+
+          <div key={tab} className="animate-fade-up">
+            {tab === "receive" && (
+              <div className="space-y-4">
+                <section className="material rounded-3xl p-5">
+                  <h2 className="text-[14px] font-semibold text-white">Receive via bank transfer</h2>
+                  <p className="mt-1 text-[12.5px] leading-relaxed text-white/50">
+                    Send a US wire or ACH to these details — it auto-converts to {wallet.currency} in
+                    your wallet.
+                  </p>
+                  {virtualAccount ? (
+                    <div className="mt-4 space-y-2.5">
+                      <CopyField label="Account number" value={virtualAccount.accountNumber} />
+                      <CopyField label="Routing number" value={virtualAccount.routingNumber} />
+                      {virtualAccount.beneficiaryName && (
+                        <CopyField label="Beneficiary" value={virtualAccount.beneficiaryName} />
+                      )}
+                      {virtualAccount.bankName && (
+                        <p className="px-1 text-[12px] text-white/40">Bank: {virtualAccount.bankName}</p>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="mt-4 text-sm text-white/45">No bank account provisioned yet.</p>
+                  )}
+                </section>
+
+                <section className="material rounded-3xl p-5">
+                  <h2 className="text-[14px] font-semibold text-white">Receive on-chain</h2>
+                  <p className="mt-1 text-[12.5px] leading-relaxed text-white/50">
+                    Send {wallet.currency} on {wallet.chain.toUpperCase()} to your wallet address.
+                  </p>
+                  <div className="mt-4">
+                    <CopyField label="Wallet address" value={wallet.address} />
+                  </div>
+                </section>
+              </div>
+            )}
+
+            {tab === "send" && (
+              <section className="material rounded-3xl p-5">
+                <h2 className="text-[14px] font-semibold text-white">Send {wallet.currency}</h2>
+                <div className="mt-4 space-y-3">
+                  <div>
+                    <label className="label-cap text-white/40">Amount ({wallet.currency})</label>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      placeholder="0.00"
+                      value={sendAmount}
+                      onChange={(e) => setSendAmount(e.target.value)}
+                      disabled={sending}
+                      className="material-flat mt-2 h-12 w-full rounded-2xl px-4 text-white tabular-nums placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                    />
+                  </div>
+                  <div>
+                    <label className="label-cap text-white/40">Destination address</label>
+                    <input
+                      type="text"
+                      placeholder="0x…"
+                      value={sendTo}
+                      onChange={(e) => setSendTo(e.target.value)}
+                      disabled={sending}
+                      className="material-flat mt-2 h-12 w-full rounded-2xl px-4 font-mono text-sm text-white placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                    />
+                  </div>
+                  {sendError && <p className="text-xs text-red-400">{sendError}</p>}
+                  {sendSuccess && <p className="text-xs text-emerald-400">{sendSuccess}</p>}
+                  <Button onClick={() => void handleSend()} disabled={sending} className={PRIMARY_BTN}>
+                    {sending ? "Sending…" : "Send"}
+                  </Button>
+                </div>
+              </section>
+            )}
+
+            {tab === "card" && (
+              <section className="material rounded-3xl p-5">
+                <h2 className="text-[14px] font-semibold text-white">Your card</h2>
+                <p className="mt-1 text-[12.5px] leading-relaxed text-white/50">
+                  A Visa card that spends directly from your {currency} balance.
+                </p>
+
+                {state.card ? (
+                  <div className="mt-4 space-y-3">
+                    {/* Card face */}
+                    <div className="hero-card relative aspect-[1.586/1] overflow-hidden rounded-[20px] p-5 text-white">
+                      <div className="pointer-events-none absolute -right-10 -top-10 h-36 w-36 rounded-full bg-white/[0.06] blur-2xl" />
+                      <div className="relative flex items-start justify-between">
+                        <span className="text-[12px] font-semibold tracking-[0.12em] text-white/80">
+                          BLUE WALLET
+                        </span>
+                        <CreditCard className="h-6 w-6 text-white/70" />
+                      </div>
+                      <p className="relative mt-8 font-mono text-[17px] tracking-[0.22em] text-white/90">
+                        ••••&nbsp;&nbsp;••••&nbsp;&nbsp;••••&nbsp;&nbsp;{state.card.last4 ?? "0000"}
+                      </p>
+                      <div className="relative mt-4 flex items-end justify-between text-[11px]">
+                        <span className="text-white/55">
+                          {state.card.expMonth && state.card.expYear
+                            ? `EXP ${String(state.card.expMonth).padStart(2, "0")}/${String(state.card.expYear).slice(-2)}`
+                            : ""}
+                        </span>
+                        <span className="text-[15px] font-semibold italic tracking-tight text-white/90">
+                          {(state.card.brand ?? "visa").toUpperCase()}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 text-[11px]">
+                      <span className="rounded-full border border-white/10 bg-white/[0.05] px-2.5 py-0.5 capitalize text-white/65">
+                        {state.card.type ?? "virtual"}
+                      </span>
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/20 bg-emerald-500/10 px-2.5 py-0.5 capitalize text-emerald-300">
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                        {state.card.status ?? "active"}
+                      </span>
+                      {state.card.source === "demo" && (
+                        <span className="rounded-full border border-amber-400/20 bg-amber-500/10 px-2.5 py-0.5 text-amber-300">
+                          Demo card
+                        </span>
+                      )}
+                    </div>
+
+                    {(cardNote || state.card.source === "demo") && (
+                      <p className="text-[12px] leading-relaxed text-white/45">
+                        {cardNote ??
+                          "This is a demo card. Real cards require the Cards product enabled on your Bridge account."}
+                      </p>
+                    )}
+
+                    {state.card.source === "demo" && (
+                      <button
+                        onClick={() => void handleIssueCard()}
+                        disabled={issuingCard}
+                        className="material-flat press h-11 w-full rounded-2xl text-[13px] font-medium text-white/80 transition hover:bg-white/[0.06] disabled:opacity-60"
+                      >
+                        {issuingCard ? "Checking…" : "Try issuing a real card"}
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="mt-4 space-y-3">
+                    {cardError && <p className="text-xs text-red-400">{cardError}</p>}
+                    <Button
+                      onClick={() => void handleIssueCard()}
+                      disabled={issuingCard}
+                      className={PRIMARY_BTN}
+                    >
+                      {issuingCard ? "Issuing…" : "Get your Blue Card"}
+                    </Button>
+                  </div>
+                )}
+              </section>
+            )}
+          </div>
+        </>
+      ) : (
+        <section className="material rounded-3xl p-6 text-center">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-white/[0.06] ring-1 ring-white/10">
+            <Lock className="h-6 w-6 text-white/60" />
+          </div>
+          <h2 className="mt-3 text-[14px] font-semibold text-white">Send &amp; Receive are locked</h2>
+          <p className="mt-1 text-[12.5px] leading-relaxed text-white/50">
+            Finish identity verification above to get your bank account number, routing number, and
+            wallet address — then you can send and receive.
           </p>
         </section>
       )}
 
       {/* Activity */}
-      <section className="rounded-2xl border border-blue-400/15 bg-blue-950/30 p-5">
-        <h2 className="text-sm font-semibold text-white">Activity</h2>
+      <section className="material rounded-3xl p-5">
+        <h2 className="text-[14px] font-semibold text-white">Activity</h2>
         {transactions.length === 0 ? (
-          <p className="mt-3 text-sm text-blue-200/60">No transactions yet.</p>
+          <p className="mt-3 text-sm text-white/40">No transactions yet.</p>
         ) : (
           <ul className="mt-3 space-y-2">
             {transactions.map((tx) => (
               <li
                 key={tx.id}
-                className="flex items-center justify-between rounded-xl bg-blue-950/40 px-4 py-3"
+                className="material-flat flex items-center justify-between rounded-2xl px-4 py-3"
               >
                 <div className="flex items-center gap-3">
                   <span
-                    className={`flex h-9 w-9 items-center justify-center rounded-lg ${
+                    className={`flex h-9 w-9 items-center justify-center rounded-xl ${
                       tx.direction === "send"
-                        ? "bg-blue-500/15 text-blue-300"
-                        : "bg-emerald-500/15 text-emerald-300"
+                        ? "bg-white/[0.06] text-white/70"
+                        : "bg-emerald-500/10 text-emerald-300"
                     }`}
                   >
                     {tx.direction === "send" ? (
@@ -621,17 +662,17 @@ function PortalInner() {
                     )}
                   </span>
                   <div>
-                    <p className="text-sm font-medium text-white">
+                    <p className="text-[13px] font-medium text-white">
                       {tx.direction === "send" ? "Sent" : "Received"} {tx.amount} {tx.currency}
                     </p>
                     {tx.counterparty && (
-                      <p className="font-mono text-xs text-blue-200/60 truncate max-w-[180px]">
+                      <p className="max-w-[180px] truncate font-mono text-[11px] text-white/40">
                         {tx.counterparty}
                       </p>
                     )}
                   </div>
                 </div>
-                <span className="text-xs text-blue-200/50">{tx.status}</span>
+                <span className="text-[11px] capitalize text-white/40">{tx.status}</span>
               </li>
             ))}
           </ul>
@@ -643,30 +684,9 @@ function PortalInner() {
 
 function CenteredCard({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mx-auto w-full max-w-md rounded-3xl border border-blue-400/15 bg-blue-950/30 p-8 text-center text-blue-100 shadow-xl backdrop-blur">
+    <div className="material mx-auto mt-8 w-full max-w-md rounded-[28px] p-8 text-center text-white/90">
       {children}
     </div>
-  );
-}
-
-function TabButton({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition ${
-        active ? "bg-blue-500/20 text-white" : "text-blue-200/70 hover:text-white"
-      }`}
-    >
-      {children}
-    </button>
   );
 }
 
@@ -674,7 +694,7 @@ function SignOutLink({ onClick }: { onClick: () => void }) {
   return (
     <button
       onClick={() => onClick()}
-      className="mt-5 inline-flex items-center gap-1.5 text-xs text-blue-300/70 hover:text-blue-200"
+      className="press mt-5 inline-flex items-center gap-1.5 text-xs text-white/40 transition hover:text-white/70"
     >
       <LogOut className="h-3.5 w-3.5" /> Sign out
     </button>
