@@ -8,6 +8,7 @@ import {
   ArrowUpRight,
   Check,
   Copy,
+  Lock,
   LogOut,
   ShieldCheck,
   Wallet,
@@ -149,6 +150,31 @@ function PortalInner() {
     void loadPortal();
   }, [ready, authenticated, loadPortal]);
 
+  // Lets a user reach the dashboard before finishing KYC. Persisted per user so
+  // the choice survives reloads; a reminder banner keeps onboarding one tap away.
+  const [skipped, setSkipped] = useState(false);
+  const userId = state?.user?.userId;
+
+  useEffect(() => {
+    if (!userId) return;
+    try {
+      setSkipped(window.localStorage.getItem(`bluewallet:skipped:${userId}`) === "1");
+    } catch {
+      setSkipped(false);
+    }
+  }, [userId]);
+
+  const handleSkip = useCallback(() => {
+    if (userId) {
+      try {
+        window.localStorage.setItem(`bluewallet:skipped:${userId}`, "1");
+      } catch {
+        /* ignore storage errors */
+      }
+    }
+    setSkipped(true);
+  }, [userId]);
+
   const handleSend = useCallback(async () => {
     setSendError(null);
     setSendSuccess(null);
@@ -219,8 +245,8 @@ function PortalInner() {
 
   const { onboarding } = state;
 
-  // --- Needs onboarding / KYC ---
-  if (!onboarding.kycCompleted) {
+  // --- Needs onboarding / KYC (unless the user chose to skip for now) ---
+  if (!onboarding.kycCompleted && !skipped) {
     return (
       <CenteredCard>
         <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-500/15">
@@ -243,13 +269,19 @@ function PortalInner() {
             onError={(message) => setError(message)}
           />
         </div>
+        <button
+          onClick={handleSkip}
+          className="mt-4 block w-full text-sm font-medium text-blue-300 hover:text-blue-200"
+        >
+          Skip for now
+        </button>
         <SignOutLink onClick={logout} />
       </CenteredCard>
     );
   }
 
-  // --- Verified but provisioning still finishing ---
-  if (!onboarding.onboardingCompleted || !state.wallet) {
+  // --- Verified but provisioning still finishing (not applicable when skipped) ---
+  if (onboarding.kycCompleted && (!onboarding.onboardingCompleted || !state.wallet)) {
     return (
       <CenteredCard>
         <h1 className="text-2xl font-bold text-white">Setting up your wallet…</h1>
@@ -264,21 +296,30 @@ function PortalInner() {
     );
   }
 
-  // --- Full dashboard ---
+  // --- Dashboard (wallet may be absent if the user skipped onboarding) ---
   const { wallet, virtualAccount, transactions } = state;
   const isDemo = onboarding.provisionSource === "demo";
+  const onboardingComplete = onboarding.onboardingCompleted && !!wallet;
+  const currency = wallet?.currency ?? "USDC";
+  const chain = wallet?.chain ?? "base";
 
   return (
     <div className="mx-auto w-full max-w-2xl space-y-6">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2 text-sm text-emerald-400">
-          <ShieldCheck className="h-4 w-4" /> Verified
-          {isDemo && (
-            <span className="ml-2 rounded-full bg-amber-500/15 px-2 py-0.5 text-xs text-amber-300">
-              Demo mode
-            </span>
-          )}
-        </div>
+        {onboardingComplete ? (
+          <div className="flex items-center gap-2 text-sm text-emerald-400">
+            <ShieldCheck className="h-4 w-4" /> Verified
+            {isDemo && (
+              <span className="ml-2 rounded-full bg-amber-500/15 px-2 py-0.5 text-xs text-amber-300">
+                Demo mode
+              </span>
+            )}
+          </div>
+        ) : (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/15 px-2.5 py-0.5 text-xs font-medium text-amber-300">
+            Onboarding incomplete
+          </span>
+        )}
         <button
           onClick={() => logout()}
           className="inline-flex items-center gap-1.5 text-sm text-blue-300 hover:text-blue-200"
@@ -287,18 +328,43 @@ function PortalInner() {
         </button>
       </div>
 
+      {/* Finish-onboarding reminder — stays until KYC + provisioning complete */}
+      {!onboardingComplete && (
+        <div className="rounded-2xl border border-amber-400/25 bg-amber-500/10 p-5">
+          <h2 className="text-sm font-semibold text-amber-100">Finish setting up your wallet</h2>
+          <p className="mt-1 text-xs text-amber-200/80">
+            You skipped identity verification. Complete a quick check to unlock your balance,
+            bank account number, routing number, and sending.
+          </p>
+          <div className="mt-4">
+            <PersonaKyc
+              fullName={state.user.fullName ?? undefined}
+              referenceId={state.user.userId}
+              onVerified={() => {
+                setError(null);
+                void loadPortal();
+              }}
+              onError={(message) => setError(message)}
+            />
+          </div>
+          {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
+        </div>
+      )}
+
       {/* Balance */}
       <div className="rounded-3xl bg-gradient-to-br from-blue-500 to-blue-700 p-8 text-white shadow-lg">
         <p className="text-sm font-medium opacity-90">Balance</p>
         <p className="mt-1 text-5xl font-bold tracking-tight">
-          {parseFloat(wallet.balance || "0").toFixed(2)}{" "}
-          <span className="text-2xl font-semibold opacity-80">{wallet.currency}</span>
+          {parseFloat(wallet?.balance || "0").toFixed(2)}{" "}
+          <span className="text-2xl font-semibold opacity-80">{currency}</span>
         </p>
         <p className="mt-3 text-xs opacity-80">
-          {wallet.chain.toUpperCase()} • {state.user.email}
+          {chain.toUpperCase()} • {state.user.email}
         </p>
       </div>
 
+      {onboardingComplete && wallet ? (
+      <>
       {/* Tabs */}
       <div className="flex gap-1 rounded-2xl bg-blue-950/50 p-1">
         <TabButton active={tab === "receive"} onClick={() => setTab("receive")}>
@@ -382,6 +448,21 @@ function PortalInner() {
               {sending ? "Sending…" : "Send"}
             </Button>
           </div>
+        </section>
+      )}
+      </>
+      ) : (
+        <section className="rounded-2xl border border-blue-400/15 bg-blue-950/30 p-6 text-center">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-500/15">
+            <Lock className="h-6 w-6 text-blue-300" />
+          </div>
+          <h2 className="mt-3 text-sm font-semibold text-white">
+            Send &amp; Receive are locked
+          </h2>
+          <p className="mt-1 text-xs text-blue-200/70">
+            Finish identity verification above to get your bank account number, routing number,
+            and wallet address — then you can send and receive.
+          </p>
         </section>
       )}
 
