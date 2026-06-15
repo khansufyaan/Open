@@ -402,6 +402,76 @@ export async function listVirtualAccounts(
 }
 
 /* -------------------------------------------------------------------------- */
+/*                                    Cards                                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Bridge issues stablecoin-backed Visa cards that spend just-in-time from a
+ * linked wallet. The customer needs the `cards` endorsement (full KYC), and the
+ * Cards product must be enabled on the Bridge account.
+ */
+export type BridgeCardAccount = {
+  id: string;
+  status?: string;
+  type?: string;
+  brand?: string;
+  last_4?: string;
+  card_details?: {
+    brand?: string;
+    last_4?: string;
+    last4?: string;
+    expiry_month?: string | number;
+    expiry_year?: string | number;
+  };
+};
+
+/** Best-effort request for the `cards` endorsement on a customer. */
+export async function requestCardsEndorsement(customerId: string): Promise<void> {
+  await bridgeRequest(`/customers/${customerId}/endorsements`, {
+    method: "POST",
+    idempotencyKey: `cards-endorse-${customerId}`,
+    body: { endorsement: "cards" },
+  });
+}
+
+export type CreateCardAccountInput = {
+  customerId: string;
+  walletId?: string;
+  walletAddress: string;
+  chain?: string;
+  currency?: string;
+  idempotencyKey?: string;
+};
+
+export async function createCardAccount(
+  input: CreateCardAccountInput
+): Promise<BridgeCardAccount> {
+  const chain = input.chain ?? process.env.BRIDGE_DEFAULT_CHAIN ?? "base";
+  const currency = input.currency ?? process.env.BRIDGE_TRANSFER_CURRENCY ?? "usdc";
+
+  return bridgeRequest<BridgeCardAccount>(`/customers/${input.customerId}/card_accounts`, {
+    method: "POST",
+    idempotencyKey: input.idempotencyKey,
+    body: {
+      currency,
+      chain,
+      crypto_account: {
+        type: input.walletId ? "bridge_wallet" : "standard",
+        address: input.walletAddress,
+        ...(input.walletId ? { bridge_wallet_id: input.walletId } : {}),
+      },
+    },
+  });
+}
+
+export async function listCardAccounts(customerId: string): Promise<BridgeCardAccount[]> {
+  const response = await bridgeRequest<{ data?: BridgeCardAccount[] }>(
+    `/customers/${customerId}/card_accounts`
+  );
+  return response.data ?? [];
+}
+
+/* -------------------------------------------------------------------------- */
 /*                                  Transfers                                 */
 /* -------------------------------------------------------------------------- */
 

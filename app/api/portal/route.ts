@@ -74,6 +74,7 @@ export async function GET(request: Request) {
           }
         : null,
       virtualAccount: user.virtualAccount ?? null,
+      card: user.card ?? null,
       transactions: user.transactions ?? [],
     });
   } catch (error) {

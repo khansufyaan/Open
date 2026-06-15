@@ -8,6 +8,7 @@ import {
   ArrowUpRight,
   Check,
   Copy,
+  CreditCard,
   Lock,
   LogOut,
   ShieldCheck,
@@ -35,6 +36,16 @@ type PortalState = {
     beneficiaryName?: string | null;
     bankAddress?: string | null;
     paymentRails?: string[];
+  } | null;
+  card: {
+    id: string;
+    brand?: string;
+    last4?: string;
+    expMonth?: number;
+    expYear?: number;
+    status?: string;
+    type?: string;
+    source?: "bridge" | "demo";
   } | null;
   transactions: Array<{
     id: string;
@@ -105,7 +116,7 @@ function PortalInner() {
   const [state, setState] = useState<PortalState | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<"receive" | "send">("receive");
+  const [tab, setTab] = useState<"receive" | "send" | "card">("receive");
 
   // Send form
   const [sendAmount, setSendAmount] = useState("");
@@ -113,6 +124,11 @@ function PortalInner() {
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [sendSuccess, setSendSuccess] = useState<string | null>(null);
+
+  // Card issuance
+  const [issuingCard, setIssuingCard] = useState(false);
+  const [cardError, setCardError] = useState<string | null>(null);
+  const [cardNote, setCardNote] = useState<string | null>(null);
 
   const authedFetch = useCallback(
     async (input: RequestInfo | URL, init: RequestInit = {}) => {
@@ -213,6 +229,25 @@ function PortalInner() {
       setSending(false);
     }
   }, [authedFetch, loadPortal, sendAmount, sendTo]);
+
+  const handleIssueCard = useCallback(async () => {
+    setCardError(null);
+    setCardNote(null);
+    setIssuingCard(true);
+    try {
+      const response = await authedFetch("/api/card", { method: "POST" });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message ?? "Unable to issue a card.");
+      }
+      if (data.note) setCardNote(data.note);
+      await loadPortal();
+    } catch (err) {
+      setCardError(err instanceof Error ? err.message : "Unable to issue a card.");
+    } finally {
+      setIssuingCard(false);
+    }
+  }, [authedFetch, loadPortal]);
 
   // --- Loading Privy ---
   if (!ready) {
@@ -373,6 +408,9 @@ function PortalInner() {
         <TabButton active={tab === "send"} onClick={() => setTab("send")}>
           <ArrowUpRight className="h-4 w-4" /> Send
         </TabButton>
+        <TabButton active={tab === "card"} onClick={() => setTab("card")}>
+          <CreditCard className="h-4 w-4" /> Card
+        </TabButton>
       </div>
 
       {tab === "receive" && (
@@ -448,6 +486,85 @@ function PortalInner() {
               {sending ? "Sending…" : "Send"}
             </Button>
           </div>
+        </section>
+      )}
+
+      {tab === "card" && (
+        <section className="rounded-2xl border border-blue-400/15 bg-blue-950/30 p-5">
+          <h2 className="text-sm font-semibold text-white">Your card</h2>
+          <p className="mt-1 text-xs text-blue-200/70">
+            A Visa card that spends directly from your {currency} balance.
+          </p>
+
+          {state.card ? (
+            <div className="mt-4 space-y-3">
+              {/* Card visual */}
+              <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-800 via-blue-900 to-blue-700 p-5 text-white shadow-lg">
+                <div className="flex items-start justify-between">
+                  <span className="text-xs font-semibold uppercase tracking-widest opacity-80">
+                    Blue Wallet
+                  </span>
+                  <CreditCard className="h-6 w-6 opacity-80" />
+                </div>
+                <p className="mt-6 font-mono text-lg tracking-widest">
+                  •••• •••• •••• {state.card.last4 ?? "0000"}
+                </p>
+                <div className="mt-4 flex items-end justify-between text-xs">
+                  <span className="opacity-80">
+                    {state.card.expMonth && state.card.expYear
+                      ? `EXP ${String(state.card.expMonth).padStart(2, "0")}/${String(state.card.expYear).slice(-2)}`
+                      : ""}
+                  </span>
+                  <span className="font-semibold uppercase tracking-wide">
+                    {state.card.brand ?? "visa"}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 text-xs">
+                <span className="rounded-full bg-blue-500/15 px-2 py-0.5 text-blue-200 capitalize">
+                  {state.card.type ?? "virtual"}
+                </span>
+                <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-emerald-300 capitalize">
+                  {state.card.status ?? "active"}
+                </span>
+                {state.card.source === "demo" && (
+                  <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-amber-300">
+                    Demo card
+                  </span>
+                )}
+              </div>
+
+              {(cardNote || state.card.source === "demo") && (
+                <p className="text-xs text-amber-200/80">
+                  {cardNote ??
+                    "This is a demo card. Real cards require the Cards product enabled on your Bridge account."}
+                </p>
+              )}
+
+              {state.card.source === "demo" && (
+                <Button
+                  onClick={() => void handleIssueCard()}
+                  disabled={issuingCard}
+                  variant="outline"
+                  className="w-full h-10 border-blue-400/30 text-blue-200 hover:bg-blue-500/10"
+                >
+                  {issuingCard ? "Checking…" : "Try issuing a real card"}
+                </Button>
+              )}
+            </div>
+          ) : (
+            <div className="mt-4 space-y-3">
+              {cardError && <p className="text-xs text-red-400">{cardError}</p>}
+              <Button
+                onClick={() => void handleIssueCard()}
+                disabled={issuingCard}
+                className="w-full h-11 gradient-blue hover:opacity-90 font-semibold"
+              >
+                {issuingCard ? "Issuing…" : "Get your Blue Card"}
+              </Button>
+            </div>
+          )}
         </section>
       )}
       </>

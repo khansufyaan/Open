@@ -33,6 +33,17 @@ export type TransactionRecord = {
   createdAt: string;
 };
 
+export type CardDetails = {
+  id: string;
+  brand?: string; // visa
+  last4?: string;
+  expMonth?: number;
+  expYear?: number;
+  status?: string; // active | pending | inactive
+  type?: string; // virtual | physical
+  source?: "bridge" | "demo";
+};
+
 export type UserRecord = {
   /** Privy DID — the partition key. Never derived from request input. */
   userId: string;
@@ -61,6 +72,9 @@ export type UserRecord = {
   virtualAccount?: VirtualAccountDetails;
   provisionSource?: "bridge" | "demo";
   onboardingCompleted?: boolean;
+
+  // --- Card ---
+  card?: CardDetails;
 
   // --- Activity ---
   transactions?: TransactionRecord[];
