@@ -103,19 +103,28 @@ export async function ensureProvisioned(user: UserRecord): Promise<UserRecord> {
   }
 
   if (!next.virtualAccount) {
-    const va = await createVirtualAccount({
-      customerId,
-      walletId: next.bridgeWalletId,
-      idempotencyKey: `va-${next.userId}`,
-    });
-    next = await updateUser(next.userId, {
-      virtualAccountId: va.id,
-      virtualAccount: mapVirtualAccount(va),
-      provisionSource: "bridge",
-    });
+    // A virtual account requires the feature to be enabled on the Bridge
+    // account. If it isn't, don't block onboarding — the wallet still works for
+    // on-chain send/receive and the bank details show as pending.
+    try {
+      const va = await createVirtualAccount({
+        customerId,
+        walletId: next.bridgeWalletId,
+        idempotencyKey: `va-${next.userId}`,
+      });
+      next = await updateUser(next.userId, {
+        virtualAccountId: va.id,
+        virtualAccount: mapVirtualAccount(va),
+        provisionSource: "bridge",
+      });
+    } catch (error) {
+      console.error("[Provision] Virtual account creation failed (continuing):", error);
+    }
   }
 
-  if (!next.onboardingCompleted) {
+  // Onboarding is complete once the wallet exists, even if the virtual account
+  // is still pending.
+  if (next.walletAddress && !next.onboardingCompleted) {
     next = await updateUser(next.userId, { onboardingCompleted: true });
   }
 
