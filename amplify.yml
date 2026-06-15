@@ -5,6 +5,7 @@ frontend:
       commands:
         - npm ci
         - env | grep -e PRIVY_APP_SECRET >> .env.production || true
+        - env | grep -e PRIVY_VERIFICATION_KEY >> .env.production || true
         - env | grep -e BRIDGE_API_KEY >> .env.production || true
         - env | grep -e BRIDGE_COMPANY_CUSTOMER_ID >> .env.production || true
         - env | grep -e BRIDGE_COMPANY_WALLET_ID >> .env.production || true

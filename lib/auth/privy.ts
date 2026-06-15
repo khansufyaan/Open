@@ -65,7 +65,13 @@ export async function verifyAuth(request: Request): Promise<AuthContext | null> 
       process.env.PRIVY_VERIFICATION_KEY
     );
     return { userId: claims.userId };
-  } catch {
+  } catch (error) {
+    // Log the failure (never the token) so an invalid token can be told apart
+    // from a Privy outage in the server logs.
+    console.error(
+      "[Auth] Privy token verification failed:",
+      error instanceof Error ? error.message : error
+    );
     return null;
   }
 }

@@ -270,14 +270,12 @@ export type CreateWalletInput = {
   idempotencyKey?: string;
 };
 
-const DEFAULT_CHAIN = process.env.BRIDGE_DEFAULT_CHAIN ?? "base";
-
 export async function createWallet(input: CreateWalletInput): Promise<BridgeWallet> {
   return bridgeRequest<BridgeWallet>(`/customers/${input.customerId}/wallets`, {
     method: "POST",
     idempotencyKey: input.idempotencyKey,
     body: {
-      chain: input.chain ?? DEFAULT_CHAIN,
+      chain: input.chain ?? process.env.BRIDGE_DEFAULT_CHAIN ?? "base",
       ...(input.tags ? { tags: input.tags } : {}),
     },
   });

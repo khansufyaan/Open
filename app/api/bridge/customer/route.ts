@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
 
+import { GetCommand, PutCommand } from "@aws-sdk/lib-dynamodb";
+
 import { createCustomer, getCustomer, isBridgeConfigured } from "@/lib/bridge/server";
 import { bridgeNotConfigured, handleBridgeError } from "@/lib/bridge/route-helpers";
 import { verifyAuth, unauthorized } from "@/lib/auth/privy";
 import { userOwnsBridgeCustomer } from "@/lib/auth/authorize";
+import { docClient, USERS_TABLE } from "@/lib/db/dynamo";
 
 export async function GET(request: Request) {
   if (!isBridgeConfigured()) {
@@ -60,10 +63,11 @@ export async function POST(request: Request) {
     );
   }
 
-  const { email, fullName, personaInquiryId } = (body ?? {}) as {
+  // Note: a Persona inquiry id is intentionally NOT accepted from the client —
+  // KYC is established server-side via the Bridge KYC flow (kyc-link/kyc-status).
+  const { email, fullName } = (body ?? {}) as {
     email?: string;
     fullName?: string;
-    personaInquiryId?: string;
   };
 
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -74,7 +78,24 @@ export async function POST(request: Request) {
   }
 
   try {
-    const customer = await createCustomer({ email, fullName, personaInquiryId });
+    const customer = await createCustomer({ email, fullName });
+
+    // Persist the customer to the authenticated user so ownership checks resolve.
+    const existing = await docClient.send(
+      new GetCommand({ TableName: USERS_TABLE, Key: { userId: auth.userId } })
+    );
+    await docClient.send(
+      new PutCommand({
+        TableName: USERS_TABLE,
+        Item: {
+          ...(existing.Item ?? {}),
+          userId: auth.userId,
+          bridgeCustomerId: customer.id,
+          updatedAt: new Date().toISOString(),
+        },
+      })
+    );
+
     return NextResponse.json({ customer });
   } catch (error) {
     return handleBridgeError(error);

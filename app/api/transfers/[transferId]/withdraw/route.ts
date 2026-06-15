@@ -270,6 +270,11 @@ export async function POST(request: Request, context: RouteContext) {
  * transfer is in a withdrawable state and echoes the amount.
  */
 export async function GET(request: Request, context: RouteContext) {
+  const auth = await verifyAuth(request);
+  if (!auth) {
+    return unauthorized();
+  }
+
   const resolvedParams = await Promise.resolve(context.params);
   const { transferId } = resolvedParams ?? {};
 
@@ -297,6 +302,13 @@ export async function GET(request: Request, context: RouteContext) {
     return NextResponse.json(
       { error: "TRANSFER_NOT_FOUND", message: "No transfer record matches the supplied transferId." },
       { status: 404 }
+    );
+  }
+
+  if (!(await userOwnsRecipientKey(auth.userId, record.recipientKey))) {
+    return NextResponse.json(
+      { error: "FORBIDDEN", message: "You are not the recipient of this transfer." },
+      { status: 403 }
     );
   }
 
