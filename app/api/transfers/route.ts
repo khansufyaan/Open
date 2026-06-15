@@ -1,13 +1,10 @@
 import { NextResponse } from "next/server";
-import { createHash, randomUUID } from "crypto";
+import { randomUUID } from "crypto";
 
-import { GetCommand, PutCommand, ScanCommand } from "@aws-sdk/lib-dynamodb";
+import { PutCommand, ScanCommand } from "@aws-sdk/lib-dynamodb";
 
-import { createWallet, listWallets, isBridgeConfigured } from "@/lib/bridge/server";
 import { docClient, TRANSFERS_TABLE } from "@/lib/db/dynamo";
-
-const RECIPIENT_WALLETS_TABLE =
-  process.env.RECIPIENT_WALLETS_TABLE ?? "blue-wallet-recipient-wallets";
+import { buildRecipientKey, sanitizeDigits } from "@/lib/recipient-key";
 
 type TransferRecord = {
   recipientKey: string;
@@ -20,7 +17,7 @@ type TransferRecord = {
   amountCents: number;
   amountWithSurchargeCents: number;
   surchargePercentage: number;
-  status: "DEPOSITED" | "PENDING" | "FAILED" | "CLAIMED" | "WITHDRAWN";
+  status: "DEPOSITED" | "PENDING" | "FAILED" | "WITHDRAWN";
   depositMethod: string;
   createdAt: string;
   updatedAt: string;
@@ -29,38 +26,11 @@ type TransferRecord = {
   withdrawalTxHash?: string;
   withdrawalTargetAddress?: string;
   withdrawnAt?: string;
-  walletId?: string;
-  walletAddress?: string;
-  walletCreatedAt?: string;
-  walletName?: string;
-  claimedAt?: string;
-  claimTxHash?: string;
   depositAddress?: string;
-};
-
-type RecipientWalletRecord = {
-  recipientKey: string;
-  walletId: string;
-  walletAddress: string;
-  walletCreatedAt: string;
-  walletName?: string;
 };
 
 function normalizeAddress(address: string): string {
   return address.trim().toLowerCase();
-}
-
-function sanitizeDigits(value: string): string {
-  return value.replace(/\D+/g, "");
-}
-
-function buildRecipientKey(routingNumber: string, accountNumber: string): string {
-  const normalizedRouting = sanitizeDigits(routingNumber);
-  const normalizedAccount = sanitizeDigits(accountNumber);
-
-  return createHash("sha256")
-    .update(`${normalizedRouting}|${normalizedAccount}`, "utf8")
-    .digest("hex");
 }
 
 function getSurchargePercentage(): number {
@@ -72,151 +42,6 @@ function getSurchargePercentage(): number {
 function applySurcharge(amountCents: number, surchargePercentage: number): number {
   const surchargeAmount = Math.round(amountCents * (surchargePercentage / 100));
   return amountCents + surchargeAmount;
-}
-
-async function findWalletInTransfers(recipientKey: string): Promise<RecipientWalletRecord | null> {
-  const response = await docClient.send(
-    new ScanCommand({
-      TableName: TRANSFERS_TABLE,
-      FilterExpression: "recipientKey = :recipientKey AND attribute_exists(walletAddress)",
-      ExpressionAttributeValues: {
-        ":recipientKey": recipientKey,
-      },
-      Limit: 1,
-    })
-  );
-
-  const fallbackItem = response.Items?.[0] as TransferRecord | undefined;
-  if (!fallbackItem?.walletId || !fallbackItem.walletAddress) {
-    return null;
-  }
-
-  return {
-    recipientKey,
-    walletId: fallbackItem.walletId,
-    walletAddress: fallbackItem.walletAddress,
-    walletCreatedAt: fallbackItem.walletCreatedAt ?? fallbackItem.createdAt,
-    walletName: fallbackItem.walletName,
-  };
-}
-
-async function getRecipientWallet(recipientKey: string): Promise<RecipientWalletRecord | null> {
-  try {
-    const response = await docClient.send(
-      new GetCommand({
-        TableName: RECIPIENT_WALLETS_TABLE,
-        Key: { recipientKey },
-      })
-    );
-
-    if (!response.Item) {
-      return null;
-    }
-
-    const item = response.Item as RecipientWalletRecord;
-    if (!item.walletId || !item.walletAddress) {
-      return null;
-    }
-
-    return item;
-  } catch (error) {
-    if (error instanceof Error && error.name === "ResourceNotFoundException") {
-      return findWalletInTransfers(recipientKey);
-    }
-
-    console.error("Failed to fetch recipient wallet", error);
-    throw new Error("Unable to load recipient wallet mapping.");
-  }
-}
-
-async function saveRecipientWallet(record: RecipientWalletRecord): Promise<void> {
-  try {
-    await docClient.send(
-      new PutCommand({
-        TableName: RECIPIENT_WALLETS_TABLE,
-        Item: record,
-        ConditionExpression: "attribute_not_exists(recipientKey)",
-      })
-    );
-  } catch (error) {
-    if (error instanceof Error && error.name === "ConditionalCheckFailedException") {
-      // Another request inserted the wallet first. Swallow so caller refetches.
-      return;
-    }
-
-    if (error instanceof Error && error.name === "ResourceNotFoundException") {
-      console.warn("Recipient wallet table missing; skip persistence");
-      return;
-    }
-
-    console.error("Failed to persist recipient wallet", error);
-    throw new Error("Unable to persist recipient wallet mapping.");
-  }
-}
-
-async function createRecipientWallet(recipientKey: string): Promise<RecipientWalletRecord> {
-  if (!isBridgeConfigured()) {
-    throw new Error("Bridge is not configured for wallet provisioning.");
-  }
-
-  const companyCustomerId = process.env.BRIDGE_COMPANY_CUSTOMER_ID;
-
-  if (!companyCustomerId) {
-    throw new Error(
-      "BRIDGE_COMPANY_CUSTOMER_ID is not configured. Recipient wallets are custodied under the company Bridge customer."
-    );
-  }
-
-  const walletTag = `recipient:${recipientKey}`;
-  const walletName = `Recipient-${recipientKey.slice(0, 12)}`;
-
-  // Reuse an existing tagged wallet if one was already provisioned for this recipient.
-  const existingWallets = await listWallets(companyCustomerId);
-  const matched = existingWallets.find((wallet) => wallet.tags?.includes(walletTag));
-
-  const wallet =
-    matched ??
-    (await createWallet({
-      customerId: companyCustomerId,
-      tags: [walletTag],
-      idempotencyKey: `wallet:${walletTag}`,
-    }));
-
-  if (!wallet.address) {
-    throw new Error("Bridge wallet does not expose an address.");
-  }
-
-  const record: RecipientWalletRecord = {
-    recipientKey,
-    walletId: wallet.id,
-    walletAddress: wallet.address.toLowerCase(),
-    walletCreatedAt: wallet.created_at ?? new Date().toISOString(),
-    walletName,
-  };
-
-  await saveRecipientWallet(record);
-
-  return record;
-}
-
-async function ensureRecipientWallet(recipientKey: string): Promise<RecipientWalletRecord> {
-  const existing = await getRecipientWallet(recipientKey);
-  if (existing) {
-    return existing;
-  }
-
-  try {
-    return await createRecipientWallet(recipientKey);
-  } catch (error) {
-    if (error instanceof Error && error.message.includes("persist recipient wallet")) {
-      const fallback = await getRecipientWallet(recipientKey);
-      if (fallback) {
-        return fallback;
-      }
-    }
-
-    throw error instanceof Error ? error : new Error("Failed to provision recipient wallet.");
-  }
 }
 
 export async function POST(request: Request) {
@@ -305,24 +130,6 @@ export async function POST(request: Request) {
   const amountWithSurchargeCents = applySurcharge(amountCents, surchargePercentage);
   const amountWithSurcharge = (amountWithSurchargeCents / 100).toFixed(2);
 
-  let recipientWallet: RecipientWalletRecord;
-
-  try {
-    recipientWallet = await ensureRecipientWallet(recipientKey);
-  } catch (error) {
-    console.error("Recipient wallet provisioning failed", error);
-    return NextResponse.json(
-      {
-        error: "WALLET_PROVISIONING_FAILED",
-        message:
-          error instanceof Error
-            ? error.message
-            : "Unable to provision a recipient wallet.",
-      },
-      { status: 500 }
-    );
-  }
-
   try {
     const timestamp = new Date().toISOString();
 
@@ -342,12 +149,6 @@ export async function POST(request: Request) {
       createdAt: timestamp,
       updatedAt: timestamp,
       fundingStatus: "PENDING",
-      walletId: recipientWallet.walletId,
-      walletAddress: recipientWallet.walletAddress,
-      walletCreatedAt: recipientWallet.walletCreatedAt,
-      walletName: recipientWallet.walletName,
-      claimedAt: undefined,
-      claimTxHash: undefined,
       depositAddress: companyWalletAddress,
     };
 
@@ -363,18 +164,12 @@ export async function POST(request: Request) {
       transfer: {
         transferId: record.transferId,
         depositAddress: companyWalletAddress,
-        walletAddress: record.walletAddress,
         amount: record.amount,
         amountWithSurcharge, // User sees this at signature
         surchargePercentage,
         status: record.status,
         fundingStatus: record.fundingStatus ?? "PENDING",
         fundingTxHash: record.fundingTxHash ?? null,
-        recipientWalletAddress: record.walletAddress,
-        recipientWalletId: record.walletId,
-        recipientWalletName: record.walletName ?? null,
-        claimTxHash: record.claimTxHash ?? null,
-        claimedAt: record.claimedAt ?? null,
       },
     });
   } catch (error) {
@@ -482,10 +277,6 @@ export async function GET(request: Request) {
       transfers: items.map((item) => ({
         transferId: item.transferId,
         depositAddress: process.env.COMPANY_WALLET_ADDRESS,
-        walletAddress: item.walletAddress ?? null,
-        recipientWalletAddress: item.walletAddress ?? null,
-        recipientWalletId: item.walletId ?? null,
-        recipientWalletName: item.walletName ?? null,
         amount: item.amount,
         status: item.status,
         depositMethod: item.depositMethod === "simulated" ? "ach" : item.depositMethod,
@@ -493,8 +284,6 @@ export async function GET(request: Request) {
         recipientLast4: item.recipientLast4,
         fundingStatus: item.fundingStatus ?? null,
         fundingTxHash: item.fundingTxHash ?? null,
-        claimTxHash: item.claimTxHash ?? null,
-        claimedAt: item.claimedAt ?? null,
         withdrawalTxHash: item.withdrawalTxHash ?? null,
         withdrawalTargetAddress: item.withdrawalTargetAddress ?? null,
         withdrawnAt: item.withdrawnAt ?? null,

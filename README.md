@@ -51,10 +51,10 @@ public/         # Static assets
 
 ## Authentication & Verification Flow
 
-1. **Sign in with Privy** – the user authenticates with Privy (email OTP / wallet). The client sends the Privy access token as a Bearer header; `POST /api/auth/session` verifies it server-side and resolves `userId` from the Privy DID. All mutating API routes verify this token — `userId` is never trusted from request input. Claim/withdraw additionally check the caller owns the transfer's recipient bank account.
+1. **Sign in with Privy** – the user authenticates with Privy (email OTP / wallet). The client sends the Privy access token as a Bearer header; `POST /api/auth/session` verifies it server-side and resolves `userId` from the Privy DID. All mutating API routes verify this token — `userId` is never trusted from request input. Withdraw additionally checks the caller owns the transfer's recipient bank account.
 2. **Verify identity with Bridge KYC** – `POST /api/bridge/kyc-link` requests a short-lived `bridge.withpersona.com` link (Persona-powered) which the client opens. `GET /api/bridge/kyc-status` then reads the **authoritative** result back from Bridge; the client never asserts its own verification status. On first approval the user's Bridge customer + custodial wallet are provisioned.
 3. **Link a bank account** – Plaid supplies bank identity and ACH coordinates so inbound transfers can be routed to the right recipient.
-4. **Claim & withdraw** – recipients claim deposits from the company vault into their managed Bridge wallet, then withdraw to any external Base address. Both are executed as Bridge transfers; Bridge custodies the keys and broadcasts on-chain.
+4. **Withdraw** – recipients withdraw deposited funds directly from the company vault to any external Base address. Executed as a Bridge transfer; Bridge custodies the keys and broadcasts on-chain. Because a Bridge transfer obscures the originating (vault) address, there is no intermediate "claim" step into a per-recipient wallet.
 
 ### Backend integration map
 
@@ -64,7 +64,7 @@ public/         # Static assets
 | Identity / KYC | Bridge (Persona-powered) | `app/api/bridge/kyc-link`, `app/api/bridge/kyc-status`, `components/bridge-kyc-button.tsx` |
 | Custodial wallets | Bridge | `app/api/bridge/wallet`, `lib/bridge/server.ts` |
 | Customers | Bridge | `app/api/bridge/customer` |
-| Transfers (claim/withdraw) | Bridge | `app/api/transfers/[transferId]/{claim,withdraw}` |
+| Transfers (withdraw) | Bridge | `app/api/transfers/[transferId]/withdraw` |
 | Bank linking | Plaid | `app/api/plaid/*` |
 
 ## Scripts

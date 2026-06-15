@@ -141,14 +141,11 @@ export function AuthFlow() {
   const [transferError, setTransferError] = useState<string | null>(null);
   const [plaidHydrated, setPlaidHydrated] = useState(false);
 
-  // Claim / withdraw
+  // Withdraw
   const [withdrawInputs, setWithdrawInputs] = useState<Record<string, string>>({});
   const [withdrawLoading, setWithdrawLoading] = useState<Record<string, boolean>>({});
   const [withdrawErrors, setWithdrawErrors] = useState<Record<string, string | null>>({});
   const [withdrawSuccess, setWithdrawSuccess] = useState<Record<string, string | null>>({});
-  const [claimLoading, setClaimLoading] = useState<Record<string, boolean>>({});
-  const [claimErrors, setClaimErrors] = useState<Record<string, string | null>>({});
-  const [claimSuccess, setClaimSuccess] = useState<Record<string, string | null>>({});
 
   const authedFetch = useCallback(
     async (input: RequestInfo | URL, init: RequestInit = {}) => {
@@ -533,55 +530,6 @@ export function AuthFlow() {
     setWithdrawSuccess((previous) => ({ ...previous, [transferId]: null }));
   }, []);
 
-  const handleClaim = useCallback(
-    async (summary: TransferSummary) => {
-      setClaimErrors((previous) => ({ ...previous, [summary.transferId]: null }));
-      setClaimSuccess((previous) => ({ ...previous, [summary.transferId]: null }));
-      setClaimLoading((previous) => ({ ...previous, [summary.transferId]: true }));
-
-      try {
-        const response = await authedFetch(`/api/transfers/${summary.transferId}/claim`, {
-          method: "POST",
-        });
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.message ?? "Failed to claim transfer.");
-        }
-
-        const txHash = typeof data.txHash === "string" ? data.txHash : null;
-
-        setClaimSuccess((previous) => ({ ...previous, [summary.transferId]: txHash }));
-        setTransferSummaries((previous) =>
-          previous.map((entry) =>
-            entry.transferId === summary.transferId
-              ? {
-                  ...entry,
-                  status: "CLAIMED",
-                  claimTxHash: txHash,
-                  claimedAt: new Date().toISOString(),
-                  walletAddress: entry.recipientWalletAddress ?? entry.walletAddress ?? null,
-                }
-              : entry
-          )
-        );
-
-        if (linkedAccounts.length > 0) {
-          await fetchTransfersForAccounts(linkedAccounts);
-        }
-      } catch (error) {
-        setClaimErrors((previous) => ({
-          ...previous,
-          [summary.transferId]:
-            error instanceof Error ? error.message : "Failed to claim transfer. Please retry.",
-        }));
-      } finally {
-        setClaimLoading((previous) => ({ ...previous, [summary.transferId]: false }));
-      }
-    },
-    [authedFetch, fetchTransfersForAccounts, linkedAccounts]
-  );
-
   const handleWithdraw = useCallback(
     async (summary: TransferSummary) => {
       const destinationInput = (withdrawInputs[summary.transferId] ?? "").trim();
@@ -746,10 +694,6 @@ export function AuthFlow() {
           linkedAccounts={linkedAccounts}
           transferSummaries={transferSummaries}
           isTransfersLoading={isTransfersLoading}
-          onClaim={handleClaim}
-          claimLoading={claimLoading}
-          claimErrors={claimErrors}
-          claimSuccess={claimSuccess}
           onRefreshTransfers={fetchTransfersForAccounts.bind(null, linkedAccounts)}
           onWithdraw={handleWithdraw}
           withdrawInputs={withdrawInputs}

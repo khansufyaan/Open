@@ -88,11 +88,13 @@ export async function POST(request: Request) {
     // through and mint a new one so the client never opens an expired URL.
     if (existingLinkId) {
       const existingLink = await getKycLink(existingLinkId);
-      const ageMs = existingLink.created_at
-        ? Date.now() - Date.parse(existingLink.created_at)
+      const createdAt = existingLink.created_at ? Date.parse(existingLink.created_at) : NaN;
+      // Unparseable/absent timestamp → treat as expired and mint a fresh link.
+      const ageMs = Number.isFinite(createdAt)
+        ? Date.now() - createdAt
         : Number.POSITIVE_INFINITY;
 
-      if (Number.isFinite(ageMs) && ageMs < KYC_LINK_TTL_MS) {
+      if (ageMs < KYC_LINK_TTL_MS) {
         return NextResponse.json({
           url: existingLink.kyc_link,
           tosLink: existingLink.tos_link ?? null,

@@ -22,14 +22,10 @@ type TransferRecord = {
   recipientAccount: string;
   amount: string;
   amountCents: number;
-  status: "DEPOSITED" | "PENDING" | "FAILED" | "CLAIMED" | "WITHDRAWN";
-  walletId?: string;
-  walletAddress?: string;
+  status: "DEPOSITED" | "PENDING" | "FAILED" | "WITHDRAWN";
   withdrawalTxHash?: string;
   withdrawalTargetAddress?: string;
   withdrawnAt?: string;
-  claimTxHash?: string;
-  claimedAt?: string;
   depositAddress?: string;
 };
 
@@ -39,6 +35,10 @@ function normalizeAddress(address: string): string {
 
 function isHexAddress(value: string): boolean {
   return /^0x[a-fA-F0-9]{40}$/.test(value);
+}
+
+function isValidAmount(amount: string): boolean {
+  return /^\d+(\.\d+)?$/.test(amount) && Number(amount) > 0;
 }
 
 async function findTransferById(transferId: string): Promise<TransferRecord | null> {
@@ -52,20 +52,6 @@ async function findTransferById(transferId: string): Promise<TransferRecord | nu
 
   const record = response.Items?.[0] as TransferRecord | undefined;
   return record ?? null;
-}
-
-/**
- * Resolves which Bridge wallet currently holds the funds for a transfer.
- * Claimed transfers sit in the recipient's managed wallet; unclaimed
- * (DEPOSITED) transfers are still in the company vault.
- */
-function resolveSourceWalletId(record: TransferRecord): string | null {
-  if (record.status === "CLAIMED") {
-    // Claimed funds live in the recipient's managed wallet. Never silently fall
-    // back to the company vault — that would withdraw the wrong funds.
-    return record.walletId ?? null;
-  }
-  return process.env.BRIDGE_COMPANY_WALLET_ID ?? null;
 }
 
 type RouteParams = { transferId: string };
@@ -152,33 +138,35 @@ export async function POST(request: Request, context: RouteContext) {
     );
   }
 
-  if (record.status !== "CLAIMED" && record.status !== "DEPOSITED") {
+  if (record.status !== "DEPOSITED") {
     return NextResponse.json(
       {
         error: "TRANSFER_NOT_READY",
-        message: `Transfer status must be DEPOSITED or CLAIMED to withdraw (current: ${record.status}).`,
+        message: `Transfer status must be DEPOSITED to withdraw (current: ${record.status}).`,
       },
       { status: 409 }
     );
   }
 
-  const amountValue = Number(record.amount);
-  if (!Number.isFinite(amountValue) || amountValue <= 0) {
+  if (!isValidAmount(record.amount)) {
     return NextResponse.json(
-      { error: "INVALID_AMOUNT", message: "Transfer amount must be a positive number." },
+      { error: "INVALID_AMOUNT", message: "Transfer amount must be a positive decimal." },
       { status: 400 }
     );
   }
 
-  const sourceWalletId = resolveSourceWalletId(record);
+  // Funds are held in the company vault. A Bridge transfer obscures the source
+  // address on-chain, so we send directly from the vault to the recipient's
+  // external address — no intermediate per-recipient wallet or claim step.
+  const sourceWalletId = process.env.BRIDGE_COMPANY_WALLET_ID;
 
   if (!sourceWalletId) {
     return NextResponse.json(
       {
-        error: "SOURCE_WALLET_MISSING",
-        message: "Unable to resolve the Bridge wallet holding these funds.",
+        error: "COMPANY_WALLET_NOT_CONFIGURED",
+        message: "Set BRIDGE_COMPANY_WALLET_ID for the company vault wallet.",
       },
-      { status: 409 }
+      { status: 500 }
     );
   }
 
@@ -215,12 +203,11 @@ export async function POST(request: Request, context: RouteContext) {
         },
         UpdateExpression:
           "SET #status = :withdrawn, withdrawalTxHash = :txHash, bridgeWithdrawTransferId = :bridgeId, withdrawalTargetAddress = :targetAddress, withdrawnAt = :withdrawnAt, updatedAt = :updatedAt",
-        ConditionExpression: "(#status = :deposited OR #status = :claimed)",
+        ConditionExpression: "#status = :deposited",
         ExpressionAttributeNames: { "#status": "status" },
         ExpressionAttributeValues: {
           ":withdrawn": "WITHDRAWN",
           ":deposited": "DEPOSITED",
-          ":claimed": "CLAIMED",
           ":txHash": onchainHash ?? null,
           ":bridgeId": transfer.id,
           ":targetAddress": targetAddressInput,
@@ -312,11 +299,11 @@ export async function GET(request: Request, context: RouteContext) {
     );
   }
 
-  if (record.status !== "CLAIMED" && record.status !== "DEPOSITED") {
+  if (record.status !== "DEPOSITED") {
     return NextResponse.json(
       {
         error: "TRANSFER_NOT_READY",
-        message: `Transfer status must be DEPOSITED or CLAIMED to quote a withdrawal (current: ${record.status}).`,
+        message: `Transfer status must be DEPOSITED to quote a withdrawal (current: ${record.status}).`,
       },
       { status: 409 }
     );
