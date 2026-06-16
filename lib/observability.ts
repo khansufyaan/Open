@@ -30,10 +30,24 @@ export const log = {
 
 /**
  * Capture an error for observability. Structured-logs always; forwards to
- * Sentry when SENTRY_DSN is set. Never throws.
+ * Sentry when a DSN is configured (loaded lazily so it stays out of bundles
+ * that don't need it). Never throws.
  */
 export function captureError(context: string, error: unknown, fields?: Fields) {
   const message = error instanceof Error ? error.message : String(error);
   const stack = error instanceof Error ? error.stack : undefined;
   log.error(`[${context}] ${message}`, { ...fields, stack });
+
+  if (process.env.SENTRY_DSN || process.env.NEXT_PUBLIC_SENTRY_DSN) {
+    import("@sentry/nextjs")
+      .then((Sentry) => {
+        Sentry.captureException(error instanceof Error ? error : new Error(message), {
+          tags: { context },
+          extra: fields,
+        });
+      })
+      .catch(() => {
+        /* observability must never break the request path */
+      });
+  }
 }

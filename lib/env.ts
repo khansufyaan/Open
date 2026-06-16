@@ -32,6 +32,10 @@ const schema = z.object({
   // Persona (embedded KYC)
   NEXT_PUBLIC_PERSONA_TEMPLATE_ID: z.string().optional(),
   NEXT_PUBLIC_PERSONA_ENVIRONMENT_ID: z.string().optional(),
+
+  // Sentry (observability) — all optional; SDK no-ops without a DSN.
+  SENTRY_DSN: z.string().url().optional(),
+  NEXT_PUBLIC_SENTRY_DSN: z.string().url().optional(),
 });
 
 export type Env = z.infer<typeof schema>;

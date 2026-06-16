@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { withSentryConfig } from "@sentry/nextjs";
 
 /**
  * Content-Security-Policy.
@@ -54,4 +55,13 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+// Wrap with Sentry. Source-map upload only runs when SENTRY_AUTH_TOKEN + org/
+// project are set (CI/release builds); otherwise this is a no-op at build time
+// and the runtime SDK stays inert until a DSN is configured.
+export default withSentryConfig(nextConfig, {
+  org: process.env.SENTRY_ORG,
+  project: process.env.SENTRY_PROJECT,
+  silent: true,
+  widenClientFileUpload: true,
+  disableLogger: true,
+});
