@@ -9,6 +9,7 @@ import {
 import { handleBridgeError, isDemoAutoApprove } from "@/lib/bridge/route-helpers";
 import { getUser, updateUser } from "@/lib/db/store";
 import { requireAuth } from "@/lib/auth/privy";
+import { enforceRateLimit } from "@/lib/ratelimit";
 
 // Bridge KYC links are short-lived; refresh rather than hand back a dead URL.
 const KYC_LINK_TTL_MS = 30 * 60 * 1000;
@@ -25,6 +26,9 @@ export async function POST(request: Request) {
     return auth;
   }
   const userId = auth.userId;
+
+  const limited = await enforceRateLimit("kyc", userId);
+  if (limited) return limited;
 
   let body: unknown = null;
   try {

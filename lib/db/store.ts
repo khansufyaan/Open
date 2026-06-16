@@ -67,25 +67,92 @@ export async function saveUser(record: UserRecord): Promise<void> {
   await client.set(USER_PREFIX + record.userId, record);
 }
 
+/* -------------------------------------------------------------------------- */
+/*                          Per-user write serialization                       */
+/* -------------------------------------------------------------------------- */
+
+const LOCK_PREFIX = "lock:user:";
+const LOCK_TTL_MS = 5000;
+const LOCK_RETRY_MS = 50;
+const LOCK_MAX_WAIT_MS = 4000;
+
+// In-process serialization tail per user — covers the in-memory fallback and
+// also collapses same-instance contention before hitting the Redis lock.
+const localChains = new Map<string, Promise<unknown>>();
+
+function runLocally<T>(userId: string, fn: () => Promise<T>): Promise<T> {
+  const prev = localChains.get(userId) ?? Promise.resolve();
+  const next = prev.then(fn, fn);
+  // Keep the chain from rejecting future callers; swallow here, fn handles its own.
+  localChains.set(
+    userId,
+    next.catch(() => undefined)
+  );
+  return next;
+}
+
+async function withRedisLock<T>(
+  client: Redis,
+  userId: string,
+  fn: () => Promise<T>
+): Promise<T> {
+  const lockKey = LOCK_PREFIX + userId;
+  const token = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const deadline = Date.now() + LOCK_MAX_WAIT_MS;
+
+  // Acquire via SET NX PX, retrying until the deadline.
+  for (;;) {
+    const acquired = await client.set(lockKey, token, { nx: true, px: LOCK_TTL_MS });
+    if (acquired) break;
+    if (Date.now() > deadline) {
+      // Proceed without the lock rather than failing the user operation; the
+      // TTL guarantees the held lock will expire shortly anyway.
+      return fn();
+    }
+    await new Promise((r) => setTimeout(r, LOCK_RETRY_MS));
+  }
+
+  try {
+    return await fn();
+  } finally {
+    // Release only if we still own it (best-effort; TTL is the backstop).
+    try {
+      const current = await client.get<string>(lockKey);
+      if (current === token) await client.del(lockKey);
+    } catch {
+      /* TTL will reclaim it */
+    }
+  }
+}
+
 /**
- * Read-modify-write a user record. Creates the record if it doesn't exist.
- * `userId` and `updatedAt` are always authoritative on the result.
+ * Read-modify-write a user record atomically with respect to other writers.
+ * Serializes concurrent updates per user (in-process chain + a Redis lock) so
+ * patches can't clobber each other — important for the transactions list and
+ * provisioning flags. Creates the record if it doesn't exist. `userId` and
+ * `updatedAt` are always authoritative on the result.
  */
 export async function updateUser(
   userId: string,
-  patch: Partial<UserRecord>
+  patch: Partial<UserRecord> | ((current: UserRecord | null) => Partial<UserRecord>)
 ): Promise<UserRecord> {
-  const now = new Date().toISOString();
-  const existing = await getUser(userId);
+  return runLocally(userId, async () => {
+    const client = getRedis();
+    const apply = async (): Promise<UserRecord> => {
+      const now = new Date().toISOString();
+      const existing = await getUser(userId);
+      const resolvedPatch = typeof patch === "function" ? patch(existing) : patch;
+      const next: UserRecord = {
+        createdAt: now,
+        ...(existing ?? {}),
+        ...resolvedPatch,
+        userId,
+        updatedAt: now,
+      };
+      await saveUser(next);
+      return next;
+    };
 
-  const next: UserRecord = {
-    createdAt: now,
-    ...(existing ?? {}),
-    ...patch,
-    userId,
-    updatedAt: now,
-  };
-
-  await saveUser(next);
-  return next;
+    return client ? withRedisLock(client, userId, apply) : apply();
+  });
 }

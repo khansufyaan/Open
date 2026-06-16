@@ -11,10 +11,11 @@ import {
   BridgeRequestError,
 } from "@/lib/bridge/server";
 import { handleBridgeError } from "@/lib/bridge/route-helpers";
+import { enforceRateLimit } from "@/lib/ratelimit";
+import { recordAudit } from "@/lib/audit";
+import { captureError } from "@/lib/observability";
+import { isValidAmount, isValidAddress, isValidRequestId } from "@/lib/validation";
 import type { TransactionRecord } from "@/types/user";
-
-const HEX_ADDRESS_REGEX = /^0x[a-fA-F0-9]{40}$/;
-const AMOUNT_REGEX = /^\d+(\.\d{1,6})?$/;
 
 /**
  * Sends USDC from the user's Bridge custodial wallet to an external on-chain
@@ -27,6 +28,9 @@ export async function POST(request: Request) {
   }
   const userId = auth.userId;
 
+  const limited = await enforceRateLimit("send", userId);
+  if (limited) return limited;
+
   let body: unknown = null;
   try {
     body = await request.json();
@@ -34,16 +38,24 @@ export async function POST(request: Request) {
     body = null;
   }
 
-  const { amount, toAddress } = (body ?? {}) as { amount?: string; toAddress?: string };
+  const { amount, toAddress, requestId } = (body ?? {}) as {
+    amount?: string;
+    toAddress?: string;
+    requestId?: string;
+  };
 
-  if (typeof amount !== "string" || !AMOUNT_REGEX.test(amount.trim()) || parseFloat(amount) <= 0) {
+  // A valid client requestId makes the transfer idempotent; otherwise fall back
+  // to a server-generated id (no cross-request dedupe, but still well-formed).
+  const idemId = isValidRequestId(requestId) ? requestId : randomUUID();
+
+  if (!isValidAmount(amount)) {
     return NextResponse.json(
       { error: "INVALID_AMOUNT", message: "Enter a valid amount." },
       { status: 400 }
     );
   }
 
-  if (typeof toAddress !== "string" || !HEX_ADDRESS_REGEX.test(toAddress.trim())) {
+  if (!isValidAddress(toAddress)) {
     return NextResponse.json(
       { error: "INVALID_ADDRESS", message: "Enter a valid destination address (0x…)." },
       { status: 400 }
@@ -64,9 +76,11 @@ export async function POST(request: Request) {
   const currency = process.env.BRIDGE_TRANSFER_CURRENCY ?? "usdc";
   const timestamp = new Date().toISOString();
 
+  // Atomically prepend the transaction so concurrent writers can't clobber it.
   const recordTransaction = async (tx: TransactionRecord) => {
-    const transactions = [tx, ...(user.transactions ?? [])].slice(0, 50);
-    await updateUser(userId, { transactions });
+    await updateUser(userId, (current) => ({
+      transactions: [tx, ...(current?.transactions ?? [])].slice(0, 50),
+    }));
   };
 
   // --- Demo mode: synthesize a transfer so the UX is testable ---
@@ -82,6 +96,11 @@ export async function POST(request: Request) {
       createdAt: timestamp,
     };
     await recordTransaction(tx);
+    await recordAudit({
+      userId,
+      action: "send.demo_submitted",
+      detail: { amount: cleanAmount, currency: currency.toUpperCase(), to: cleanAddress },
+    });
     return NextResponse.json({ success: true, demo: true, transaction: tx });
   }
 
@@ -89,7 +108,7 @@ export async function POST(request: Request) {
     const transfer = await createTransfer({
       amount: cleanAmount,
       onBehalfOf: user.bridgeCustomerId,
-      idempotencyKey: `send-${userId}-${randomUUID()}`,
+      idempotencyKey: `send-${userId}-${idemId}`,
       source: {
         payment_rail: chain,
         currency,
@@ -113,13 +132,24 @@ export async function POST(request: Request) {
       createdAt: timestamp,
     };
     await recordTransaction(tx);
+    await recordAudit({
+      userId,
+      action: "send.submitted",
+      detail: {
+        transferId: transfer.id,
+        amount: cleanAmount,
+        currency: currency.toUpperCase(),
+        to: cleanAddress,
+        state: transfer.state,
+      },
+    });
 
     return NextResponse.json({ success: true, transaction: tx });
   } catch (error) {
     if (error instanceof BridgeRequestError) {
       return handleBridgeError(error, "Send");
     }
-    console.error("[Send] Failed to create transfer:", error);
+    captureError("Send", error, { userId });
     return NextResponse.json(
       { error: "SEND_FAILED", message: "Unable to send funds." },
       { status: 500 }

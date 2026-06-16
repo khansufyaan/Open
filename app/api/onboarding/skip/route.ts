@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getUser, updateUser } from "@/lib/db/store";
 import { provisionDemo } from "@/lib/bridge/provision";
 import { requireAuth } from "@/lib/auth/privy";
+import { enforceRateLimit } from "@/lib/ratelimit";
 
 /**
  * Lets a user skip identity verification and still reach a working dashboard.
@@ -16,6 +17,9 @@ export async function POST(request: Request) {
     return auth;
   }
   const userId = auth.userId;
+
+  const limited = await enforceRateLimit("default", userId);
+  if (limited) return limited;
 
   try {
     const existing = await getUser(userId);

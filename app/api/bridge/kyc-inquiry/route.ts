@@ -12,8 +12,8 @@ import { handleBridgeError, isDemoAutoApprove } from "@/lib/bridge/route-helpers
 import { getUser, updateUser } from "@/lib/db/store";
 import { ensureProvisioned } from "@/lib/bridge/provision";
 import { requireAuth } from "@/lib/auth/privy";
-
-const INQUIRY_REGEX = /^inq_[A-Za-z0-9]+$/;
+import { enforceRateLimit } from "@/lib/ratelimit";
+import { isValidInquiryId } from "@/lib/validation";
 
 /**
  * Ingests a completed embedded-Persona inquiry into Bridge.
@@ -31,6 +31,9 @@ export async function POST(request: Request) {
   }
   const userId = auth.userId;
 
+  const limited = await enforceRateLimit("kyc", userId);
+  if (limited) return limited;
+
   let body: unknown = null;
   try {
     body = await request.json();
@@ -39,7 +42,7 @@ export async function POST(request: Request) {
   }
 
   const { inquiryId } = (body ?? {}) as { inquiryId?: string };
-  if (typeof inquiryId !== "string" || !INQUIRY_REGEX.test(inquiryId)) {
+  if (!isValidInquiryId(inquiryId)) {
     return NextResponse.json(
       { error: "INVALID_INQUIRY", message: "A valid Persona inquiry id is required." },
       { status: 400 }

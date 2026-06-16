@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import Image from "next/image";
 import { usePrivy } from "@privy-io/react-auth";
+import { toast } from "sonner";
 import {
   ArrowDownToLine,
   ArrowUpRight,
@@ -106,10 +107,11 @@ function CopyButton({ value, label }: { value: string; label?: string }) {
       onClick={() => {
         void navigator.clipboard.writeText(value).then(() => {
           setCopied(true);
+          toast.success(`${label ?? "Value"} copied`);
           setTimeout(() => setCopied(false), 1500);
         });
       }}
-      className="press inline-flex items-center gap-1 text-[12px] font-medium text-white/55 transition hover:text-white"
+      className="press inline-flex items-center gap-1 rounded-md text-[12px] font-medium text-white/60 transition hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60"
       aria-label={`Copy ${label ?? "value"}`}
     >
       {copied ? (
@@ -126,7 +128,7 @@ function CopyField({ label, value }: { label: string; value: string }) {
   return (
     <div className="material-flat rounded-2xl px-4 py-3">
       <div className="flex items-center justify-between gap-3">
-        <span className="label-cap text-white/40">{label}</span>
+        <span className="label-cap text-white/55">{label}</span>
         <CopyButton value={value} label={label} />
       </div>
       <p className="mt-2 break-all font-mono text-[13px] tracking-tight text-white/90">{value}</p>
@@ -165,6 +167,9 @@ function PortalInner() {
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [sendSuccess, setSendSuccess] = useState<string | null>(null);
+  // Stable idempotency token for the in-flight send — reused across retries so
+  // the server/Bridge dedupe, and reset only after a successful submit.
+  const sendRequestId = useRef<string | null>(null);
 
   // Card issuance
   const [issuingCard, setIssuingCard] = useState(false);
@@ -256,27 +261,42 @@ function PortalInner() {
       return;
     }
 
+    // Generate the idempotency token once per logical send; keep it on retry.
+    if (!sendRequestId.current) {
+      sendRequestId.current =
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    }
+
     setSending(true);
     try {
       const response = await authedFetch("/api/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ amount: sendAmount.trim(), toAddress: sendTo.trim() }),
+        body: JSON.stringify({
+          amount: sendAmount.trim(),
+          toAddress: sendTo.trim(),
+          requestId: sendRequestId.current,
+        }),
       });
       const data = await response.json();
       if (!response.ok) {
         throw new Error(data.message ?? "Unable to send funds.");
       }
-      setSendSuccess(
-        data.demo
-          ? "Demo transfer recorded. Connect Bridge to move real funds."
-          : "Transfer submitted."
-      );
+      const message = data.demo
+        ? "Demo transfer recorded. Connect Bridge to move real funds."
+        : "Transfer submitted.";
+      setSendSuccess(message);
+      toast.success(message);
+      sendRequestId.current = null; // New token for the next send.
       setSendAmount("");
       setSendTo("");
       await loadPortal();
     } catch (err) {
-      setSendError(err instanceof Error ? err.message : "Unable to send funds.");
+      const message = err instanceof Error ? err.message : "Unable to send funds.";
+      setSendError(message);
+      toast.error(message);
     } finally {
       setSending(false);
     }
@@ -293,9 +313,12 @@ function PortalInner() {
         throw new Error(data.message ?? "Unable to issue a card.");
       }
       if (data.note) setCardNote(data.note);
+      toast.success(data.card?.source === "demo" ? "Demo card ready" : "Card issued");
       await loadPortal();
     } catch (err) {
-      setCardError(err instanceof Error ? err.message : "Unable to issue a card.");
+      const message = err instanceof Error ? err.message : "Unable to issue a card.";
+      setCardError(message);
+      toast.error(message);
     } finally {
       setIssuingCard(false);
     }
@@ -328,7 +351,8 @@ function PortalInner() {
 
   // --- Authenticated, loading portal ---
   if (!state) {
-    return <CenteredCard>{error ?? "Loading your account…"}</CenteredCard>;
+    if (error) return <CenteredCard>{error}</CenteredCard>;
+    return <DashboardSkeleton />;
   }
 
   const { onboarding } = state;
@@ -486,14 +510,19 @@ function PortalInner() {
           </span>
           <span className="text-[17px] font-medium text-white/55">{currency}</span>
         </div>
-        <p className="relative mt-5 truncate text-[12px] text-white/40">{state.user.email}</p>
+        <p className="relative mt-5 truncate text-[12px] text-white/55">{state.user.email}</p>
       </div>
 
       {provisioned && wallet ? (
         <>
           {/* Segmented control with sliding pill */}
-          <div className="material-flat relative grid grid-cols-3 rounded-full p-1">
+          <div
+            role="tablist"
+            aria-label="Wallet actions"
+            className="material-flat relative grid grid-cols-3 rounded-full p-1"
+          >
             <div
+              aria-hidden
               className="absolute inset-y-1 left-1 rounded-full border border-white/10 bg-white/[0.09] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition-transform duration-300 ease-[cubic-bezier(0.2,0,0,1)]"
               style={{ width: "calc((100% - 0.5rem) / 3)", transform: `translateX(${activeIndex * 100}%)` }}
             />
@@ -503,9 +532,11 @@ function PortalInner() {
               return (
                 <button
                   key={t.id}
+                  role="tab"
+                  aria-selected={active}
                   onClick={() => setTab(t.id)}
-                  className={`press relative z-10 flex items-center justify-center gap-2 rounded-full py-2.5 text-[13px] font-medium transition-colors ${
-                    active ? "text-white" : "text-white/45 hover:text-white/70"
+                  className={`press relative z-10 flex items-center justify-center gap-2 rounded-full py-2.5 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60 ${
+                    active ? "text-white" : "text-white/55 hover:text-white/80"
                   }`}
                 >
                   <Icon className="h-4 w-4" /> {t.label}
@@ -519,7 +550,7 @@ function PortalInner() {
               <div className="space-y-4">
                 <section className="material rounded-3xl p-5">
                   <h2 className="text-[14px] font-semibold text-white">Receive via bank transfer</h2>
-                  <p className="mt-1 text-[12.5px] leading-relaxed text-white/50">
+                  <p className="mt-1 text-[12.5px] leading-relaxed text-white/60">
                     Send a US wire or ACH to these details — it auto-converts to {wallet.currency} in
                     your wallet.
                   </p>
@@ -531,7 +562,7 @@ function PortalInner() {
                         <CopyField label="Beneficiary" value={virtualAccount.beneficiaryName} />
                       )}
                       {virtualAccount.bankName && (
-                        <p className="px-1 text-[12px] text-white/40">Bank: {virtualAccount.bankName}</p>
+                        <p className="px-1 text-[12px] text-white/55">Bank: {virtualAccount.bankName}</p>
                       )}
                     </div>
                   ) : (
@@ -541,7 +572,7 @@ function PortalInner() {
 
                 <section className="material rounded-3xl p-5">
                   <h2 className="text-[14px] font-semibold text-white">Receive on-chain</h2>
-                  <p className="mt-1 text-[12.5px] leading-relaxed text-white/50">
+                  <p className="mt-1 text-[12.5px] leading-relaxed text-white/60">
                     Send {wallet.currency} on {wallet.chain.toUpperCase()} to your wallet address.
                   </p>
                   <div className="mt-4">
@@ -556,7 +587,7 @@ function PortalInner() {
                 <h2 className="text-[14px] font-semibold text-white">Send {wallet.currency}</h2>
                 <div className="mt-4 space-y-3">
                   <div>
-                    <label className="label-cap text-white/40">Amount ({wallet.currency})</label>
+                    <label className="label-cap text-white/55">Amount ({wallet.currency})</label>
                     <input
                       type="text"
                       inputMode="decimal"
@@ -568,7 +599,7 @@ function PortalInner() {
                     />
                   </div>
                   <div>
-                    <label className="label-cap text-white/40">Destination address</label>
+                    <label className="label-cap text-white/55">Destination address</label>
                     <input
                       type="text"
                       placeholder="0x…"
@@ -590,7 +621,7 @@ function PortalInner() {
             {tab === "card" && (
               <section className="material rounded-3xl p-5">
                 <h2 className="text-[14px] font-semibold text-white">Your card</h2>
-                <p className="mt-1 text-[12.5px] leading-relaxed text-white/50">
+                <p className="mt-1 text-[12.5px] leading-relaxed text-white/60">
                   A Visa card that spends directly from your {currency} balance.
                 </p>
 
@@ -674,7 +705,7 @@ function PortalInner() {
             <Lock className="h-6 w-6 text-white/60" />
           </div>
           <h2 className="mt-3 text-[14px] font-semibold text-white">Send &amp; Receive are locked</h2>
-          <p className="mt-1 text-[12.5px] leading-relaxed text-white/50">
+          <p className="mt-1 text-[12.5px] leading-relaxed text-white/60">
             Finish identity verification above to get your bank account number, routing number, and
             wallet address — then you can send and receive.
           </p>
@@ -685,7 +716,7 @@ function PortalInner() {
       <section className="material rounded-3xl p-5">
         <h2 className="text-[14px] font-semibold text-white">Activity</h2>
         {transactions.length === 0 ? (
-          <p className="mt-3 text-sm text-white/40">No transactions yet.</p>
+          <p className="mt-3 text-sm text-white/55">No transactions yet.</p>
         ) : (
           <ul className="mt-3 space-y-2">
             {transactions.map((tx) => (
@@ -712,18 +743,33 @@ function PortalInner() {
                       {tx.direction === "send" ? "Sent" : "Received"} {tx.amount} {tx.currency}
                     </p>
                     {tx.counterparty && (
-                      <p className="max-w-[180px] truncate font-mono text-[11px] text-white/40">
+                      <p className="max-w-[180px] truncate font-mono text-[11px] text-white/55">
                         {tx.counterparty}
                       </p>
                     )}
                   </div>
                 </div>
-                <span className="text-[11px] capitalize text-white/40">{tx.status}</span>
+                <span className="text-[11px] capitalize text-white/55">{tx.status}</span>
               </li>
             ))}
           </ul>
         )}
       </section>
+    </div>
+  );
+}
+
+function DashboardSkeleton() {
+  return (
+    <div className="mx-auto w-full max-w-md space-y-5" aria-busy="true" aria-label="Loading your wallet">
+      <div className="flex items-center justify-between">
+        <div className="h-6 w-24 animate-pulse rounded-full bg-white/[0.06]" />
+        <div className="h-5 w-16 animate-pulse rounded-full bg-white/[0.06]" />
+      </div>
+      <div className="h-40 animate-pulse rounded-[28px] bg-white/[0.05]" />
+      <div className="h-12 animate-pulse rounded-full bg-white/[0.05]" />
+      <div className="h-44 animate-pulse rounded-3xl bg-white/[0.05]" />
+      <div className="h-28 animate-pulse rounded-3xl bg-white/[0.05]" />
     </div>
   );
 }
@@ -740,7 +786,7 @@ function SignOutLink({ onClick }: { onClick: () => void }) {
   return (
     <button
       onClick={() => onClick()}
-      className="press mt-5 inline-flex items-center gap-1.5 text-xs text-white/40 transition hover:text-white/70"
+      className="press mt-5 inline-flex items-center gap-1.5 text-xs text-white/55 transition hover:text-white/80"
     >
       <LogOut className="h-3.5 w-3.5" /> Sign out
     </button>

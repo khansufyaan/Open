@@ -3,6 +3,9 @@ import { NextResponse } from "next/server";
 import { getUser } from "@/lib/db/store";
 import { issueCard } from "@/lib/bridge/cards";
 import { requireAuth } from "@/lib/auth/privy";
+import { enforceRateLimit } from "@/lib/ratelimit";
+import { recordAudit } from "@/lib/audit";
+import { captureError } from "@/lib/observability";
 
 /**
  * Issues (or returns) a stablecoin-backed card for the authenticated user.
@@ -14,6 +17,9 @@ export async function POST(request: Request) {
     return auth;
   }
   const userId = auth.userId;
+
+  const limited = await enforceRateLimit("card", userId);
+  if (limited) return limited;
 
   const user = await getUser(userId);
   if (!user) {
@@ -32,9 +38,14 @@ export async function POST(request: Request) {
 
   try {
     const result = await issueCard(user);
+    await recordAudit({
+      userId,
+      action: "card.issued",
+      detail: { source: result.card.source, last4: result.card.last4, status: result.card.status },
+    });
     return NextResponse.json({ success: true, card: result.card, note: result.note ?? null });
   } catch (error) {
-    console.error("[Card] Failed to issue card:", error);
+    captureError("Card", error, { userId });
     return NextResponse.json(
       { error: "CARD_FAILED", message: "Unable to issue a card." },
       { status: 500 }
