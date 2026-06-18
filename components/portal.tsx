@@ -180,7 +180,7 @@ function ActionSheet({
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent
-        className="material max-h-[88vh] overflow-y-auto border-white/10 bg-[oklch(0.17_0.02_256)] p-5 text-white top-auto bottom-0 left-0 max-w-full translate-x-0 translate-y-0 rounded-3xl rounded-b-none sm:top-1/2 sm:left-1/2 sm:bottom-auto sm:max-w-md sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-3xl"
+        className="max-h-[88vh] overflow-y-auto border border-white/10 bg-[oklch(0.17_0.018_256)] p-5 text-white shadow-2xl top-auto bottom-0 left-0 max-w-full translate-x-0 translate-y-0 rounded-3xl rounded-b-none border-x-0 border-b-0 sm:top-1/2 sm:left-1/2 sm:bottom-auto sm:max-w-md sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-3xl sm:border"
       >
         <DialogTitle className="text-[15px] font-semibold text-white">{title}</DialogTitle>
         <div className="mt-2">{children}</div>
