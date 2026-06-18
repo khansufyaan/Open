@@ -50,6 +50,21 @@ type PortalState = {
     type?: string;
     source?: "bridge" | "demo";
   } | null;
+  autoSwap: {
+    targetCurrency: string;
+    chain: string;
+    addresses: Array<{
+      id: string;
+      address: string;
+      chain: string;
+      currency: string;
+      destinationCurrency: string;
+      source?: "bridge" | "demo";
+    }>;
+    source?: "bridge" | "demo";
+    updatedAt: string;
+  } | null;
+  supportedTargets?: string[];
   transactions: Array<{
     id: string;
     direction: "send" | "receive";
@@ -175,6 +190,10 @@ function PortalInner() {
   const [issuingCard, setIssuingCard] = useState(false);
   const [cardError, setCardError] = useState<string | null>(null);
   const [cardNote, setCardNote] = useState<string | null>(null);
+
+  // Auto-convert deposits
+  const [autoSwapSaving, setAutoSwapSaving] = useState<string | null>(null);
+  const [autoSwapNote, setAutoSwapNote] = useState<string | null>(null);
 
   // Animated balance — called unconditionally to respect the rules of hooks.
   const balanceNum = state?.wallet ? parseFloat(state.wallet.balance || "0") : 0;
@@ -323,6 +342,32 @@ function PortalInner() {
       setIssuingCard(false);
     }
   }, [authedFetch, loadPortal]);
+
+  const handleSetAutoSwap = useCallback(
+    async (currency: string) => {
+      setAutoSwapNote(null);
+      setAutoSwapSaving(currency);
+      try {
+        const response = await authedFetch("/api/autoswap", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ currency }),
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.message ?? "Unable to set auto-convert.");
+        }
+        if (data.note) setAutoSwapNote(data.note);
+        toast.success(`Deposits now auto-convert to ${currency.toUpperCase()}`);
+        await loadPortal();
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Unable to set auto-convert.");
+      } finally {
+        setAutoSwapSaving(null);
+      }
+    },
+    [authedFetch, loadPortal]
+  );
 
   // --- Loading Privy ---
   if (!ready) {
@@ -578,6 +623,73 @@ function PortalInner() {
                   <div className="mt-4">
                     <CopyField label="Wallet address" value={wallet.address} />
                   </div>
+                </section>
+
+                {/* Auto-convert deposits */}
+                <section className="material rounded-3xl p-5">
+                  <h2 className="text-[14px] font-semibold text-white">Auto-convert deposits</h2>
+                  <p className="mt-1 text-[12.5px] leading-relaxed text-white/60">
+                    Pick the stablecoin you want to hold. Any other stablecoin sent to the addresses
+                    below is automatically converted to it on deposit — no approval needed.
+                  </p>
+
+                  {/* Target picker */}
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {(state.supportedTargets ?? ["usdc"]).map((c) => {
+                      const active = state.autoSwap?.targetCurrency === c;
+                      const saving = autoSwapSaving === c;
+                      return (
+                        <button
+                          key={c}
+                          onClick={() => void handleSetAutoSwap(c)}
+                          disabled={Boolean(autoSwapSaving)}
+                          aria-pressed={active}
+                          className={`press rounded-full border px-3.5 py-1.5 text-[12px] font-semibold uppercase tracking-wide transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60 disabled:opacity-60 ${
+                            active
+                              ? "border-blue-400/40 bg-blue-500/20 text-white"
+                              : "border-white/10 bg-white/[0.04] text-white/65 hover:text-white"
+                          }`}
+                        >
+                          {saving ? "…" : c}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {state.autoSwap && state.autoSwap.addresses.length > 0 ? (
+                    <div className="mt-4 space-y-2.5">
+                      <p className="text-[12px] text-white/55">
+                        Deposits below arrive as{" "}
+                        <span className="font-semibold text-white/80">
+                          {state.autoSwap.targetCurrency.toUpperCase()}
+                        </span>{" "}
+                        on {state.autoSwap.chain.toUpperCase()}:
+                      </p>
+                      {state.autoSwap.addresses.map((a) => (
+                        <CopyField
+                          key={a.id}
+                          label={`${a.currency.toUpperCase()} → ${a.destinationCurrency.toUpperCase()}`}
+                          value={a.address}
+                        />
+                      ))}
+                    </div>
+                  ) : state.autoSwap ? (
+                    <p className="mt-4 text-[12px] text-white/55">
+                      Holding {state.autoSwap.targetCurrency.toUpperCase()} — other stablecoins will
+                      convert to it.
+                    </p>
+                  ) : (
+                    <p className="mt-4 text-[12px] text-white/55">
+                      Choose a coin above to generate your auto-converting deposit addresses.
+                    </p>
+                  )}
+
+                  {(autoSwapNote || state.autoSwap?.source === "demo") && (
+                    <p className="mt-3 text-[12px] leading-relaxed text-amber-200/80">
+                      {autoSwapNote ??
+                        "These are demo addresses. Real auto-convert needs Bridge liquidation addresses enabled on your account."}
+                    </p>
+                  )}
                 </section>
               </div>
             )}

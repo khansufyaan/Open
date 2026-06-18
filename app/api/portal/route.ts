@@ -8,6 +8,7 @@ import {
   getWalletCurrencyBalance,
   isBridgeConfigured,
 } from "@/lib/bridge/server";
+import { SUPPORTED_TARGET_CURRENCIES } from "@/lib/bridge/autoswap";
 import type { UserRecord } from "@/types/user";
 
 /**
@@ -76,6 +77,8 @@ export async function GET(request: Request) {
         : null,
       virtualAccount: user.virtualAccount ?? null,
       card: user.card ?? null,
+      autoSwap: user.autoSwap ?? null,
+      supportedTargets: SUPPORTED_TARGET_CURRENCIES,
       transactions: user.transactions ?? [],
     });
   } catch (error) {

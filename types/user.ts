@@ -33,6 +33,28 @@ export type TransactionRecord = {
   createdAt: string;
 };
 
+/** A Bridge liquidation address: deposits here auto-convert to a target coin. */
+export type LiquidationDepositAddress = {
+  id: string;
+  address: string;
+  chain: string;
+  /** The stablecoin this address accepts on deposit. */
+  currency: string;
+  /** The stablecoin deposits are auto-converted into. */
+  destinationCurrency: string;
+  source?: "bridge" | "demo";
+};
+
+export type AutoSwapConfig = {
+  /** The user's chosen target stablecoin (e.g. "usdc"). */
+  targetCurrency: string;
+  chain: string;
+  /** One deposit address per accepted source coin (excluding the target). */
+  addresses: LiquidationDepositAddress[];
+  source?: "bridge" | "demo";
+  updatedAt: string;
+};
+
 export type CardDetails = {
   id: string;
   brand?: string; // visa
@@ -77,6 +99,9 @@ export type UserRecord = {
 
   // --- Card ---
   card?: CardDetails;
+
+  // --- Auto-convert deposits (Bridge liquidation addresses) ---
+  autoSwap?: AutoSwapConfig;
 
   // --- Activity ---
   transactions?: TransactionRecord[];
