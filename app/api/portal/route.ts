@@ -91,6 +91,7 @@ export async function GET(request: Request) {
       virtualAccount: user.virtualAccount ?? null,
       card: user.card ?? null,
       autoSwap: user.autoSwap ?? null,
+      externalAccount: user.externalAccount ?? null,
       supportedTargets: SUPPORTED_TARGET_CURRENCIES,
       transactions: user.transactions ?? [],
     });

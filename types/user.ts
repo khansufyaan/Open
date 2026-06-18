@@ -22,8 +22,8 @@ export type VirtualAccountDetails = {
 
 export type TransactionRecord = {
   id: string;
-  /** "send" = pay out from this wallet; "receive" = inbound deposit. */
-  direction: "send" | "receive";
+  /** "send" = crypto out; "receive" = inbound; "withdraw" = fiat cash-out (burn). */
+  direction: "send" | "receive" | "withdraw";
   amount: string;
   currency: string;
   /** External address or counterparty. */
@@ -31,6 +31,15 @@ export type TransactionRecord = {
   status: string;
   txHash?: string | null;
   createdAt: string;
+};
+
+/** A linked external (fiat) bank account used for cash-out / burn. */
+export type ExternalAccountDetails = {
+  id: string;
+  bankName?: string;
+  last4?: string;
+  accountHolder?: string;
+  source?: "bridge" | "demo";
 };
 
 /**
@@ -95,6 +104,9 @@ export type UserRecord = {
 
   // --- Auto-convert deposits (Bridge liquidation addresses) ---
   autoSwap?: AutoSwapConfig;
+
+  // --- Cash out / burn (linked fiat bank account) ---
+  externalAccount?: ExternalAccountDetails;
 
   // --- Activity ---
   transactions?: TransactionRecord[];

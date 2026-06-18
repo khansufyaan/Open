@@ -29,3 +29,17 @@ export function isValidRequestId(id: unknown): id is string {
 export function isValidInquiryId(id: unknown): id is string {
   return typeof id === "string" && PERSONA_INQUIRY_REGEX.test(id);
 }
+
+/** US ABA routing number: exactly 9 digits. */
+export function isValidRoutingNumber(value: unknown): value is string {
+  return typeof value === "string" && /^\d{9}$/.test(value.trim());
+}
+
+/** US bank account number: 4–17 digits. */
+export function isValidAccountNumber(value: unknown): value is string {
+  return typeof value === "string" && /^\d{4,17}$/.test(value.trim());
+}
+
+export function last4(value: string): string {
+  return value.trim().slice(-4);
+}

@@ -481,17 +481,80 @@ export async function listCardAccounts(customerId: string): Promise<BridgeCardAc
 }
 
 /* -------------------------------------------------------------------------- */
+/*                             External Accounts                              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * An external account is a linked fiat bank account a customer can cash out to
+ * (the destination for an off-ramp / "burn" transfer).
+ */
+export type BridgeExternalAccount = {
+  id: string;
+  bank_name?: string;
+  account_owner_name?: string;
+  last_4?: string;
+  account?: { last_4?: string };
+};
+
+export type CreateExternalAccountInput = {
+  customerId: string;
+  accountOwnerName: string;
+  accountNumber: string;
+  routingNumber: string;
+  bankName?: string;
+  currency?: string;
+  idempotencyKey?: string;
+};
+
+export async function createExternalAccount(
+  input: CreateExternalAccountInput
+): Promise<BridgeExternalAccount> {
+  return bridgeRequest<BridgeExternalAccount>(
+    `/customers/${input.customerId}/external_accounts`,
+    {
+      method: "POST",
+      idempotencyKey: input.idempotencyKey,
+      body: {
+        currency: input.currency ?? "usd",
+        account_owner_name: input.accountOwnerName,
+        account_type: "us",
+        bank_name: input.bankName,
+        account: {
+          account_number: input.accountNumber,
+          routing_number: input.routingNumber,
+        },
+      },
+    }
+  );
+}
+
+export async function listExternalAccounts(
+  customerId: string
+): Promise<BridgeExternalAccount[]> {
+  const response = await bridgeRequest<{ data?: BridgeExternalAccount[] }>(
+    `/customers/${customerId}/external_accounts`
+  );
+  return response.data ?? [];
+}
+
+export function getExternalAccountLast4(account: BridgeExternalAccount): string | undefined {
+  return account.last_4 ?? account.account?.last_4;
+}
+
+/* -------------------------------------------------------------------------- */
 /*                                  Transfers                                 */
 /* -------------------------------------------------------------------------- */
 
 export type TransferEndpoint = {
-  payment_rail: string; // e.g. "base"
-  currency: string; // e.g. "usdc"
+  payment_rail: string; // e.g. "base", or "ach"/"wire" for fiat
+  currency: string; // e.g. "usdc", or "usd" for fiat
   /** Provide for an external/on-chain destination. */
   to_address?: string;
   from_address?: string;
   /** Provide for a Bridge-custodied wallet source/destination. */
   bridge_wallet_id?: string;
+  /** Provide for a fiat destination (cash-out to a linked bank account). */
+  external_account_id?: string;
 };
 
 export type BridgeTransfer = {

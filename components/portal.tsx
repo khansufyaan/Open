@@ -11,6 +11,7 @@ import {
   Check,
   Copy,
   CreditCard,
+  Landmark,
   Lock,
   LogOut,
   ShieldCheck,
@@ -18,7 +19,10 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { PersonaKyc } from "@/components/persona-kyc";
+
+type TxDirection = "send" | "receive" | "withdraw";
 
 type PortalState = {
   user: { userId: string; email: string | null; fullName: string | null };
@@ -57,10 +61,17 @@ type PortalState = {
     lastSweepAt?: string;
     updatedAt: string;
   } | null;
+  externalAccount: {
+    id: string;
+    bankName?: string;
+    last4?: string;
+    accountHolder?: string;
+    source?: "bridge" | "demo";
+  } | null;
   supportedTargets?: string[];
   transactions: Array<{
     id: string;
-    direction: "send" | "receive";
+    direction: TxDirection;
     amount: string;
     currency: string;
     counterparty?: string | null;
@@ -70,10 +81,20 @@ type PortalState = {
   }>;
 };
 
+type ActionId = "mint" | "send" | "burn" | "card";
+
 const HEX_ADDRESS_REGEX = /^0x[a-fA-F0-9]{40}$/;
 
 const PRIMARY_BTN =
   "w-full h-12 rounded-2xl gradient-blue font-semibold press hover:opacity-95 disabled:opacity-60";
+const INPUT_CLS =
+  "material-flat mt-2 h-12 w-full rounded-2xl px-4 text-white placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-blue-500/50";
+
+function newRequestId(): string {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
 
 const prefersReducedMotion = () =>
   typeof window !== "undefined" &&
@@ -144,6 +165,65 @@ function CopyField({ label, value }: { label: string; value: string }) {
   );
 }
 
+/** Bottom-sheet on mobile, centered modal on desktop. */
+function ActionSheet({
+  open,
+  onClose,
+  title,
+  children,
+}: {
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent
+        className="material max-h-[88vh] overflow-y-auto border-white/10 bg-[oklch(0.17_0.02_256)] p-5 text-white top-auto bottom-0 left-0 max-w-full translate-x-0 translate-y-0 rounded-3xl rounded-b-none sm:top-1/2 sm:left-1/2 sm:bottom-auto sm:max-w-md sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-3xl"
+      >
+        <DialogTitle className="text-[15px] font-semibold text-white">{title}</DialogTitle>
+        <div className="mt-2">{children}</div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function CoinPicker({
+  coins,
+  selected,
+  onSelect,
+  disabled,
+}: {
+  coins: string[];
+  selected: string;
+  onSelect: (c: string) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {coins.map((c) => {
+        const active = selected === c;
+        return (
+          <button
+            key={c}
+            onClick={() => onSelect(c)}
+            disabled={disabled}
+            aria-pressed={active}
+            className={`press rounded-full border px-3.5 py-1.5 text-[12px] font-semibold uppercase tracking-wide transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60 disabled:opacity-60 ${
+              active
+                ? "border-blue-400/40 bg-blue-500/20 text-white"
+                : "border-white/10 bg-white/[0.04] text-white/65 hover:text-white"
+            }`}
+          >
+            {c}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function Portal() {
   // Privy must be configured for the provider (and usePrivy) to work. Guard here
   // so /app renders a clear message instead of crashing before keys are wired.
@@ -167,21 +247,34 @@ function PortalInner() {
   const [state, setState] = useState<PortalState | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<"receive" | "send" | "card">("receive");
+
+  // Which action sheet is open.
+  const [action, setAction] = useState<ActionId | null>(null);
+  const [mintTab, setMintTab] = useState<"bank" | "crypto">("bank");
 
   // Send form
   const [sendAmount, setSendAmount] = useState("");
   const [sendTo, setSendTo] = useState("");
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
-  const [sendSuccess, setSendSuccess] = useState<string | null>(null);
-  // Stable idempotency token for the in-flight send — reused across retries so
-  // the server/Bridge dedupe, and reset only after a successful submit.
   const sendRequestId = useRef<string | null>(null);
+
+  // Burn (cash out) form
+  const [burnCurrency, setBurnCurrency] = useState("");
+  const [burnAmount, setBurnAmount] = useState("");
+  const [burning, setBurning] = useState(false);
+  const burnRequestId = useRef<string | null>(null);
+
+  // Link-bank form
+  const [showBankForm, setShowBankForm] = useState(false);
+  const [bankHolder, setBankHolder] = useState("");
+  const [bankAccount, setBankAccount] = useState("");
+  const [bankRouting, setBankRouting] = useState("");
+  const [bankName, setBankName] = useState("");
+  const [linkingBank, setLinkingBank] = useState(false);
 
   // Card issuance
   const [issuingCard, setIssuingCard] = useState(false);
-  const [cardError, setCardError] = useState<string | null>(null);
   const [cardNote, setCardNote] = useState<string | null>(null);
 
   // Auto-convert deposits
@@ -208,9 +301,7 @@ function PortalInner() {
     try {
       const response = await authedFetch("/api/portal");
       const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.message ?? "Unable to load your portal.");
-      }
+      if (!response.ok) throw new Error(data.message ?? "Unable to load your portal.");
       setState(data as PortalState);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load your portal.");
@@ -251,7 +342,6 @@ function PortalInner() {
       }
     }
     setSkipped(true);
-    // Demo-provision a wallet + bank account so the dashboard is populated.
     try {
       await authedFetch("/api/onboarding/skip", { method: "POST" });
       await loadPortal();
@@ -262,8 +352,6 @@ function PortalInner() {
 
   const handleSend = useCallback(async () => {
     setSendError(null);
-    setSendSuccess(null);
-
     if (!sendAmount.trim() || parseFloat(sendAmount) <= 0) {
       setSendError("Enter a valid amount.");
       return;
@@ -272,14 +360,7 @@ function PortalInner() {
       setSendError("Enter a valid destination address (0x…).");
       return;
     }
-
-    // Generate the idempotency token once per logical send; keep it on retry.
-    if (!sendRequestId.current) {
-      sendRequestId.current =
-        typeof crypto !== "undefined" && "randomUUID" in crypto
-          ? crypto.randomUUID()
-          : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    }
+    if (!sendRequestId.current) sendRequestId.current = newRequestId();
 
     setSending(true);
     try {
@@ -293,17 +374,14 @@ function PortalInner() {
         }),
       });
       const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.message ?? "Unable to send funds.");
-      }
-      const message = data.demo
-        ? "Demo transfer recorded. Connect Bridge to move real funds."
-        : "Transfer submitted.";
-      setSendSuccess(message);
-      toast.success(message);
-      sendRequestId.current = null; // New token for the next send.
+      if (!response.ok) throw new Error(data.message ?? "Unable to send funds.");
+      toast.success(
+        data.demo ? "Demo transfer recorded. Connect Bridge to move real funds." : "Transfer submitted."
+      );
+      sendRequestId.current = null;
       setSendAmount("");
       setSendTo("");
+      setAction(null);
       await loadPortal();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unable to send funds.";
@@ -314,23 +392,80 @@ function PortalInner() {
     }
   }, [authedFetch, loadPortal, sendAmount, sendTo]);
 
+  const handleBurn = useCallback(
+    async (currency: string) => {
+      if (!burnAmount.trim() || parseFloat(burnAmount) <= 0) {
+        toast.error("Enter a valid amount.");
+        return;
+      }
+      if (!burnRequestId.current) burnRequestId.current = newRequestId();
+
+      setBurning(true);
+      try {
+        const response = await authedFetch("/api/burn", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            currency,
+            amount: burnAmount.trim(),
+            requestId: burnRequestId.current,
+          }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.message ?? "Unable to cash out.");
+        toast.success(data.demo ? "Demo cash-out recorded." : "Cash-out submitted.");
+        burnRequestId.current = null;
+        setBurnAmount("");
+        setAction(null);
+        await loadPortal();
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Unable to cash out.");
+      } finally {
+        setBurning(false);
+      }
+    },
+    [authedFetch, loadPortal, burnAmount]
+  );
+
+  const handleLinkBank = useCallback(async () => {
+    setLinkingBank(true);
+    try {
+      const response = await authedFetch("/api/bank", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accountHolder: bankHolder.trim(),
+          accountNumber: bankAccount.trim(),
+          routingNumber: bankRouting.trim(),
+          bankName: bankName.trim() || undefined,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message ?? "Unable to link bank.");
+      toast.success("Bank linked");
+      setShowBankForm(false);
+      setBankAccount("");
+      setBankRouting("");
+      await loadPortal();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Unable to link bank.");
+    } finally {
+      setLinkingBank(false);
+    }
+  }, [authedFetch, loadPortal, bankHolder, bankAccount, bankRouting, bankName]);
+
   const handleIssueCard = useCallback(async () => {
-    setCardError(null);
     setCardNote(null);
     setIssuingCard(true);
     try {
       const response = await authedFetch("/api/card", { method: "POST" });
       const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.message ?? "Unable to issue a card.");
-      }
+      if (!response.ok) throw new Error(data.message ?? "Unable to issue a card.");
       if (data.note) setCardNote(data.note);
       toast.success(data.card?.source === "demo" ? "Demo card ready" : "Card issued");
       await loadPortal();
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Unable to issue a card.";
-      setCardError(message);
-      toast.error(message);
+      toast.error(err instanceof Error ? err.message : "Unable to issue a card.");
     } finally {
       setIssuingCard(false);
     }
@@ -347,11 +482,9 @@ function PortalInner() {
           body: JSON.stringify({ currency }),
         });
         const data = await response.json();
-        if (!response.ok) {
-          throw new Error(data.message ?? "Unable to set auto-convert.");
-        }
+        if (!response.ok) throw new Error(data.message ?? "Unable to set auto-convert.");
         if (data.note) setAutoSwapNote(data.note);
-        toast.success(`Deposits now auto-convert to ${currency.toUpperCase()}`);
+        toast.success(`You now hold everything as ${currency.toUpperCase()}`);
         await loadPortal();
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Unable to set auto-convert.");
@@ -363,9 +496,7 @@ function PortalInner() {
   );
 
   // --- Loading Privy ---
-  if (!ready) {
-    return <CenteredCard>Loading…</CenteredCard>;
-  }
+  if (!ready) return <CenteredCard>Loading…</CenteredCard>;
 
   // --- Signed out ---
   if (!authenticated) {
@@ -374,12 +505,8 @@ function PortalInner() {
         <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white/[0.06] ring-1 ring-white/10">
           <Wallet className="h-7 w-7 text-blue-300" />
         </div>
-        <h1 className="mt-5 text-2xl font-semibold tracking-tight text-white">
-          Welcome to Blue Wallet
-        </h1>
-        <p className="mt-2 text-sm text-white/55">
-          Sign in to open your bank-linked crypto wallet.
-        </p>
+        <h1 className="mt-5 text-2xl font-semibold tracking-tight text-white">Welcome to Blue Wallet</h1>
+        <p className="mt-2 text-sm text-white/55">Sign in to open your bank-linked crypto wallet.</p>
         <Button onClick={() => login()} className={`mt-7 ${PRIMARY_BTN}`}>
           Sign in
         </Button>
@@ -402,12 +529,10 @@ function PortalInner() {
         <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white/[0.06] ring-1 ring-white/10">
           <ShieldCheck className="h-7 w-7 text-blue-300" />
         </div>
-        <h1 className="mt-5 text-2xl font-semibold tracking-tight text-white">
-          Let&apos;s get you set up
-        </h1>
+        <h1 className="mt-5 text-2xl font-semibold tracking-tight text-white">Let&apos;s get you set up</h1>
         <p className="mt-2 text-sm leading-relaxed text-white/55">
-          Complete a quick identity check (powered by Bridge) to unlock your wallet, bank
-          account number, and routing number.
+          Complete a quick identity check (powered by Bridge) to unlock your wallet, bank account
+          number, and routing number.
         </p>
         {error && <p className="mt-3 text-xs text-red-400">{error}</p>}
         <div className="mt-6">
@@ -432,7 +557,7 @@ function PortalInner() {
     );
   }
 
-  // --- Verified but provisioning still finishing (not applicable when skipped) ---
+  // --- Verified but provisioning still finishing ---
   if (onboarding.kycCompleted && (!onboarding.onboardingCompleted || !state.wallet)) {
     return (
       <CenteredCard>
@@ -452,20 +577,25 @@ function PortalInner() {
   const { wallet, virtualAccount, transactions } = state;
   const isDemo = onboarding.provisionSource === "demo";
   const verified = onboarding.kycCompleted;
-  // Wallet/account/card are unlocked once provisioned — real (verified) or demo
-  // (skipped). The reminder banner stays until identity is actually verified.
   const provisioned = onboarding.onboardingCompleted && !!wallet;
   const currency = wallet?.currency ?? "USDC";
   const chain = wallet?.chain ?? "base";
-
+  const targets = state.supportedTargets ?? ["usdc"];
+  const target = (state.autoSwap?.targetCurrency ?? currency).toLowerCase();
   const [intPart, decPart] = animatedBalance.toFixed(2).split(".");
 
-  const tabs = [
-    { id: "receive" as const, label: "Receive", icon: ArrowDownToLine },
-    { id: "send" as const, label: "Send", icon: ArrowUpRight },
-    { id: "card" as const, label: "Card", icon: CreditCard },
+  const actions: Array<{ id: ActionId; label: string; icon: typeof ArrowDownToLine }> = [
+    { id: "mint", label: "Mint", icon: ArrowDownToLine },
+    { id: "send", label: "Send", icon: ArrowUpRight },
+    { id: "burn", label: "Burn", icon: Landmark },
+    { id: "card", label: "Card", icon: CreditCard },
   ];
-  const activeIndex = tabs.findIndex((t) => t.id === tab);
+
+  const openAction = (id: ActionId) => {
+    if (id === "burn" && !burnCurrency) setBurnCurrency(target);
+    if (id === "burn") setShowBankForm(!state.externalAccount);
+    setAction(id);
+  };
 
   return (
     <div className="mx-auto w-full max-w-md space-y-5">
@@ -495,7 +625,7 @@ function PortalInner() {
         </button>
       </div>
 
-      {/* Test-mode reminder — quiet, informative, stays until verified */}
+      {/* Test-mode reminder */}
       {!verified && (
         <div className="material animate-fade-up rounded-3xl p-5">
           <div className="flex items-start gap-3">
@@ -503,8 +633,8 @@ function PortalInner() {
             <div className="min-w-0 flex-1">
               <h2 className="text-[14px] font-semibold text-white">You&apos;re in test mode</h2>
               <p className="mt-1 text-[12.5px] leading-relaxed text-white/55">
-                These are demo details for previewing the app. Verify your identity to activate a
-                real wallet, bank account, routing number, and card.
+                These are demo details for previewing the app. Verify your identity to activate a real
+                wallet, bank account, routing number, and card.
               </p>
               <div className="mt-4">
                 <PersonaKyc
@@ -526,7 +656,6 @@ function PortalInner() {
       {/* Balance hero */}
       <div className="hero-card grain sheen animate-fade-up relative overflow-hidden rounded-[28px] p-8">
         <div className="pointer-events-none absolute -right-12 -top-12 h-44 w-44 rounded-full bg-white/[0.05] blur-2xl" />
-        {/* Faint brand watermark */}
         <Image
           src="/FINAL2.png"
           alt=""
@@ -553,242 +682,322 @@ function PortalInner() {
 
       {provisioned && wallet ? (
         <>
-          {/* Segmented control with sliding pill */}
-          <div
-            role="tablist"
-            aria-label="Wallet actions"
-            className="material-flat relative grid grid-cols-3 rounded-full p-1"
-          >
-            <div
-              aria-hidden
-              className="absolute inset-y-1 left-1 rounded-full border border-white/10 bg-white/[0.09] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition-transform duration-300 ease-[cubic-bezier(0.2,0,0,1)]"
-              style={{ width: "calc((100% - 0.5rem) / 3)", transform: `translateX(${activeIndex * 100}%)` }}
-            />
-            {tabs.map((t) => {
-              const Icon = t.icon;
-              const active = tab === t.id;
+          {/* Action row */}
+          <div className="grid grid-cols-4 gap-2">
+            {actions.map((a) => {
+              const Icon = a.icon;
               return (
                 <button
-                  key={t.id}
-                  role="tab"
-                  aria-selected={active}
-                  onClick={() => setTab(t.id)}
-                  className={`press relative z-10 flex items-center justify-center gap-2 rounded-full py-2.5 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60 ${
-                    active ? "text-white" : "text-white/55 hover:text-white/80"
-                  }`}
+                  key={a.id}
+                  onClick={() => openAction(a.id)}
+                  className="press flex flex-col items-center gap-2 rounded-2xl py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60"
                 >
-                  <Icon className="h-4 w-4" /> {t.label}
+                  <span className="flex h-14 w-14 items-center justify-center rounded-full border border-white/10 bg-white/[0.05] text-white/85">
+                    <Icon className="h-5 w-5" />
+                  </span>
+                  <span className="text-[12px] font-medium text-white/75">{a.label}</span>
                 </button>
               );
             })}
           </div>
 
-          <div key={tab} className="animate-fade-up">
-            {tab === "receive" && (
-              <div className="space-y-4">
-                <section className="material rounded-3xl p-5">
-                  <h2 className="text-[14px] font-semibold text-white">Receive via bank transfer</h2>
-                  <p className="mt-1 text-[12.5px] leading-relaxed text-white/60">
-                    Send a US wire or ACH to these details — it auto-converts to {wallet.currency} in
-                    your wallet.
-                  </p>
-                  {virtualAccount ? (
-                    <div className="mt-4 space-y-2.5">
-                      <CopyField label="Account number" value={virtualAccount.accountNumber} />
-                      <CopyField label="Routing number" value={virtualAccount.routingNumber} />
-                      {virtualAccount.beneficiaryName && (
-                        <CopyField label="Beneficiary" value={virtualAccount.beneficiaryName} />
-                      )}
-                      {virtualAccount.bankName && (
-                        <p className="px-1 text-[12px] text-white/55">Bank: {virtualAccount.bankName}</p>
-                      )}
-                    </div>
-                  ) : (
-                    <p className="mt-4 text-sm text-white/45">No bank account provisioned yet.</p>
-                  )}
-                </section>
+          {/* ---- Mint sheet (money in) ---- */}
+          <ActionSheet open={action === "mint"} onClose={() => setAction(null)} title="Mint — add money">
+            <p className="text-[12.5px] leading-relaxed text-white/60">
+              Add money and hold it as your chosen stablecoin.
+            </p>
 
-                {/* Auto-convert deposits — one address, any stablecoin */}
-                <section className="material rounded-3xl p-5">
-                  <h2 className="text-[14px] font-semibold text-white">Receive on-chain</h2>
-                  <p className="mt-1 text-[12.5px] leading-relaxed text-white/60">
-                    Share this one address. Anyone can send{" "}
-                    <span className="text-white/80">any supported stablecoin</span> (USDC, USDT,
-                    PYUSD, DAI) on {wallet.chain.toUpperCase()} — it auto-converts to your chosen
-                    coin, no approval needed.
-                  </p>
-                  <div className="mt-4">
-                    <CopyField label="Your wallet address" value={wallet.address} />
-                  </div>
+            <p className="mt-4 label-cap text-white/55">Hold everything as</p>
+            <div className="mt-2">
+              <CoinPicker
+                coins={targets}
+                selected={target}
+                onSelect={(c) => void handleSetAutoSwap(c)}
+                disabled={Boolean(autoSwapSaving)}
+              />
+            </div>
 
-                  <p className="mt-5 label-cap text-white/55">Hold everything as</p>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {(state.supportedTargets ?? ["usdc"]).map((c) => {
-                      const active =
-                        (state.autoSwap?.targetCurrency ?? wallet.currency.toLowerCase()) === c;
-                      const saving = autoSwapSaving === c;
-                      return (
-                        <button
-                          key={c}
-                          onClick={() => void handleSetAutoSwap(c)}
-                          disabled={Boolean(autoSwapSaving)}
-                          aria-pressed={active}
-                          className={`press rounded-full border px-3.5 py-1.5 text-[12px] font-semibold uppercase tracking-wide transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60 disabled:opacity-60 ${
-                            active
-                              ? "border-blue-400/40 bg-blue-500/20 text-white"
-                              : "border-white/10 bg-white/[0.04] text-white/65 hover:text-white"
-                          }`}
-                        >
-                          {saving ? "…" : c}
-                        </button>
-                      );
-                    })}
-                  </div>
+            {/* Method toggle */}
+            <div className="material-flat mt-4 grid grid-cols-2 gap-1 rounded-full p-1">
+              {(["bank", "crypto"] as const).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setMintTab(m)}
+                  aria-pressed={mintTab === m}
+                  className={`press rounded-full py-2 text-[12px] font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60 ${
+                    mintTab === m ? "bg-white/[0.1] text-white" : "text-white/55 hover:text-white/80"
+                  }`}
+                >
+                  {m === "bank" ? "From bank (USD)" : "Crypto"}
+                </button>
+              ))}
+            </div>
 
-                  <p className="mt-3 text-[12px] text-white/55">
-                    Everything in your wallet shows up as{" "}
-                    <span className="font-semibold text-white/80">
-                      {(state.autoSwap?.targetCurrency ?? wallet.currency).toUpperCase()}
-                    </span>
-                    .
-                  </p>
-
-                  {(autoSwapNote || state.autoSwap?.source === "demo") && (
-                    <p className="mt-3 text-[12px] leading-relaxed text-amber-200/80">
-                      {autoSwapNote ??
-                        "Demo mode — real auto-convert activates once Bridge is connected and onboarding is complete."}
-                    </p>
-                  )}
-                </section>
+            {mintTab === "bank" ? (
+              <div className="mt-4 space-y-2.5">
+                <p className="text-[12px] text-white/60">
+                  Wire or ACH USD to these details — it arrives as{" "}
+                  <span className="font-semibold text-white/80">{target.toUpperCase()}</span>.
+                </p>
+                {virtualAccount ? (
+                  <>
+                    <CopyField label="Account number" value={virtualAccount.accountNumber} />
+                    <CopyField label="Routing number" value={virtualAccount.routingNumber} />
+                    {virtualAccount.beneficiaryName && (
+                      <CopyField label="Beneficiary" value={virtualAccount.beneficiaryName} />
+                    )}
+                    {virtualAccount.bankName && (
+                      <p className="px-1 text-[12px] text-white/55">Bank: {virtualAccount.bankName}</p>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-sm text-white/45">No bank account provisioned yet.</p>
+                )}
+              </div>
+            ) : (
+              <div className="mt-4 space-y-2.5">
+                <p className="text-[12px] text-white/60">
+                  Send <span className="text-white/80">any supported stablecoin</span> on{" "}
+                  {chain.toUpperCase()} to this one address — it auto-converts to{" "}
+                  <span className="font-semibold text-white/80">{target.toUpperCase()}</span>, no
+                  approval needed.
+                </p>
+                <CopyField label="Your wallet address" value={wallet.address} />
               </div>
             )}
 
-            {tab === "send" && (
-              <section className="material rounded-3xl p-5">
-                <h2 className="text-[14px] font-semibold text-white">Send {wallet.currency}</h2>
-                <div className="mt-4 space-y-3">
-                  <div>
-                    <label className="label-cap text-white/55">Amount ({wallet.currency})</label>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      placeholder="0.00"
-                      value={sendAmount}
-                      onChange={(e) => setSendAmount(e.target.value)}
-                      disabled={sending}
-                      className="material-flat mt-2 h-12 w-full rounded-2xl px-4 text-white tabular-nums placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-                    />
+            {(autoSwapNote || state.autoSwap?.source === "demo") && (
+              <p className="mt-3 text-[12px] leading-relaxed text-amber-200/80">
+                {autoSwapNote ?? "Demo mode — real auto-convert activates once Bridge is connected."}
+              </p>
+            )}
+          </ActionSheet>
+
+          {/* ---- Send sheet (crypto out) ---- */}
+          <ActionSheet open={action === "send"} onClose={() => setAction(null)} title="Send">
+            <p className="text-[12.5px] leading-relaxed text-white/60">
+              Send {currency} on {chain.toUpperCase()} to any wallet address.
+            </p>
+            <div className="mt-4 space-y-3">
+              <div>
+                <label className="label-cap text-white/55">Amount ({currency})</label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="0.00"
+                  value={sendAmount}
+                  onChange={(e) => setSendAmount(e.target.value)}
+                  disabled={sending}
+                  className={`${INPUT_CLS} tabular-nums`}
+                />
+              </div>
+              <div>
+                <label className="label-cap text-white/55">Destination address</label>
+                <input
+                  type="text"
+                  placeholder="0x…"
+                  value={sendTo}
+                  onChange={(e) => setSendTo(e.target.value)}
+                  disabled={sending}
+                  className={`${INPUT_CLS} font-mono text-sm`}
+                />
+              </div>
+              {sendError && <p className="text-xs text-red-400">{sendError}</p>}
+              <Button onClick={() => void handleSend()} disabled={sending} className={PRIMARY_BTN}>
+                {sending ? "Sending…" : "Send"}
+              </Button>
+            </div>
+          </ActionSheet>
+
+          {/* ---- Burn sheet (cash out to bank) ---- */}
+          <ActionSheet open={action === "burn"} onClose={() => setAction(null)} title="Burn — cash out">
+            <p className="text-[12.5px] leading-relaxed text-white/60">
+              Convert a stablecoin to USD and send it to your bank account.
+            </p>
+
+            {state.externalAccount && !showBankForm ? (
+              <div className="mt-4 space-y-3">
+                <div className="material-flat flex items-center justify-between rounded-2xl px-4 py-3">
+                  <div className="flex items-center gap-2 text-[13px] text-white/80">
+                    <Landmark className="h-4 w-4 text-white/60" />
+                    {state.externalAccount.bankName ?? "Bank"} ••{state.externalAccount.last4 ?? "0000"}
                   </div>
-                  <div>
-                    <label className="label-cap text-white/55">Destination address</label>
-                    <input
-                      type="text"
-                      placeholder="0x…"
-                      value={sendTo}
-                      onChange={(e) => setSendTo(e.target.value)}
-                      disabled={sending}
-                      className="material-flat mt-2 h-12 w-full rounded-2xl px-4 font-mono text-sm text-white placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-                    />
-                  </div>
-                  {sendError && <p className="text-xs text-red-400">{sendError}</p>}
-                  {sendSuccess && <p className="text-xs text-emerald-400">{sendSuccess}</p>}
-                  <Button onClick={() => void handleSend()} disabled={sending} className={PRIMARY_BTN}>
-                    {sending ? "Sending…" : "Send"}
-                  </Button>
+                  <button
+                    onClick={() => setShowBankForm(true)}
+                    className="press text-[12px] font-medium text-blue-300 hover:text-blue-200"
+                  >
+                    Change
+                  </button>
                 </div>
-              </section>
-            )}
 
-            {tab === "card" && (
-              <section className="material rounded-3xl p-5">
-                <h2 className="text-[14px] font-semibold text-white">Your card</h2>
-                <p className="mt-1 text-[12.5px] leading-relaxed text-white/60">
-                  A Visa card that spends directly from your {currency} balance.
-                </p>
-
-                {state.card ? (
-                  <div className="mt-4 space-y-3">
-                    {/* Card face */}
-                    <div className="hero-card grain sheen relative aspect-[1.586/1] overflow-hidden rounded-[20px] p-5 text-white">
-                      <div className="pointer-events-none absolute -right-10 -top-10 h-36 w-36 rounded-full bg-white/[0.06] blur-2xl" />
-                      <div className="relative flex items-start justify-between">
-                        <span className="text-[12px] font-semibold tracking-[0.12em] text-white/80">
-                          BLUE WALLET
-                        </span>
-                        <CreditCard className="h-6 w-6 text-white/70" />
-                      </div>
-                      <p className="relative mt-8 font-mono text-[17px] tracking-[0.22em] text-white/90">
-                        ••••&nbsp;&nbsp;••••&nbsp;&nbsp;••••&nbsp;&nbsp;{state.card.last4 ?? "0000"}
-                      </p>
-                      <div className="relative mt-4 flex items-end justify-between text-[11px]">
-                        <span className="text-white/55">
-                          {state.card.expMonth && state.card.expYear
-                            ? `EXP ${String(state.card.expMonth).padStart(2, "0")}/${String(state.card.expYear).slice(-2)}`
-                            : ""}
-                        </span>
-                        <span className="text-[15px] font-semibold italic tracking-tight text-white/90">
-                          {(state.card.brand ?? "visa").toUpperCase()}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 text-[11px]">
-                      <span className="rounded-full border border-white/10 bg-white/[0.05] px-2.5 py-0.5 capitalize text-white/65">
-                        {state.card.type ?? "virtual"}
-                      </span>
-                      <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/20 bg-emerald-500/10 px-2.5 py-0.5 capitalize text-emerald-300">
-                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                        {state.card.status ?? "active"}
-                      </span>
-                      {state.card.source === "demo" && (
-                        <span className="rounded-full border border-amber-400/20 bg-amber-500/10 px-2.5 py-0.5 text-amber-300">
-                          Demo card
-                        </span>
-                      )}
-                    </div>
-
-                    {(cardNote || state.card.source === "demo") && (
-                      <p className="text-[12px] leading-relaxed text-white/45">
-                        {cardNote ??
-                          "This is a demo card. Real cards require the Cards product enabled on your Bridge account."}
-                      </p>
-                    )}
-
-                    {state.card.source === "demo" && (
-                      <button
-                        onClick={() => void handleIssueCard()}
-                        disabled={issuingCard}
-                        className="material-flat press h-11 w-full rounded-2xl text-[13px] font-medium text-white/80 transition hover:bg-white/[0.06] disabled:opacity-60"
-                      >
-                        {issuingCard ? "Checking…" : "Try issuing a real card"}
-                      </button>
-                    )}
+                <div>
+                  <label className="label-cap text-white/55">Cash out from</label>
+                  <div className="mt-2">
+                    <CoinPicker coins={targets} selected={burnCurrency || target} onSelect={setBurnCurrency} />
                   </div>
-                ) : (
-                  <div className="mt-4 space-y-3">
-                    {cardError && <p className="text-xs text-red-400">{cardError}</p>}
-                    <Button
-                      onClick={() => void handleIssueCard()}
-                      disabled={issuingCard}
-                      className={PRIMARY_BTN}
-                    >
-                      {issuingCard ? "Issuing…" : "Get your Blue Card"}
-                    </Button>
-                  </div>
+                </div>
+                <div>
+                  <label className="label-cap text-white/55">
+                    Amount ({(burnCurrency || target).toUpperCase()})
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    placeholder="0.00"
+                    value={burnAmount}
+                    onChange={(e) => setBurnAmount(e.target.value)}
+                    disabled={burning}
+                    className={`${INPUT_CLS} tabular-nums`}
+                  />
+                </div>
+                <Button
+                  onClick={() => void handleBurn(burnCurrency || target)}
+                  disabled={burning}
+                  className={PRIMARY_BTN}
+                >
+                  {burning ? "Cashing out…" : "Cash out to bank"}
+                </Button>
+                {state.externalAccount.source === "demo" && (
+                  <p className="text-[12px] text-amber-200/80">
+                    Demo bank — connect Bridge to move real funds.
+                  </p>
                 )}
-              </section>
+              </div>
+            ) : (
+              <div className="mt-4 space-y-3">
+                <p className="text-[12px] text-white/60">Link a US bank account to cash out to.</p>
+                <div>
+                  <label className="label-cap text-white/55">Account holder name</label>
+                  <input
+                    value={bankHolder}
+                    onChange={(e) => setBankHolder(e.target.value)}
+                    placeholder="Jane Doe"
+                    className={INPUT_CLS}
+                  />
+                </div>
+                <div>
+                  <label className="label-cap text-white/55">Account number</label>
+                  <input
+                    inputMode="numeric"
+                    value={bankAccount}
+                    onChange={(e) => setBankAccount(e.target.value)}
+                    placeholder="000123456789"
+                    className={`${INPUT_CLS} font-mono`}
+                  />
+                </div>
+                <div>
+                  <label className="label-cap text-white/55">Routing number</label>
+                  <input
+                    inputMode="numeric"
+                    value={bankRouting}
+                    onChange={(e) => setBankRouting(e.target.value)}
+                    placeholder="9 digits"
+                    className={`${INPUT_CLS} font-mono`}
+                  />
+                </div>
+                <div>
+                  <label className="label-cap text-white/55">Bank name (optional)</label>
+                  <input
+                    value={bankName}
+                    onChange={(e) => setBankName(e.target.value)}
+                    placeholder="Chase"
+                    className={INPUT_CLS}
+                  />
+                </div>
+                <Button onClick={() => void handleLinkBank()} disabled={linkingBank} className={PRIMARY_BTN}>
+                  {linkingBank ? "Linking…" : "Link bank"}
+                </Button>
+                {state.externalAccount && (
+                  <button
+                    onClick={() => setShowBankForm(false)}
+                    className="press block w-full text-center text-[12px] text-white/55 hover:text-white/80"
+                  >
+                    Cancel
+                  </button>
+                )}
+              </div>
             )}
-          </div>
+          </ActionSheet>
+
+          {/* ---- Card sheet ---- */}
+          <ActionSheet open={action === "card"} onClose={() => setAction(null)} title="Your card">
+            <p className="text-[12.5px] leading-relaxed text-white/60">
+              A Visa card that spends directly from your {currency} balance.
+            </p>
+            {state.card ? (
+              <div className="mt-4 space-y-3">
+                <div className="hero-card grain sheen relative aspect-[1.586/1] overflow-hidden rounded-[20px] p-5 text-white">
+                  <div className="pointer-events-none absolute -right-10 -top-10 h-36 w-36 rounded-full bg-white/[0.06] blur-2xl" />
+                  <div className="relative flex items-start justify-between">
+                    <span className="text-[12px] font-semibold tracking-[0.12em] text-white/80">
+                      BLUE WALLET
+                    </span>
+                    <CreditCard className="h-6 w-6 text-white/70" />
+                  </div>
+                  <p className="relative mt-8 font-mono text-[17px] tracking-[0.22em] text-white/90">
+                    ••••&nbsp;&nbsp;••••&nbsp;&nbsp;••••&nbsp;&nbsp;{state.card.last4 ?? "0000"}
+                  </p>
+                  <div className="relative mt-4 flex items-end justify-between text-[11px]">
+                    <span className="text-white/55">
+                      {state.card.expMonth && state.card.expYear
+                        ? `EXP ${String(state.card.expMonth).padStart(2, "0")}/${String(state.card.expYear).slice(-2)}`
+                        : ""}
+                    </span>
+                    <span className="text-[15px] font-semibold italic tracking-tight text-white/90">
+                      {(state.card.brand ?? "visa").toUpperCase()}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 text-[11px]">
+                  <span className="rounded-full border border-white/10 bg-white/[0.05] px-2.5 py-0.5 capitalize text-white/65">
+                    {state.card.type ?? "virtual"}
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/20 bg-emerald-500/10 px-2.5 py-0.5 capitalize text-emerald-300">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                    {state.card.status ?? "active"}
+                  </span>
+                  {state.card.source === "demo" && (
+                    <span className="rounded-full border border-amber-400/20 bg-amber-500/10 px-2.5 py-0.5 text-amber-300">
+                      Demo card
+                    </span>
+                  )}
+                </div>
+
+                {(cardNote || state.card.source === "demo") && (
+                  <p className="text-[12px] leading-relaxed text-white/55">
+                    {cardNote ??
+                      "This is a demo card. Real cards require the Cards product enabled on your Bridge account."}
+                  </p>
+                )}
+
+                {state.card.source === "demo" && (
+                  <button
+                    onClick={() => void handleIssueCard()}
+                    disabled={issuingCard}
+                    className="material-flat press h-11 w-full rounded-2xl text-[13px] font-medium text-white/80 transition hover:bg-white/[0.06] disabled:opacity-60"
+                  >
+                    {issuingCard ? "Checking…" : "Try issuing a real card"}
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="mt-4">
+                <Button onClick={() => void handleIssueCard()} disabled={issuingCard} className={PRIMARY_BTN}>
+                  {issuingCard ? "Issuing…" : "Get your Blue Card"}
+                </Button>
+              </div>
+            )}
+          </ActionSheet>
         </>
       ) : (
         <section className="material rounded-3xl p-6 text-center">
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-white/[0.06] ring-1 ring-white/10">
             <Lock className="h-6 w-6 text-white/60" />
           </div>
-          <h2 className="mt-3 text-[14px] font-semibold text-white">Send &amp; Receive are locked</h2>
+          <h2 className="mt-3 text-[14px] font-semibold text-white">Your wallet is locked</h2>
           <p className="mt-1 text-[12.5px] leading-relaxed text-white/60">
-            Finish identity verification above to get your bank account number, routing number, and
-            wallet address — then you can send and receive.
+            Finish identity verification above to activate Mint, Send, Burn, and your card.
           </p>
         </section>
       )}
@@ -800,39 +1009,44 @@ function PortalInner() {
           <p className="mt-3 text-sm text-white/55">No transactions yet.</p>
         ) : (
           <ul className="mt-3 space-y-2">
-            {transactions.map((tx) => (
-              <li
-                key={tx.id}
-                className="material-flat flex items-center justify-between rounded-2xl px-4 py-3"
-              >
-                <div className="flex items-center gap-3">
-                  <span
-                    className={`flex h-9 w-9 items-center justify-center rounded-xl ${
-                      tx.direction === "send"
-                        ? "bg-white/[0.06] text-white/70"
-                        : "bg-emerald-500/10 text-emerald-300"
-                    }`}
-                  >
-                    {tx.direction === "send" ? (
-                      <ArrowUpRight className="h-4 w-4" />
-                    ) : (
-                      <ArrowDownToLine className="h-4 w-4" />
-                    )}
-                  </span>
-                  <div>
-                    <p className="text-[13px] font-medium text-white">
-                      {tx.direction === "send" ? "Sent" : "Received"} {tx.amount} {tx.currency}
-                    </p>
-                    {tx.counterparty && (
-                      <p className="max-w-[180px] truncate font-mono text-[11px] text-white/55">
-                        {tx.counterparty}
+            {transactions.map((tx) => {
+              const out = tx.direction === "send" || tx.direction === "withdraw";
+              const verb =
+                tx.direction === "send" ? "Sent" : tx.direction === "withdraw" ? "Cashed out" : "Received";
+              return (
+                <li
+                  key={tx.id}
+                  className="material-flat flex items-center justify-between rounded-2xl px-4 py-3"
+                >
+                  <div className="flex items-center gap-3">
+                    <span
+                      className={`flex h-9 w-9 items-center justify-center rounded-xl ${
+                        out ? "bg-white/[0.06] text-white/70" : "bg-emerald-500/10 text-emerald-300"
+                      }`}
+                    >
+                      {tx.direction === "withdraw" ? (
+                        <Landmark className="h-4 w-4" />
+                      ) : out ? (
+                        <ArrowUpRight className="h-4 w-4" />
+                      ) : (
+                        <ArrowDownToLine className="h-4 w-4" />
+                      )}
+                    </span>
+                    <div>
+                      <p className="text-[13px] font-medium text-white">
+                        {verb} {tx.amount} {tx.currency}
                       </p>
-                    )}
+                      {tx.counterparty && (
+                        <p className="max-w-[180px] truncate font-mono text-[11px] text-white/55">
+                          {tx.counterparty}
+                        </p>
+                      )}
+                    </div>
                   </div>
-                </div>
-                <span className="text-[11px] capitalize text-white/55">{tx.status}</span>
-              </li>
-            ))}
+                  <span className="text-[11px] capitalize text-white/55">{tx.status}</span>
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>
@@ -848,8 +1062,7 @@ function DashboardSkeleton() {
         <div className="h-5 w-16 animate-pulse rounded-full bg-white/[0.06]" />
       </div>
       <div className="h-40 animate-pulse rounded-[28px] bg-white/[0.05]" />
-      <div className="h-12 animate-pulse rounded-full bg-white/[0.05]" />
-      <div className="h-44 animate-pulse rounded-3xl bg-white/[0.05]" />
+      <div className="h-16 animate-pulse rounded-2xl bg-white/[0.05]" />
       <div className="h-28 animate-pulse rounded-3xl bg-white/[0.05]" />
     </div>
   );
