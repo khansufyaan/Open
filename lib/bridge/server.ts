@@ -332,7 +332,16 @@ export async function getWallet(
  */
 export function getWalletCurrencyBalance(wallet: BridgeWalletDetail): string {
   const currency = (process.env.BRIDGE_TRANSFER_CURRENCY ?? "usdc").toLowerCase();
-  const match = wallet.balances?.find((b) => b.currency?.toLowerCase() === currency);
+  return getWalletBalanceForCurrency(wallet, currency);
+}
+
+/** Balance of a specific currency held in the wallet, as a decimal string. */
+export function getWalletBalanceForCurrency(
+  wallet: BridgeWalletDetail,
+  currency: string
+): string {
+  const c = currency.toLowerCase();
+  const match = wallet.balances?.find((b) => b.currency?.toLowerCase() === c);
   return match?.balance ?? "0";
 }
 
@@ -397,75 +406,6 @@ export async function listVirtualAccounts(
 ): Promise<BridgeVirtualAccount[]> {
   const response = await bridgeRequest<{ data?: BridgeVirtualAccount[] }>(
     `/customers/${customerId}/virtual_accounts`
-  );
-  return response.data ?? [];
-}
-
-/* -------------------------------------------------------------------------- */
-/*                            Liquidation Addresses                            */
-/* -------------------------------------------------------------------------- */
-
-/**
- * A liquidation address is a deposit address where any funds received in the
- * configured `currency`/`chain` are automatically converted to the destination
- * currency and forwarded to the destination — with no per-deposit approval.
- * This powers "auto-convert any stablecoin to my preferred coin on deposit."
- *
- * One address accepts a single source currency, so accepting multiple coins
- * means creating one liquidation address per coin, all sharing a destination.
- */
-export type BridgeLiquidationAddress = {
-  id: string;
-  address?: string;
-  chain?: string;
-  currency?: string;
-  destination_currency?: string;
-  destination_payment_rail?: string;
-  state?: string;
-};
-
-export type CreateLiquidationAddressInput = {
-  customerId: string;
-  /** Source chain + coin this address accepts. */
-  chain: string;
-  currency: string;
-  /** Where converted funds land. */
-  destinationCurrency: string;
-  destinationPaymentRail: string;
-  destinationBridgeWalletId?: string;
-  destinationAddress?: string;
-  idempotencyKey?: string;
-};
-
-export async function createLiquidationAddress(
-  input: CreateLiquidationAddressInput
-): Promise<BridgeLiquidationAddress> {
-  return bridgeRequest<BridgeLiquidationAddress>(
-    `/customers/${input.customerId}/liquidation_addresses`,
-    {
-      method: "POST",
-      idempotencyKey: input.idempotencyKey,
-      body: {
-        chain: input.chain,
-        currency: input.currency,
-        destination_payment_rail: input.destinationPaymentRail,
-        destination_currency: input.destinationCurrency,
-        ...(input.destinationBridgeWalletId
-          ? { destination_bridge_wallet_id: input.destinationBridgeWalletId }
-          : {}),
-        ...(input.destinationAddress
-          ? { destination_address: input.destinationAddress }
-          : {}),
-      },
-    }
-  );
-}
-
-export async function listLiquidationAddresses(
-  customerId: string
-): Promise<BridgeLiquidationAddress[]> {
-  const response = await bridgeRequest<{ data?: BridgeLiquidationAddress[] }>(
-    `/customers/${customerId}/liquidation_addresses`
   );
   return response.data ?? [];
 }

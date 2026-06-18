@@ -7,14 +7,15 @@ import { recordAudit } from "@/lib/audit";
 import { captureError } from "@/lib/observability";
 import {
   setAutoSwapTarget,
+  sweepToTarget,
   isSupportedTarget,
   SUPPORTED_TARGET_CURRENCIES,
 } from "@/lib/bridge/autoswap";
 
 /**
- * Sets the user's preferred stablecoin and provisions Bridge liquidation
- * addresses so any other accepted stablecoin deposited to them auto-converts to
- * that coin — server-side, no approval.
+ * Sets the user's preferred stablecoin. From then on, any other stablecoin that
+ * lands in their single wallet address is auto-converted to it (server-side, no
+ * approval). We also kick an immediate sweep in case they already hold others.
  */
 export async function POST(request: Request) {
   const auth = await requireAuth(request);
@@ -59,21 +60,15 @@ export async function POST(request: Request) {
   }
 
   try {
-    const result = await setAutoSwapTarget(user, currency);
+    const config = await setAutoSwapTarget(user, currency);
     await recordAudit({
       userId,
       action: "autoswap.set",
-      detail: {
-        target: result.config.targetCurrency,
-        source: result.config.source,
-        addresses: result.config.addresses.length,
-      },
+      detail: { target: config.targetCurrency, source: config.source },
     });
-    return NextResponse.json({
-      success: true,
-      autoSwap: result.config,
-      note: result.note ?? null,
-    });
+    // Convert anything already sitting in the wallet (best-effort).
+    const converted = await sweepToTarget({ ...user, autoSwap: config });
+    return NextResponse.json({ success: true, autoSwap: config, converted });
   } catch (error) {
     captureError("AutoSwap", error, { userId });
     return NextResponse.json(

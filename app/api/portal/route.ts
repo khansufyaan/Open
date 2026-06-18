@@ -5,10 +5,10 @@ import { ensureProvisioned } from "@/lib/bridge/provision";
 import { requireAuth, getPrivyEmail } from "@/lib/auth/privy";
 import {
   getWallet,
-  getWalletCurrencyBalance,
+  getWalletBalanceForCurrency,
   isBridgeConfigured,
 } from "@/lib/bridge/server";
-import { SUPPORTED_TARGET_CURRENCIES } from "@/lib/bridge/autoswap";
+import { SUPPORTED_TARGET_CURRENCIES, sweepToTarget } from "@/lib/bridge/autoswap";
 import type { UserRecord } from "@/types/user";
 
 /**
@@ -41,13 +41,26 @@ export async function GET(request: Request) {
       }
     }
 
+    // The displayed coin is the user's auto-convert target (default USDC), so
+    // they only ever see their chosen stablecoin.
+    const target = (
+      user.autoSwap?.targetCurrency ??
+      process.env.BRIDGE_TRANSFER_CURRENCY ??
+      "usdc"
+    ).toLowerCase();
+    const currency = target.toUpperCase();
+
     // Live balance from Bridge when configured; demo wallets report 0.
     let balance = "0";
-    const currency = (process.env.BRIDGE_TRANSFER_CURRENCY ?? "usdc").toUpperCase();
     if (isBridgeConfigured() && user.bridgeCustomerId && user.bridgeWalletId) {
       try {
         const wallet = await getWallet(user.bridgeCustomerId, user.bridgeWalletId);
-        balance = getWalletCurrencyBalance(wallet);
+        // Auto-convert any non-target stablecoin that has landed, then report
+        // the target balance (best-effort; never blocks the response on error).
+        if (user.autoSwap?.targetCurrency) {
+          await sweepToTarget(user, wallet.balances);
+        }
+        balance = getWalletBalanceForCurrency(wallet, target);
       } catch (error) {
         console.error("[Portal] Failed to read wallet balance:", error);
       }

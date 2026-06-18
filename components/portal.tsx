@@ -53,15 +53,8 @@ type PortalState = {
   autoSwap: {
     targetCurrency: string;
     chain: string;
-    addresses: Array<{
-      id: string;
-      address: string;
-      chain: string;
-      currency: string;
-      destinationCurrency: string;
-      source?: "bridge" | "demo";
-    }>;
     source?: "bridge" | "demo";
+    lastSweepAt?: string;
     updatedAt: string;
   } | null;
   supportedTargets?: string[];
@@ -615,28 +608,24 @@ function PortalInner() {
                   )}
                 </section>
 
+                {/* Auto-convert deposits — one address, any stablecoin */}
                 <section className="material rounded-3xl p-5">
                   <h2 className="text-[14px] font-semibold text-white">Receive on-chain</h2>
                   <p className="mt-1 text-[12.5px] leading-relaxed text-white/60">
-                    Send {wallet.currency} on {wallet.chain.toUpperCase()} to your wallet address.
+                    Share this one address. Anyone can send{" "}
+                    <span className="text-white/80">any supported stablecoin</span> (USDC, USDT,
+                    PYUSD, DAI) on {wallet.chain.toUpperCase()} — it auto-converts to your chosen
+                    coin, no approval needed.
                   </p>
                   <div className="mt-4">
-                    <CopyField label="Wallet address" value={wallet.address} />
+                    <CopyField label="Your wallet address" value={wallet.address} />
                   </div>
-                </section>
 
-                {/* Auto-convert deposits */}
-                <section className="material rounded-3xl p-5">
-                  <h2 className="text-[14px] font-semibold text-white">Auto-convert deposits</h2>
-                  <p className="mt-1 text-[12.5px] leading-relaxed text-white/60">
-                    Pick the stablecoin you want to hold. Any other stablecoin sent to the addresses
-                    below is automatically converted to it on deposit — no approval needed.
-                  </p>
-
-                  {/* Target picker */}
-                  <div className="mt-4 flex flex-wrap gap-2">
+                  <p className="mt-5 label-cap text-white/55">Hold everything as</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
                     {(state.supportedTargets ?? ["usdc"]).map((c) => {
-                      const active = state.autoSwap?.targetCurrency === c;
+                      const active =
+                        (state.autoSwap?.targetCurrency ?? wallet.currency.toLowerCase()) === c;
                       const saving = autoSwapSaving === c;
                       return (
                         <button
@@ -656,38 +645,18 @@ function PortalInner() {
                     })}
                   </div>
 
-                  {state.autoSwap && state.autoSwap.addresses.length > 0 ? (
-                    <div className="mt-4 space-y-2.5">
-                      <p className="text-[12px] text-white/55">
-                        Deposits below arrive as{" "}
-                        <span className="font-semibold text-white/80">
-                          {state.autoSwap.targetCurrency.toUpperCase()}
-                        </span>{" "}
-                        on {state.autoSwap.chain.toUpperCase()}:
-                      </p>
-                      {state.autoSwap.addresses.map((a) => (
-                        <CopyField
-                          key={a.id}
-                          label={`${a.currency.toUpperCase()} → ${a.destinationCurrency.toUpperCase()}`}
-                          value={a.address}
-                        />
-                      ))}
-                    </div>
-                  ) : state.autoSwap ? (
-                    <p className="mt-4 text-[12px] text-white/55">
-                      Holding {state.autoSwap.targetCurrency.toUpperCase()} — other stablecoins will
-                      convert to it.
-                    </p>
-                  ) : (
-                    <p className="mt-4 text-[12px] text-white/55">
-                      Choose a coin above to generate your auto-converting deposit addresses.
-                    </p>
-                  )}
+                  <p className="mt-3 text-[12px] text-white/55">
+                    Everything in your wallet shows up as{" "}
+                    <span className="font-semibold text-white/80">
+                      {(state.autoSwap?.targetCurrency ?? wallet.currency).toUpperCase()}
+                    </span>
+                    .
+                  </p>
 
                   {(autoSwapNote || state.autoSwap?.source === "demo") && (
                     <p className="mt-3 text-[12px] leading-relaxed text-amber-200/80">
                       {autoSwapNote ??
-                        "These are demo addresses. Real auto-convert needs Bridge liquidation addresses enabled on your account."}
+                        "Demo mode — real auto-convert activates once Bridge is connected and onboarding is complete."}
                     </p>
                   )}
                 </section>
