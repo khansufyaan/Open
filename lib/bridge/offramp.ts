@@ -4,10 +4,12 @@ import {
   createExternalAccount,
   listExternalAccounts,
   getExternalAccountLast4,
+  updateCustomerAddress,
   createTransfer,
   getTransferTxHash,
   isBridgeConfigured,
   BridgeRequestError,
+  type CustomerAddress,
 } from "@/lib/bridge/server";
 import { updateUser } from "@/lib/db/store";
 import { recordAudit } from "@/lib/audit";
@@ -30,6 +32,8 @@ export type LinkBankInput = {
   accountNumber: string;
   routingNumber: string;
   bankName?: string;
+  /** Required by Bridge for off-ramp; set on the customer before linking. */
+  address?: CustomerAddress;
 };
 
 export async function linkBankAccount(
@@ -47,6 +51,17 @@ export async function linkBankAccount(
     };
     await updateUser(user.userId, { externalAccount: account });
     return account;
+  }
+
+  // Bridge requires a residential address on the customer before an external
+  // account can be created. Set it first when provided.
+  if (input.address) {
+    try {
+      await updateCustomerAddress(user.bridgeCustomerId, input.address);
+    } catch (error) {
+      captureError("LinkBank.address", error, { userId: user.userId });
+      throw error;
+    }
   }
 
   const created = await createExternalAccount({

@@ -199,6 +199,29 @@ export async function getCustomer(customerId: string): Promise<BridgeCustomer> {
   return bridgeRequest<BridgeCustomer>(`/customers/${customerId}`);
 }
 
+/** A residential address Bridge requires before off-ramp / external accounts. */
+export type CustomerAddress = {
+  street_line_1: string;
+  street_line_2?: string;
+  city: string;
+  /** State/province (e.g. "CA"). */
+  subdivision: string;
+  postal_code: string;
+  /** ISO 3166-1 alpha-3 (e.g. "USA"). */
+  country: string;
+};
+
+/** Sets the customer's residential address (needed for cash-out). */
+export async function updateCustomerAddress(
+  customerId: string,
+  address: CustomerAddress
+): Promise<BridgeCustomer> {
+  return bridgeRequest<BridgeCustomer>(`/customers/${customerId}`, {
+    method: "PUT",
+    body: { residential_address: address },
+  });
+}
+
 /** Bridge's authoritative KYC status string for a customer. */
 export function getCustomerKycStatus(customer: BridgeCustomer): string {
   return customer.kyc_status ?? customer.status ?? "under_review";

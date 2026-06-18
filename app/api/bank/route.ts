@@ -25,11 +25,19 @@ export async function POST(request: Request) {
   } catch {
     body = null;
   }
-  const { accountHolder, accountNumber, routingNumber, bankName } = (body ?? {}) as {
+  const { accountHolder, accountNumber, routingNumber, bankName, address } = (body ?? {}) as {
     accountHolder?: string;
     accountNumber?: string;
     routingNumber?: string;
     bankName?: string;
+    address?: {
+      street_line_1?: string;
+      street_line_2?: string;
+      city?: string;
+      subdivision?: string;
+      postal_code?: string;
+      country?: string;
+    };
   };
 
   if (typeof accountHolder !== "string" || accountHolder.trim().length < 2) {
@@ -51,6 +59,22 @@ export async function POST(request: Request) {
     );
   }
 
+  // Address is required by Bridge for off-ramp.
+  const addr = {
+    street_line_1: address?.street_line_1?.trim() ?? "",
+    street_line_2: address?.street_line_2?.trim() || undefined,
+    city: address?.city?.trim() ?? "",
+    subdivision: address?.subdivision?.trim() ?? "",
+    postal_code: address?.postal_code?.trim() ?? "",
+    country: (address?.country?.trim() || "USA").toUpperCase(),
+  };
+  if (!addr.street_line_1 || !addr.city || !addr.subdivision || !addr.postal_code) {
+    return NextResponse.json(
+      { error: "INVALID_ADDRESS", message: "Enter your full address (street, city, state, ZIP)." },
+      { status: 400 }
+    );
+  }
+
   const user = await getUser(userId);
   if (!user) {
     return NextResponse.json({ error: "USER_NOT_FOUND", message: "Sign in first." }, { status: 404 });
@@ -68,6 +92,7 @@ export async function POST(request: Request) {
       accountNumber: accountNumber.trim(),
       routingNumber: routingNumber.trim(),
       bankName: bankName?.trim() || undefined,
+      address: addr,
     });
     await recordAudit({
       userId,

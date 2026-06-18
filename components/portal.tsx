@@ -180,8 +180,10 @@ function ActionSheet({
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent
-        className="max-h-[88vh] overflow-y-auto border border-white/10 bg-[oklch(0.17_0.018_256)] p-5 text-white shadow-2xl top-auto bottom-0 left-0 max-w-full translate-x-0 translate-y-0 rounded-3xl rounded-b-none border-x-0 border-b-0 sm:top-1/2 sm:left-1/2 sm:bottom-auto sm:max-w-md sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-3xl sm:border"
+        className="max-h-[90vh] overflow-y-auto border border-white/10 bg-[oklch(0.17_0.018_256)] px-5 pt-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))] text-white shadow-2xl top-auto bottom-0 left-0 max-w-full translate-x-0 translate-y-0 rounded-3xl rounded-b-none border-x-0 border-b-0 sm:top-1/2 sm:left-1/2 sm:bottom-auto sm:max-w-md sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-3xl sm:border sm:pb-5"
       >
+        {/* Grab handle (mobile bottom-sheet affordance) */}
+        <div className="mx-auto mb-3 h-1.5 w-10 rounded-full bg-white/15 sm:hidden" />
         <DialogTitle className="text-[15px] font-semibold text-white">{title}</DialogTitle>
         <div className="mt-2">{children}</div>
       </DialogContent>
@@ -271,6 +273,10 @@ function PortalInner() {
   const [bankAccount, setBankAccount] = useState("");
   const [bankRouting, setBankRouting] = useState("");
   const [bankName, setBankName] = useState("");
+  const [bankStreet, setBankStreet] = useState("");
+  const [bankCity, setBankCity] = useState("");
+  const [bankState, setBankState] = useState("");
+  const [bankZip, setBankZip] = useState("");
   const [linkingBank, setLinkingBank] = useState(false);
 
   // Card issuance
@@ -438,6 +444,13 @@ function PortalInner() {
           accountNumber: bankAccount.trim(),
           routingNumber: bankRouting.trim(),
           bankName: bankName.trim() || undefined,
+          address: {
+            street_line_1: bankStreet.trim(),
+            city: bankCity.trim(),
+            subdivision: bankState.trim(),
+            postal_code: bankZip.trim(),
+            country: "USA",
+          },
         }),
       });
       const data = await response.json();
@@ -452,7 +465,18 @@ function PortalInner() {
     } finally {
       setLinkingBank(false);
     }
-  }, [authedFetch, loadPortal, bankHolder, bankAccount, bankRouting, bankName]);
+  }, [
+    authedFetch,
+    loadPortal,
+    bankHolder,
+    bankAccount,
+    bankRouting,
+    bankName,
+    bankStreet,
+    bankCity,
+    bankState,
+    bankZip,
+  ]);
 
   const handleIssueCard = useCallback(async () => {
     setCardNote(null);
@@ -903,6 +927,46 @@ function PortalInner() {
                     placeholder="Chase"
                     className={INPUT_CLS}
                   />
+                </div>
+                <div>
+                  <label className="label-cap text-white/55">Street address</label>
+                  <input
+                    value={bankStreet}
+                    onChange={(e) => setBankStreet(e.target.value)}
+                    placeholder="123 Main St"
+                    className={INPUT_CLS}
+                  />
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="col-span-1">
+                    <label className="label-cap text-white/55">City</label>
+                    <input
+                      value={bankCity}
+                      onChange={(e) => setBankCity(e.target.value)}
+                      placeholder="Austin"
+                      className={INPUT_CLS}
+                    />
+                  </div>
+                  <div className="col-span-1">
+                    <label className="label-cap text-white/55">State</label>
+                    <input
+                      value={bankState}
+                      onChange={(e) => setBankState(e.target.value)}
+                      placeholder="TX"
+                      maxLength={2}
+                      className={`${INPUT_CLS} uppercase`}
+                    />
+                  </div>
+                  <div className="col-span-1">
+                    <label className="label-cap text-white/55">ZIP</label>
+                    <input
+                      inputMode="numeric"
+                      value={bankZip}
+                      onChange={(e) => setBankZip(e.target.value)}
+                      placeholder="78701"
+                      className={INPUT_CLS}
+                    />
+                  </div>
                 </div>
                 <Button onClick={() => void handleLinkBank()} disabled={linkingBank} className={PRIMARY_BTN}>
                   {linkingBank ? "Linking…" : "Link bank"}
