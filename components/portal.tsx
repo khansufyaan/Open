@@ -7,6 +7,7 @@ import { usePrivy } from "@privy-io/react-auth";
 import { toast } from "sonner";
 import {
   ArrowDownToLine,
+  ArrowLeft,
   ArrowUpRight,
   Check,
   Copy,
@@ -165,8 +166,8 @@ function CopyField({ label, value }: { label: string; value: string }) {
   );
 }
 
-/** Bottom-sheet on mobile, centered modal on desktop. */
-function ActionSheet({
+/** Full-screen flow: a dedicated screen with a back arrow (mobile-app style). */
+function FlowScreen({
   open,
   onClose,
   title,
@@ -180,12 +181,24 @@ function ActionSheet({
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent
-        className="max-h-[90vh] overflow-y-auto border border-white/10 bg-[oklch(0.17_0.018_256)] px-5 pt-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))] text-white shadow-2xl top-auto bottom-0 left-0 max-w-full translate-x-0 translate-y-0 rounded-3xl rounded-b-none border-x-0 border-b-0 sm:top-1/2 sm:left-1/2 sm:bottom-auto sm:max-w-md sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-3xl sm:border sm:pb-5"
+        showCloseButton={false}
+        className="inset-0 top-0 left-0 flex h-full max-h-full w-full max-w-full translate-x-0 translate-y-0 flex-col gap-0 rounded-none border-0 bg-[oklch(0.135_0.012_256)] p-0 shadow-none sm:max-w-full data-[state=open]:slide-in-from-bottom-2 data-[state=closed]:slide-out-to-bottom-2"
       >
-        {/* Grab handle (mobile bottom-sheet affordance) */}
-        <div className="mx-auto mb-3 h-1.5 w-10 rounded-full bg-white/15 sm:hidden" />
-        <DialogTitle className="text-[15px] font-semibold text-white">{title}</DialogTitle>
-        <div className="mt-2">{children}</div>
+        <div className="mx-auto flex h-full w-full max-w-md flex-col">
+          <header className="flex items-center gap-2 border-b border-white/5 px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.9rem)]">
+            <button
+              onClick={onClose}
+              aria-label="Back"
+              className="press -ml-1 flex h-9 w-9 items-center justify-center rounded-full text-white/70 transition hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </button>
+            <DialogTitle className="text-[16px] font-semibold text-white">{title}</DialogTitle>
+          </header>
+          <div className="flex-1 overflow-y-auto px-5 pt-4 pb-[calc(env(safe-area-inset-bottom)+1.5rem)]">
+            {children}
+          </div>
+        </div>
       </DialogContent>
     </Dialog>
   );
@@ -726,7 +739,7 @@ function PortalInner() {
           </div>
 
           {/* ---- Mint sheet (money in) ---- */}
-          <ActionSheet open={action === "mint"} onClose={() => setAction(null)} title="Mint — add money">
+          <FlowScreen open={action === "mint"} onClose={() => setAction(null)} title="Mint — add money">
             <p className="text-[12.5px] leading-relaxed text-white/60">
               Add money and hold it as your chosen stablecoin.
             </p>
@@ -795,10 +808,10 @@ function PortalInner() {
                 {autoSwapNote ?? "Demo mode — real auto-convert activates once Bridge is connected."}
               </p>
             )}
-          </ActionSheet>
+          </FlowScreen>
 
           {/* ---- Send sheet (crypto out) ---- */}
-          <ActionSheet open={action === "send"} onClose={() => setAction(null)} title="Send">
+          <FlowScreen open={action === "send"} onClose={() => setAction(null)} title="Send">
             <p className="text-[12.5px] leading-relaxed text-white/60">
               Send {currency} on {chain.toUpperCase()} to any wallet address.
             </p>
@@ -831,10 +844,10 @@ function PortalInner() {
                 {sending ? "Sending…" : "Send"}
               </Button>
             </div>
-          </ActionSheet>
+          </FlowScreen>
 
           {/* ---- Burn sheet (cash out to bank) ---- */}
-          <ActionSheet open={action === "burn"} onClose={() => setAction(null)} title="Burn — cash out">
+          <FlowScreen open={action === "burn"} onClose={() => setAction(null)} title="Burn — cash out">
             <p className="text-[12.5px] leading-relaxed text-white/60">
               Convert a stablecoin to USD and send it to your bank account.
             </p>
@@ -981,10 +994,10 @@ function PortalInner() {
                 )}
               </div>
             )}
-          </ActionSheet>
+          </FlowScreen>
 
           {/* ---- Card sheet ---- */}
-          <ActionSheet open={action === "card"} onClose={() => setAction(null)} title="Your card">
+          <FlowScreen open={action === "card"} onClose={() => setAction(null)} title="Your card">
             <p className="text-[12.5px] leading-relaxed text-white/60">
               A Visa card that spends directly from your {currency} balance.
             </p>
@@ -1052,7 +1065,7 @@ function PortalInner() {
                 </Button>
               </div>
             )}
-          </ActionSheet>
+          </FlowScreen>
         </>
       ) : (
         <section className="material rounded-3xl p-6 text-center">
