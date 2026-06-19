@@ -3,24 +3,52 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ArrowRight, Zap } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 
-import { WalletButton } from "@/components/wallet-button";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 export function Navbar({ className }: { className?: string }) {
   const pathname = usePathname();
-  const isHomePage = pathname === "/";
+  const isAppPage = pathname?.startsWith("/app");
+
+  // Apple-quiet header inside the wallet: minimal mark + hairline, no filled bar.
+  if (isAppPage) {
+    return (
+      <header className={cn("relative z-50 w-full", className)}>
+        <div className="mx-auto flex max-w-md items-center justify-between px-5 pt-6 pb-3">
+          <Link href="/" className="flex items-center gap-2.5 transition hover:opacity-80">
+            <Image
+              src="/FINAL2.png"
+              alt="Blue"
+              width={30}
+              height={30}
+              className="rounded-[9px]"
+              priority
+            />
+            <span className="text-[15px] font-semibold tracking-tight text-white">
+              Blue Wallet
+            </span>
+          </Link>
+          <Link
+            href="/faq"
+            className="text-[13px] font-medium text-white/45 transition hover:text-white/75"
+          >
+            FAQ
+          </Link>
+        </div>
+      </header>
+    );
+  }
 
   return (
     <header className={cn("relative z-50 w-full", className)}>
       <div className="px-4 sm:px-6 pt-4 pb-2">
         <div className="relative max-w-6xl mx-auto">
-          {/* Glow effect */}
-          <div className="absolute -inset-[1px] rounded-2xl opacity-50 blur-sm bg-gradient-to-r from-blue-500/30 via-blue-400/20 to-blue-500/30" />
+          {/* Subtle glow */}
+          <div className="absolute -inset-[1px] rounded-2xl opacity-25 blur-sm bg-gradient-to-r from-blue-500/20 via-blue-400/10 to-blue-500/20" />
 
-          <nav className="relative flex w-full items-center justify-between gap-4 rounded-2xl px-4 sm:px-6 py-2.5 bg-blue-950/90 backdrop-blur-xl border border-blue-400/20">
+          <nav className="relative flex w-full items-center justify-between gap-4 rounded-2xl px-4 sm:px-6 py-2.5 bg-white/[0.04] backdrop-blur-xl border border-white/10">
 
             {/* Logo + Brand */}
             <Link href="/" className="flex items-center gap-3 transition hover:opacity-80">
@@ -38,28 +66,6 @@ export function Navbar({ className }: { className?: string }) {
             {/* Center Nav - Desktop */}
             <div className="hidden md:flex items-center gap-1 bg-blue-900/50 rounded-xl px-1 py-1">
               <Link
-                href="/send"
-                className={cn(
-                  "px-4 py-2 rounded-lg text-sm font-medium transition-all",
-                  pathname === "/send"
-                    ? "bg-blue-500/20 text-white"
-                    : "text-blue-200 hover:text-white hover:bg-blue-500/10"
-                )}
-              >
-                Send
-              </Link>
-              <Link
-                href="/recipient"
-                className={cn(
-                  "px-4 py-2 rounded-lg text-sm font-medium transition-all",
-                  pathname === "/recipient"
-                    ? "bg-blue-500/20 text-white"
-                    : "text-blue-200 hover:text-white hover:bg-blue-500/10"
-                )}
-              >
-                Receive
-              </Link>
-              <Link
                 href="/faq"
                 className={cn(
                   "px-4 py-2 rounded-lg text-sm font-medium transition-all",
@@ -74,46 +80,16 @@ export function Navbar({ className }: { className?: string }) {
 
             {/* Right Side - CTA */}
             <div className="flex items-center gap-2 sm:gap-3">
-              {/* Mobile nav */}
-              <div className="flex md:hidden items-center gap-1">
-                <Link
-                  href="/send"
-                  className={cn(
-                    "px-3 py-1.5 rounded-lg text-sm font-medium transition-all",
-                    pathname === "/send"
-                      ? "bg-blue-500/20 text-white"
-                      : "text-blue-200 hover:text-white"
-                  )}
-                >
-                  Send
-                </Link>
-                <Link
-                  href="/recipient"
-                  className={cn(
-                    "px-3 py-1.5 rounded-lg text-sm font-medium transition-all",
-                    pathname === "/recipient"
-                      ? "bg-blue-500/20 text-white"
-                      : "text-blue-200 hover:text-white"
-                  )}
-                >
-                  Receive
-                </Link>
-              </div>
-
-              {/* Wallet button on send page */}
-              {pathname === "/send" && <WalletButton />}
-
-              {/* Primary CTA - only on homepage */}
-              {isHomePage && (
+              {/* Launch app CTA (hidden when already inside the portal) */}
+              {!isAppPage && (
                 <Button
                   size="sm"
                   asChild
                   className="group gradient-blue hover:opacity-90 text-white font-semibold px-4 h-10 glow-blue-sm"
                 >
-                  <Link href="/send">
-                    <Zap className="h-4 w-4 mr-1.5" />
-                    <span className="hidden sm:inline">Send Now</span>
-                    <span className="sm:hidden">Send</span>
+                  <Link href="/app">
+                    <span className="hidden sm:inline">Open App</span>
+                    <span className="sm:hidden">App</span>
                     <ArrowRight className="h-4 w-4 ml-1 transition-transform group-hover:translate-x-0.5" />
                   </Link>
                 </Button>

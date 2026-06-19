@@ -1,22 +1,23 @@
 import { NextResponse } from "next/server";
 
-import { GetCommand, PutCommand } from "@aws-sdk/lib-dynamodb";
-
 import {
   getKycLink,
   isKycApproved,
+  getCustomer,
+  getCustomerKycStatus,
+  isCustomerApproved,
   isBridgeConfigured,
   BridgeRequestError,
 } from "@/lib/bridge/server";
 import { handleBridgeError, isDemoAutoApprove } from "@/lib/bridge/route-helpers";
-import { docClient, USERS_TABLE as TABLE_NAME } from "@/lib/db/dynamo";
+import { getUser, updateUser } from "@/lib/db/store";
+import { ensureProvisioned } from "@/lib/bridge/provision";
 import { requireAuth } from "@/lib/auth/privy";
 
 /**
- * Reads the authoritative KYC result from Bridge for a user and records the
- * verified state. Funds are withdrawn directly from the company vault, so no
- * per-user wallet is provisioned here. Verification status is never accepted
- * from the client — it is read back from Bridge's KYC link object.
+ * Reads the authoritative KYC result from Bridge for a user and, on approval,
+ * provisions the user's Bridge wallet + virtual account. Verification status is
+ * never accepted from the client — it is read back from Bridge's KYC link.
  */
 export async function GET(request: Request) {
   const auth = await requireAuth(request);
@@ -25,53 +26,44 @@ export async function GET(request: Request) {
   }
   const userId = auth.userId;
 
-  let user: Record<string, unknown>;
-
-  try {
-    const existing = await docClient.send(
-      new GetCommand({ TableName: TABLE_NAME, Key: { userId } })
-    );
-    if (!existing.Item) {
-      return NextResponse.json(
-        { error: "USER_NOT_FOUND", message: "Sign in before checking verification." },
-        { status: 404 }
-      );
-    }
-    user = existing.Item as Record<string, unknown>;
-  } catch (error) {
-    console.error("[Bridge KYC Status] Failed to load user:", error);
+  let user = await getUser(userId);
+  if (!user) {
     return NextResponse.json(
-      { error: "USER_LOOKUP_FAILED", message: "Unable to load user record." },
-      { status: 500 }
+      { error: "USER_NOT_FOUND", message: "Sign in before checking verification." },
+      { status: 404 }
     );
   }
 
-  // Already verified — short-circuit.
+  // Already verified — ensure provisioning is complete and short-circuit.
   if (user.personaVerificationCompleted) {
+    try {
+      user = await ensureProvisioned(user);
+    } catch (error) {
+      console.error("[Bridge KYC Status] Provisioning after verification failed:", error);
+    }
     return NextResponse.json({
       verified: true,
-      kycStatus: typeof user.kycStatus === "string" ? user.kycStatus : "approved",
+      kycStatus: user.kycStatus ?? "approved",
+      onboardingCompleted: Boolean(user.onboardingCompleted),
     });
   }
 
   if (!isBridgeConfigured()) {
     if (isDemoAutoApprove()) {
       const timestamp = new Date().toISOString();
-      await docClient.send(
-        new PutCommand({
-          TableName: TABLE_NAME,
-          Item: {
-            ...user,
-            userId,
-            kycStatus: "approved",
-            kycVerificationSource: "demo",
-            personaVerificationCompleted: true,
-            personaVerifiedAt: timestamp,
-            updatedAt: timestamp,
-          },
-        })
-      );
-      return NextResponse.json({ verified: true, kycStatus: "approved", demo: true });
+      user = await updateUser(userId, {
+        kycStatus: "approved",
+        kycVerificationSource: "demo",
+        personaVerificationCompleted: true,
+        personaVerifiedAt: timestamp,
+      });
+      user = await ensureProvisioned(user);
+      return NextResponse.json({
+        verified: true,
+        kycStatus: "approved",
+        demo: true,
+        onboardingCompleted: Boolean(user.onboardingCompleted),
+      });
     }
     return NextResponse.json(
       { error: "BRIDGE_NOT_CONFIGURED", message: "Bridge API key is missing on the server." },
@@ -79,7 +71,40 @@ export async function GET(request: Request) {
     );
   }
 
-  const kycLinkId = typeof user.bridgeKycLinkId === "string" ? user.bridgeKycLinkId : null;
+  const kycLinkId = user.bridgeKycLinkId ?? null;
+
+  // Embedded-Persona (inquiry) flow: a customer exists but there's no hosted
+  // link. Poll the customer's authoritative KYC status from Bridge.
+  if (!kycLinkId && user.bridgeCustomerId) {
+    try {
+      const customer = await getCustomer(user.bridgeCustomerId);
+      const kycStatus = getCustomerKycStatus(customer);
+
+      if (!isCustomerApproved(customer)) {
+        await updateUser(userId, { kycStatus });
+        return NextResponse.json({ verified: false, kycStatus });
+      }
+
+      user = await updateUser(userId, {
+        kycStatus,
+        kycVerificationSource: "bridge",
+        personaVerificationCompleted: true,
+        personaVerifiedAt: new Date().toISOString(),
+      });
+      user = await ensureProvisioned(user);
+
+      return NextResponse.json({
+        verified: true,
+        kycStatus,
+        onboardingCompleted: Boolean(user.onboardingCompleted),
+      });
+    } catch (error) {
+      if (error instanceof BridgeRequestError) {
+        return handleBridgeError(error, "Bridge KYC Status");
+      }
+      throw error;
+    }
+  }
 
   if (!kycLinkId) {
     return NextResponse.json({ verified: false, kycStatus: "not_started" });
@@ -90,43 +115,27 @@ export async function GET(request: Request) {
     const approved = isKycApproved(link);
 
     if (!approved) {
+      await updateUser(userId, { kycStatus: link.kyc_status });
       return NextResponse.json({ verified: false, kycStatus: link.kyc_status });
     }
 
-    const customerId =
-      link.customer_id ?? (typeof user.bridgeCustomerId === "string" ? user.bridgeCustomerId : undefined);
-
     const timestamp = new Date().toISOString();
+    user = await updateUser(userId, {
+      bridgeCustomerId: link.customer_id ?? user.bridgeCustomerId,
+      kycStatus: link.kyc_status,
+      kycVerificationSource: "bridge",
+      personaVerificationCompleted: true,
+      personaVerifiedAt: timestamp,
+    });
 
-    try {
-      // Only the first concurrent poll commits the approval, so a later poll
-      // can't overwrite fields written by the first.
-      await docClient.send(
-        new PutCommand({
-          TableName: TABLE_NAME,
-          Item: {
-            ...user,
-            userId,
-            bridgeCustomerId: customerId,
-            kycStatus: link.kyc_status,
-            kycVerificationSource: "bridge",
-            personaVerificationCompleted: true,
-            personaVerifiedAt: timestamp,
-            updatedAt: timestamp,
-          },
-          ConditionExpression:
-            "attribute_not_exists(personaVerificationCompleted) OR personaVerificationCompleted <> :verified",
-          ExpressionAttributeValues: { ":verified": true },
-        })
-      );
-    } catch (error) {
-      // Another concurrent poll already recorded the approval — that's fine.
-      if (!(error instanceof Error && error.name === "ConditionalCheckFailedException")) {
-        throw error;
-      }
-    }
+    // Provision wallet + virtual account now that the customer is approved.
+    user = await ensureProvisioned(user);
 
-    return NextResponse.json({ verified: true, kycStatus: link.kyc_status });
+    return NextResponse.json({
+      verified: true,
+      kycStatus: link.kyc_status,
+      onboardingCompleted: Boolean(user.onboardingCompleted),
+    });
   } catch (error) {
     if (error instanceof BridgeRequestError) {
       return handleBridgeError(error, "Bridge KYC Status");

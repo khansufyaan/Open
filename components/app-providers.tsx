@@ -1,6 +1,7 @@
 "use client";
 
 import { PrivyProvider } from "@privy-io/react-auth";
+import { Toaster } from "sonner";
 
 import { ThemeProvider } from "@/components/theme-provider";
 
@@ -12,7 +13,20 @@ export function AppProviders({ children }: AppProvidersProps) {
   const privyAppId = process.env.NEXT_PUBLIC_PRIVY_APP_ID;
 
   const renderWithTheme = (tree: React.ReactNode) => (
-    <ThemeProvider enableSystem={false}>{tree}</ThemeProvider>
+    <ThemeProvider enableSystem={false}>
+      {tree}
+      <Toaster
+        theme="dark"
+        position="top-center"
+        toastOptions={{
+          style: {
+            background: "oklch(0.2 0.02 256)",
+            border: "1px solid oklch(1 0 0 / 0.1)",
+            color: "oklch(0.97 0.01 240)",
+          },
+        }}
+      />
+    </ThemeProvider>
   );
 
   // Privy powers external-wallet connect on the sender side. Custody, wallet

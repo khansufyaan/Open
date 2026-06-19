@@ -147,6 +147,7 @@ export type BridgeCustomer = {
   type?: string;
   email?: string;
   status?: string;
+  kyc_status?: string;
   first_name?: string;
   last_name?: string;
   // Bridge associates KYC with an external identity provider (Persona).
@@ -162,6 +163,8 @@ export type CreateCustomerInput = {
    */
   personaInquiryId?: string;
   fullName?: string;
+  /** Stable key so retries don't create duplicate customers. */
+  idempotencyKey?: string;
 };
 
 export async function createCustomer(input: CreateCustomerInput): Promise<BridgeCustomer> {
@@ -187,12 +190,52 @@ export async function createCustomer(input: CreateCustomerInput): Promise<Bridge
 
   return bridgeRequest<BridgeCustomer>("/customers", {
     method: "POST",
+    idempotencyKey: input.idempotencyKey,
     body,
   });
 }
 
 export async function getCustomer(customerId: string): Promise<BridgeCustomer> {
   return bridgeRequest<BridgeCustomer>(`/customers/${customerId}`);
+}
+
+/** A residential address Bridge requires before off-ramp / external accounts. */
+export type CustomerAddress = {
+  street_line_1: string;
+  street_line_2?: string;
+  city: string;
+  /** State/province (e.g. "CA"). */
+  subdivision: string;
+  postal_code: string;
+  /** ISO 3166-1 alpha-3 (e.g. "USA"). */
+  country: string;
+};
+
+/** Sets the customer's residential address (needed for cash-out). */
+export async function updateCustomerAddress(
+  customerId: string,
+  address: CustomerAddress
+): Promise<BridgeCustomer> {
+  return bridgeRequest<BridgeCustomer>(`/customers/${customerId}`, {
+    method: "PUT",
+    body: { residential_address: address },
+  });
+}
+
+/** Bridge's authoritative KYC status string for a customer. */
+export function getCustomerKycStatus(customer: BridgeCustomer): string {
+  return customer.kyc_status ?? customer.status ?? "under_review";
+}
+
+/** True when Bridge reports the customer's KYC as approved/active. */
+export function isCustomerApproved(customer: BridgeCustomer): boolean {
+  const status = (customer.kyc_status ?? customer.status ?? "").toLowerCase();
+  if (["approved", "active", "complete", "completed"].includes(status)) {
+    return true;
+  }
+  return (customer.endorsements ?? []).some(
+    (endorsement) => endorsement.status?.toLowerCase() === "approved"
+  );
 }
 
 /* -------------------------------------------------------------------------- */
@@ -288,18 +331,253 @@ export async function listWallets(customerId: string): Promise<BridgeWallet[]> {
   return response.data ?? [];
 }
 
+export type BridgeWalletBalance = {
+  currency: string;
+  balance: string;
+  chain?: string;
+  contract_address?: string;
+};
+
+export type BridgeWalletDetail = BridgeWallet & {
+  balances?: BridgeWalletBalance[];
+};
+
+export async function getWallet(
+  customerId: string,
+  walletId: string
+): Promise<BridgeWalletDetail> {
+  return bridgeRequest<BridgeWalletDetail>(`/customers/${customerId}/wallets/${walletId}`);
+}
+
+/**
+ * Returns the wallet's balance for the configured transfer currency (USDC by
+ * default) as a decimal string, or "0" when no matching balance is reported.
+ */
+export function getWalletCurrencyBalance(wallet: BridgeWalletDetail): string {
+  const currency = (process.env.BRIDGE_TRANSFER_CURRENCY ?? "usdc").toLowerCase();
+  return getWalletBalanceForCurrency(wallet, currency);
+}
+
+/** Balance of a specific currency held in the wallet, as a decimal string. */
+export function getWalletBalanceForCurrency(
+  wallet: BridgeWalletDetail,
+  currency: string
+): string {
+  const c = currency.toLowerCase();
+  const match = wallet.balances?.find((b) => b.currency?.toLowerCase() === c);
+  return match?.balance ?? "0";
+}
+
+/* -------------------------------------------------------------------------- */
+/*                              Virtual Accounts                              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A Bridge virtual account gives the customer a US bank account number +
+ * routing number. Funds wired/ACH'd to it are auto-converted to stablecoin and
+ * delivered to the linked Bridge wallet (the "Receive via bank" experience).
+ */
+export type BridgeVirtualAccount = {
+  id: string;
+  status?: string;
+  source_deposit_instructions?: {
+    bank_name?: string;
+    bank_address?: string;
+    bank_beneficiary_name?: string;
+    bank_account_number?: string;
+    bank_routing_number?: string;
+    routing_number?: string;
+    account_number?: string;
+    payment_rail?: string;
+    payment_rails?: string[];
+  };
+};
+
+export type CreateVirtualAccountInput = {
+  customerId: string;
+  walletId?: string;
+  chain?: string;
+  currency?: string;
+  idempotencyKey?: string;
+};
+
+export async function createVirtualAccount(
+  input: CreateVirtualAccountInput
+): Promise<BridgeVirtualAccount> {
+  const chain = input.chain ?? process.env.BRIDGE_DEFAULT_CHAIN ?? "base";
+  const currency = input.currency ?? process.env.BRIDGE_TRANSFER_CURRENCY ?? "usdc";
+
+  return bridgeRequest<BridgeVirtualAccount>(
+    `/customers/${input.customerId}/virtual_accounts`,
+    {
+      method: "POST",
+      idempotencyKey: input.idempotencyKey,
+      body: {
+        source: { currency: "usd" },
+        destination: {
+          payment_rail: chain,
+          currency,
+          ...(input.walletId ? { bridge_wallet_id: input.walletId } : {}),
+        },
+      },
+    }
+  );
+}
+
+export async function listVirtualAccounts(
+  customerId: string
+): Promise<BridgeVirtualAccount[]> {
+  const response = await bridgeRequest<{ data?: BridgeVirtualAccount[] }>(
+    `/customers/${customerId}/virtual_accounts`
+  );
+  return response.data ?? [];
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                    Cards                                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Bridge issues stablecoin-backed Visa cards that spend just-in-time from a
+ * linked wallet. The customer needs the `cards` endorsement (full KYC), and the
+ * Cards product must be enabled on the Bridge account.
+ */
+export type BridgeCardAccount = {
+  id: string;
+  status?: string;
+  type?: string;
+  brand?: string;
+  last_4?: string;
+  card_details?: {
+    brand?: string;
+    last_4?: string;
+    last4?: string;
+    expiry_month?: string | number;
+    expiry_year?: string | number;
+  };
+};
+
+/** Best-effort request for the `cards` endorsement on a customer. */
+export async function requestCardsEndorsement(customerId: string): Promise<void> {
+  await bridgeRequest(`/customers/${customerId}/endorsements`, {
+    method: "POST",
+    idempotencyKey: `cards-endorse-${customerId}`,
+    body: { endorsement: "cards" },
+  });
+}
+
+export type CreateCardAccountInput = {
+  customerId: string;
+  walletId?: string;
+  walletAddress: string;
+  chain?: string;
+  currency?: string;
+  idempotencyKey?: string;
+};
+
+export async function createCardAccount(
+  input: CreateCardAccountInput
+): Promise<BridgeCardAccount> {
+  const chain = input.chain ?? process.env.BRIDGE_DEFAULT_CHAIN ?? "base";
+  const currency = input.currency ?? process.env.BRIDGE_TRANSFER_CURRENCY ?? "usdc";
+
+  return bridgeRequest<BridgeCardAccount>(`/customers/${input.customerId}/card_accounts`, {
+    method: "POST",
+    idempotencyKey: input.idempotencyKey,
+    body: {
+      currency,
+      chain,
+      crypto_account: {
+        type: input.walletId ? "bridge_wallet" : "standard",
+        address: input.walletAddress,
+        ...(input.walletId ? { bridge_wallet_id: input.walletId } : {}),
+      },
+    },
+  });
+}
+
+export async function listCardAccounts(customerId: string): Promise<BridgeCardAccount[]> {
+  const response = await bridgeRequest<{ data?: BridgeCardAccount[] }>(
+    `/customers/${customerId}/card_accounts`
+  );
+  return response.data ?? [];
+}
+
+/* -------------------------------------------------------------------------- */
+/*                             External Accounts                              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * An external account is a linked fiat bank account a customer can cash out to
+ * (the destination for an off-ramp / "burn" transfer).
+ */
+export type BridgeExternalAccount = {
+  id: string;
+  bank_name?: string;
+  account_owner_name?: string;
+  last_4?: string;
+  account?: { last_4?: string };
+};
+
+export type CreateExternalAccountInput = {
+  customerId: string;
+  accountOwnerName: string;
+  accountNumber: string;
+  routingNumber: string;
+  bankName?: string;
+  currency?: string;
+  idempotencyKey?: string;
+};
+
+export async function createExternalAccount(
+  input: CreateExternalAccountInput
+): Promise<BridgeExternalAccount> {
+  return bridgeRequest<BridgeExternalAccount>(
+    `/customers/${input.customerId}/external_accounts`,
+    {
+      method: "POST",
+      idempotencyKey: input.idempotencyKey,
+      body: {
+        currency: input.currency ?? "usd",
+        account_owner_name: input.accountOwnerName,
+        account_type: "us",
+        bank_name: input.bankName,
+        account: {
+          account_number: input.accountNumber,
+          routing_number: input.routingNumber,
+        },
+      },
+    }
+  );
+}
+
+export async function listExternalAccounts(
+  customerId: string
+): Promise<BridgeExternalAccount[]> {
+  const response = await bridgeRequest<{ data?: BridgeExternalAccount[] }>(
+    `/customers/${customerId}/external_accounts`
+  );
+  return response.data ?? [];
+}
+
+export function getExternalAccountLast4(account: BridgeExternalAccount): string | undefined {
+  return account.last_4 ?? account.account?.last_4;
+}
+
 /* -------------------------------------------------------------------------- */
 /*                                  Transfers                                 */
 /* -------------------------------------------------------------------------- */
 
 export type TransferEndpoint = {
-  payment_rail: string; // e.g. "base"
-  currency: string; // e.g. "usdc"
+  payment_rail: string; // e.g. "base", or "ach"/"wire" for fiat
+  currency: string; // e.g. "usdc", or "usd" for fiat
   /** Provide for an external/on-chain destination. */
   to_address?: string;
   from_address?: string;
   /** Provide for a Bridge-custodied wallet source/destination. */
   bridge_wallet_id?: string;
+  /** Provide for a fiat destination (cash-out to a linked bank account). */
+  external_account_id?: string;
 };
 
 export type BridgeTransfer = {

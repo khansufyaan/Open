@@ -1,5 +1,7 @@
 # Running Blue Wallet as a web app and an iPhone app
 
+**Live web app / PWA:** https://blue-wallet-brown.vercel.app
+
 Blue Wallet is a Next.js web app. It ships in two installable forms:
 
 1. **PWA** — installable from the browser (including iPhone via *Share → Add to
@@ -43,18 +45,19 @@ files. Config lives in `capacitor.config.ts`.
 ### Steps
 
 ```bash
-# 1. Deploy the web app (Vercel/Amplify) and note its URL.
-# 2. Point Capacitor at that deployment:
-export CAP_SERVER_URL="https://your-blue-wallet-deployment.com"
+# 1. The web app is already deployed at https://blue-wallet-brown.vercel.app
+#    (this is the default in capacitor.config.ts). Override only if you deploy
+#    elsewhere:
+# export CAP_SERVER_URL="https://your-blue-wallet-deployment.com"
 
-# 3. Install deps and add the iOS platform (creates the ./ios Xcode project):
+# 2. Install deps and add the iOS platform (creates the ./ios Xcode project):
 npm install
 npm run ios:add
 
-# 4. Sync config/plugins into the native project:
+# 3. Sync config/plugins into the native project:
 npm run ios:sync
 
-# 5. Open in Xcode to run on a simulator/device and submit to the App Store:
+# 4. Open in Xcode to run on a simulator/device and submit to the App Store:
 npm run ios:open
 ```
 

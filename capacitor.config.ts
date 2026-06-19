@@ -13,7 +13,7 @@ const config: CapacitorConfig = {
   appName: "Blue Wallet",
   webDir: "public",
   server: {
-    url: process.env.CAP_SERVER_URL ?? "https://blue-wallet.example.com",
+    url: process.env.CAP_SERVER_URL ?? "https://blue-wallet-brown.vercel.app",
     cleartext: false,
   },
 };
