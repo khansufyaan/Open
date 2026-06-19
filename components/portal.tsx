@@ -265,7 +265,6 @@ function PortalInner() {
 
   // Which action sheet is open.
   const [action, setAction] = useState<ActionId | null>(null);
-  const [mintTab, setMintTab] = useState<"bank" | "crypto">("bank");
 
   // Send form
   const [sendAmount, setSendAmount] = useState("");
@@ -298,7 +297,6 @@ function PortalInner() {
 
   // Auto-convert deposits
   const [autoSwapSaving, setAutoSwapSaving] = useState<string | null>(null);
-  const [autoSwapNote, setAutoSwapNote] = useState<string | null>(null);
 
   // Animated balance — called unconditionally to respect the rules of hooks.
   const balanceNum = state?.wallet ? parseFloat(state.wallet.balance || "0") : 0;
@@ -510,7 +508,6 @@ function PortalInner() {
 
   const handleSetAutoSwap = useCallback(
     async (currency: string) => {
-      setAutoSwapNote(null);
       setAutoSwapSaving(currency);
       try {
         const response = await authedFetch("/api/autoswap", {
@@ -520,7 +517,6 @@ function PortalInner() {
         });
         const data = await response.json();
         if (!response.ok) throw new Error(data.message ?? "Unable to set auto-convert.");
-        if (data.note) setAutoSwapNote(data.note);
         toast.success(`You now hold everything as ${currency.toUpperCase()}`);
         await loadPortal();
       } catch (err) {
@@ -738,13 +734,26 @@ function PortalInner() {
             })}
           </div>
 
-          {/* ---- Mint sheet (money in) ---- */}
+          {/* ---- Mint (money in: fiat → stablecoin) ---- */}
           <FlowScreen open={action === "mint"} onClose={() => setAction(null)} title="Mint — add money">
             <p className="text-[12.5px] leading-relaxed text-white/60">
-              Add money and hold it as your chosen stablecoin.
+              Add money by bank transfer — it arrives as your chosen stablecoin.
             </p>
 
-            <p className="mt-4 label-cap text-white/55">Hold everything as</p>
+            <p className="mt-4 text-[12px] text-white/60">
+              Wire or ACH USD to these details — it arrives as{" "}
+              <span className="font-semibold text-white/80">{target.toUpperCase()}</span>.
+            </p>
+            {virtualAccount ? (
+              <div className="mt-3 space-y-2.5">
+                <CopyField label="Account number" value={virtualAccount.accountNumber} />
+                <CopyField label="Routing number" value={virtualAccount.routingNumber} />
+              </div>
+            ) : (
+              <p className="mt-3 text-sm text-white/45">No bank account provisioned yet.</p>
+            )}
+
+            <p className="mt-6 label-cap text-white/55">Hold everything as</p>
             <div className="mt-2">
               <CoinPicker
                 coins={targets}
@@ -753,61 +762,6 @@ function PortalInner() {
                 disabled={Boolean(autoSwapSaving)}
               />
             </div>
-
-            {/* Method toggle */}
-            <div className="material-flat mt-4 grid grid-cols-2 gap-1 rounded-full p-1">
-              {(["bank", "crypto"] as const).map((m) => (
-                <button
-                  key={m}
-                  onClick={() => setMintTab(m)}
-                  aria-pressed={mintTab === m}
-                  className={`press rounded-full py-2 text-[12px] font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60 ${
-                    mintTab === m ? "bg-white/[0.1] text-white" : "text-white/55 hover:text-white/80"
-                  }`}
-                >
-                  {m === "bank" ? "From bank (USD)" : "Crypto"}
-                </button>
-              ))}
-            </div>
-
-            {mintTab === "bank" ? (
-              <div className="mt-4 space-y-2.5">
-                <p className="text-[12px] text-white/60">
-                  Wire or ACH USD to these details — it arrives as{" "}
-                  <span className="font-semibold text-white/80">{target.toUpperCase()}</span>.
-                </p>
-                {virtualAccount ? (
-                  <>
-                    <CopyField label="Account number" value={virtualAccount.accountNumber} />
-                    <CopyField label="Routing number" value={virtualAccount.routingNumber} />
-                    {virtualAccount.beneficiaryName && (
-                      <CopyField label="Beneficiary" value={virtualAccount.beneficiaryName} />
-                    )}
-                    {virtualAccount.bankName && (
-                      <p className="px-1 text-[12px] text-white/55">Bank: {virtualAccount.bankName}</p>
-                    )}
-                  </>
-                ) : (
-                  <p className="text-sm text-white/45">No bank account provisioned yet.</p>
-                )}
-              </div>
-            ) : (
-              <div className="mt-4 space-y-2.5">
-                <p className="text-[12px] text-white/60">
-                  Send <span className="text-white/80">any supported stablecoin</span> on{" "}
-                  {chain.toUpperCase()} to this one address — it auto-converts to{" "}
-                  <span className="font-semibold text-white/80">{target.toUpperCase()}</span>, no
-                  approval needed.
-                </p>
-                <CopyField label="Your wallet address" value={wallet.address} />
-              </div>
-            )}
-
-            {(autoSwapNote || state.autoSwap?.source === "demo") && (
-              <p className="mt-3 text-[12px] leading-relaxed text-amber-200/80">
-                {autoSwapNote ?? "Demo mode — real auto-convert activates once Bridge is connected."}
-              </p>
-            )}
           </FlowScreen>
 
           {/* ---- Send sheet (crypto out) ---- */}
